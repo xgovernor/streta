@@ -421,19 +421,19 @@ export function TelemetryPanel() {
                   <div className="flex flex-col rounded bg-surface/60 p-1.5">
                     <span className="text-[10px] text-ink-subtle">ALTITUDE</span>
                     <span className="font-semibold text-ink">
-                      {selectedTarget.data.altitudeKm.toFixed(1)} km
+                      {(selectedTarget.data.altitudeKm ?? 0).toFixed(1)} km
                     </span>
                   </div>
                   <div className="flex flex-col rounded bg-surface/60 p-1.5">
                     <span className="text-[10px] text-ink-subtle">ORBITAL VELOCITY</span>
                     <span className="font-semibold text-ink">
-                      {Math.round(selectedTarget.data.velocityKmh).toLocaleString()} km/h
+                      {Math.round(selectedTarget.data.velocityKmh ?? 0).toLocaleString()} km/h
                     </span>
                   </div>
                   <div className="flex flex-col rounded bg-surface/60 p-1.5">
                     <span className="text-[10px] text-ink-subtle">GROUND POSITION</span>
                     <span className="font-semibold text-ink">
-                      {selectedTarget.data.latitude.toFixed(2)}°, {selectedTarget.data.longitude.toFixed(2)}°
+                      {(selectedTarget.data.latitude ?? 0).toFixed(2)}°, {(selectedTarget.data.longitude ?? 0).toFixed(2)}°
                     </span>
                   </div>
                 </div>
@@ -672,14 +672,14 @@ export function TelemetryPanel() {
                       <div className="flex flex-col">
                         <span className="font-medium text-ink">{sat.name}</span>
                         <span className="font-mono text-[10px] text-ink-subtle">
-                          NORAD {sat.noradId} · {sat.altitudeKm.toFixed(0)} km alt
+                          NORAD {sat.noradId} · {(sat.altitudeKm ?? 0).toFixed(0)} km alt
                         </span>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3 font-mono text-[11px]">
                       <span className="text-ink">
-                        {Math.round(sat.velocityKmh).toLocaleString()} km/h
+                        {Math.round(sat.velocityKmh ?? 0).toLocaleString()} km/h
                       </span>
                       <button
                         type="button"

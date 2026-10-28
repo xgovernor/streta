@@ -447,7 +447,22 @@ export async function fetchLiveFlights(
 ): Promise<FlightTarget[]> {
   if (isTauriEnvironment()) {
     try {
-      return await invoke<FlightTarget[]>("fetch_live_flights", { bbox: bbox || null });
+      const raw = await invoke<any[]>("fetch_live_flights", { bbox: bbox || null });
+      if (Array.isArray(raw) && raw.length > 0) {
+        return raw.map((f) => ({
+          icao24: f.icao24,
+          callsign: f.callsign || f.icao24,
+          originCountry: f.originCountry ?? f.origin_country ?? "Unknown",
+          longitude: f.longitude ?? f.lon ?? 0,
+          latitude: f.latitude ?? f.lat ?? 0,
+          altitudeMeters: f.altitudeMeters ?? f.altitude_m ?? 0,
+          velocityMps: f.velocityMps ?? f.velocity_mps ?? 0,
+          headingDeg: f.headingDeg ?? f.heading_deg ?? 0,
+          verticalRateMps: f.verticalRateMps ?? f.vertical_rate_mps ?? 0,
+          onGround: f.onGround ?? f.on_ground ?? false,
+          squawk: f.squawk ?? null,
+        }));
+      }
     } catch (e) {
       console.warn("Tauri fetch_live_flights failed, falling back:", e);
     }
@@ -567,7 +582,21 @@ export async function fetchLiveFlights(
 export async function fetchLiveEarthquakes(minMagnitude = 1.0): Promise<EarthquakeTarget[]> {
   if (isTauriEnvironment()) {
     try {
-      return await invoke<EarthquakeTarget[]>("fetch_live_earthquakes", { minMagnitude });
+      const raw = await invoke<any[]>("fetch_live_earthquakes", { minMagnitude });
+      if (Array.isArray(raw) && raw.length > 0) {
+        return raw.map((eq) => ({
+          id: eq.id || `eq-${Math.random()}`,
+          place: eq.place || "Unknown Location",
+          magnitude: eq.magnitude ?? eq.mag ?? 0,
+          time: eq.time ?? eq.time_epoch ?? Date.now(),
+          longitude: eq.longitude ?? eq.lon ?? 0,
+          latitude: eq.latitude ?? eq.lat ?? 0,
+          depthKm: eq.depthKm ?? eq.depth_km ?? 0,
+          significance: eq.significance ?? eq.sig ?? 0,
+          alert: eq.alert ?? null,
+          tsunami: eq.tsunami ? 1 : 0,
+        }));
+      }
     } catch (e) {
       console.warn("Tauri fetch_live_earthquakes failed, trying direct USGS fetch:", e);
     }
@@ -673,7 +702,19 @@ export async function fetchLiveEarthquakes(minMagnitude = 1.0): Promise<Earthqua
 export async function fetchLiveSatellites(): Promise<SatelliteTarget[]> {
   if (isTauriEnvironment()) {
     try {
-      return await invoke<SatelliteTarget[]>("fetch_live_satellites");
+      const raw = await invoke<any[]>("fetch_live_satellites");
+      if (Array.isArray(raw) && raw.length > 0) {
+        return raw.map((s) => ({
+          id: s.id || `norad-${s.noradId ?? s.norad_id}`,
+          name: s.name || `Satellite ${s.noradId ?? s.norad_id}`,
+          noradId: s.noradId ?? s.norad_id ?? 0,
+          longitude: s.longitude ?? s.lon ?? 0,
+          latitude: s.latitude ?? s.lat ?? 0,
+          altitudeKm: s.altitudeKm ?? s.altitude_km ?? 0,
+          velocityKmh: s.velocityKmh ?? (s.velocity_kms ? s.velocity_kms * 3600 : 27500),
+          groundTrack: s.groundTrack ?? s.ground_track ?? [],
+        }));
+      }
     } catch (e) {
       console.warn("Tauri fetch_live_satellites failed:", e);
     }
