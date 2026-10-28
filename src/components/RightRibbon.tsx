@@ -6,7 +6,9 @@ import {
   Maximize2,
   Minimize2,
   Minus,
+  Mountain,
   Plus,
+  Radar,
   Ruler,
 } from "lucide-react";
 import { fitToData, flyTo, resetNorth, zoomBy } from "../map/mapController";
@@ -158,6 +160,24 @@ export function RightRibbon() {
           side="right"
           active={measureMode === "area" && activePanel === "measure"}
           onClick={() => toggleMeasure("area")}
+        />
+        <ToolButton
+          label="Elevation profile"
+          icon={Mountain}
+          side="right"
+          active={activePanel === "measure" && measureMode === "off"}
+          onClick={() => {
+            openPanel("measure");
+          }}
+        />
+        <ToolButton
+          label="Proximity buffer"
+          icon={Radar}
+          side="right"
+          active={activePanel === "measure" && measureMode === "off"}
+          onClick={() => {
+            openPanel("measure");
+          }}
         />
       </div>
 

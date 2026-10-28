@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 pub mod tiles;
 pub mod commands;
 pub mod manifest;
+pub mod analysis;
 
 use tiles::{DatasetStore, SharedDatasetStore};
 
@@ -26,6 +27,9 @@ pub fn run() {
             commands::remove_layer,
             commands::has_layer,
             commands::get_dataset_manifest,
+            commands::measure_geodesic,
+            commands::spatial_buffer_query,
+            commands::elevation_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

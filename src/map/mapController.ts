@@ -20,7 +20,7 @@ import { fromLonLat, transform } from "ol/proj";
 import VectorSource from "ol/source/Vector";
 import VectorTileSource from "ol/source/VectorTile";
 import XYZ from "ol/source/XYZ";
-import { Fill, Stroke, Style, Text } from "ol/style";
+import { Circle as CircleStyle, Fill, Stroke, Style, Text } from "ol/style";
 import type { StyleFunction } from "ol/style/Style";
 import type { EventsKey } from "ol/events";
 import { apply } from "ol-mapbox-style";
@@ -45,6 +45,7 @@ import type {
   MeasureSummary,
 } from "../lib/gis/types";
 import { formatArea, formatDistance } from "../lib/format";
+import { measureGeodesic } from "../lib/gis/tiledBackend";
 import { useMapStore } from "../state/mapStore";
 import { useProjectStore } from "../state/projectStore";
 import { useUiStore } from "../state/uiStore";
@@ -55,11 +56,14 @@ type BasemapLayers = Record<BasemapId, BaseLayer>;
 const BASEMAP_Z = 0;
 const DATA_Z_BASE = 20;
 const MEASURE_Z = 900;
+const ANALYSIS_Z = 950;
 const GRATICULE_Z = 5;
 
 let activeMap: OlMap | null = null;
 let activeTeardown: (() => void) | null = null;
 let activeMeasureClear: (() => void) | null = null;
+let activeAnalysisSource: VectorSource | null = null;
+let activeBufferPicker: ((coord: [number, number]) => void) | null = null;
 
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 let leaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -278,6 +282,15 @@ export function mountMap(target: HTMLElement): () => void {
     properties: { id: "measure", overlay: true },
   });
 
+  const analysisSource = new VectorSource();
+  const analysisLayer = new VectorLayer({
+    source: analysisSource,
+    style: analysisStyle,
+    zIndex: ANALYSIS_Z,
+    properties: { id: "analysis", overlay: true },
+  });
+  activeAnalysisSource = analysisSource;
+
   const view = new View({
     center: fromLonLat([initialCamera.lon, initialCamera.lat]),
     zoom: initialCamera.zoom,
@@ -290,7 +303,7 @@ export function mountMap(target: HTMLElement): () => void {
   const map = new OlMap({
     target,
     view,
-    layers: [...Object.values(basemapLayers), graticuleLayer, measureLayer],
+    layers: [...Object.values(basemapLayers), graticuleLayer, measureLayer, analysisLayer],
     controls: [],
   });
 
@@ -622,6 +635,12 @@ export function mountMap(target: HTMLElement): () => void {
   });
 
   const clickKey = map.on("singleclick", (event) => {
+    if (activeBufferPicker) {
+      const [lon, lat] = transform(event.coordinate, VIEW_CRS, GEOGRAPHIC_CRS) as [number, number];
+      activeBufferPicker([lon, lat]);
+      return;
+    }
+
     if (useProjectStore.getState().measureMode !== "off") {
       return;
     }
@@ -811,6 +830,9 @@ export function mountMap(target: HTMLElement): () => void {
       activeTeardown = null;
     }
 
+    activeAnalysisSource = null;
+    activeBufferPicker = null;
+
     if (activeMap === map) {
       activeMap = null;
       useMapStore.getState().setReady(false);
@@ -854,6 +876,27 @@ function summarizeGeometry(
     vertices += 1;
   });
 
+  const coords: [number, number][] =
+    geographic.type === "LineString"
+      ? (geographic.coordinates as [number, number][])
+      : ((geographic.coordinates as [number, number][][])[0] ?? []);
+
+  if (coords && coords.length >= 2) {
+    measureGeodesic(coords, mode === "area").then((details) => {
+      if (details) {
+        const current = useProjectStore.getState().measureSummary;
+        if (current && current.mode === mode) {
+          useProjectStore.getState().setMeasureSummary({
+            ...current,
+            distance: details.total_distance_m,
+            area: details.area_sq_m ?? current.area,
+            geodesicDetails: details,
+          });
+        }
+      }
+    });
+  }
+
   return {
     mode,
     distance: geometryLength(geographic),
@@ -861,6 +904,7 @@ function summarizeGeometry(
     vertices,
   };
 }
+
 
 const SEGMENT_LABEL = new Text({
   font: '600 10.5px "IBM Plex Mono", monospace',
@@ -1201,3 +1245,154 @@ export function measureCoordinates(): [number, number][] {
 export function clearMeasureSketch(): void {
   activeMeasureClear?.();
 }
+
+/**
+ * Analytical overlay styling for geodesic buffer polygons and profile hover markers.
+ */
+function analysisStyle(feature: FeatureLike): Style | Style[] {
+  const type = feature.get("analysisType");
+
+  if (type === "buffer") {
+    return new Style({
+      stroke: new Stroke({
+        color: "#06b6d4",
+        width: 2,
+        lineDash: [6, 4],
+      }),
+      fill: new Fill({
+        color: "rgba(6, 182, 212, 0.12)",
+      }),
+    });
+  }
+
+  if (type === "bufferCenter") {
+    return [
+      new Style({
+        image: new CircleStyle({
+          radius: 6,
+          fill: new Fill({ color: "#06b6d4" }),
+          stroke: new Stroke({ color: "#ffffff", width: 2 }),
+        }),
+      }),
+    ];
+  }
+
+  if (type === "profileHover") {
+    const elevation = feature.get("elevationM");
+    const label = elevation != null ? `${Math.round(elevation)}m` : "";
+    return [
+      new Style({
+        image: new CircleStyle({
+          radius: 10,
+          fill: new Fill({ color: "rgba(6, 182, 212, 0.25)" }),
+        }),
+      }),
+      new Style({
+        image: new CircleStyle({
+          radius: 5,
+          fill: new Fill({ color: "#ffffff" }),
+          stroke: new Stroke({ color: "#06b6d4", width: 2.5 }),
+        }),
+        text: label
+          ? new Text({
+              text: label,
+              font: '600 11px "IBM Plex Mono", monospace',
+              fill: new Fill({ color: "#06b6d4" }),
+              stroke: new Stroke({ color: "#101820", width: 3 }),
+              offsetY: -16,
+            })
+          : undefined,
+      }),
+    ];
+  }
+
+  return new Style();
+}
+
+/**
+ * Renders a geodesic buffer polygon and optional center marker on the analysis overlay layer.
+ */
+export function renderBufferOverlay(
+  bufferGeoJson: any,
+  centerCoord?: [number, number],
+  radiusMeters?: number,
+): void {
+  if (!activeAnalysisSource) return;
+  activeAnalysisSource.clear();
+
+  if (bufferGeoJson) {
+    const features = geoJson.readFeatures(bufferGeoJson, {
+      dataProjection: GEOGRAPHIC_CRS,
+      featureProjection: VIEW_CRS,
+    });
+    features.forEach((f) => f.set("analysisType", "buffer"));
+    activeAnalysisSource.addFeatures(features);
+  }
+
+  if (centerCoord) {
+    const centerFeature = new Feature({
+      geometry: new Point(fromLonLat(centerCoord)),
+    });
+    centerFeature.set("analysisType", "bufferCenter");
+    centerFeature.set("radiusMeters", radiusMeters);
+    activeAnalysisSource.addFeature(centerFeature);
+  }
+}
+
+/** Clears all features from the buffer and analysis overlay layer. */
+export function clearBufferOverlay(): void {
+  activeAnalysisSource?.clear();
+}
+
+/**
+ * Places or removes a synchronized hover cursor on the map corresponding to
+ * the active inspection point in the elevation profile chart.
+ */
+export function setProfileHoverCoord(
+  coord: [number, number] | null,
+  elevationM?: number,
+): void {
+  if (!activeAnalysisSource) return;
+
+  const existing = activeAnalysisSource
+    .getFeatures()
+    .filter((f) => f.get("analysisType") === "profileHover");
+  existing.forEach((f) => activeAnalysisSource?.removeFeature(f));
+
+  if (coord) {
+    const hoverFeature = new Feature({
+      geometry: new Point(fromLonLat(coord)),
+    });
+    hoverFeature.set("analysisType", "profileHover");
+    hoverFeature.set("elevationM", elevationM);
+    activeAnalysisSource.addFeature(hoverFeature);
+  }
+}
+
+/**
+ * Enables or disables interactive click-to-pick on the map for selecting buffer query center.
+ */
+export function setBufferPicker(
+  picker: ((coord: [number, number]) => void) | null,
+): void {
+  activeBufferPicker = picker;
+  if (activeMap) {
+    const target = activeMap.getTargetElement();
+    if (target) {
+      target.style.cursor = picker ? "crosshair" : "";
+    }
+  }
+}
+
+/**
+ * Smoothly animates the map camera to the target lon/lat.
+ */
+export function flyToCoordinate(lon: number, lat: number, zoom = 14): void {
+  if (!activeMap) return;
+  activeMap.getView().animate({
+    center: fromLonLat([lon, lat]),
+    zoom,
+    duration: 500,
+  });
+}
+

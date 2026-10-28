@@ -80,3 +80,39 @@ pub fn get_dataset_manifest() -> Result<Vec<crate::manifest::DatasetManifestEntr
     let manifest = crate::manifest::Manifest::load_embedded()?;
     Ok(manifest.datasets)
 }
+
+#[tauri::command]
+pub fn measure_geodesic(
+    coords: Vec<(f64, f64)>,
+    is_polygon: bool,
+) -> Result<crate::analysis::GeodesicMeasurementResult, String> {
+    crate::analysis::measure_geodesic(&coords, is_polygon)
+}
+
+#[tauri::command]
+pub fn spatial_buffer_query(
+    store: State<'_, SharedDatasetStore>,
+    center_lon: f64,
+    center_lat: f64,
+    radius_meters: f64,
+    layer_ids: Option<Vec<String>>,
+    max_results: Option<usize>,
+) -> Result<crate::analysis::SpatialQueryResult, String> {
+    let guard = store.read().map_err(|e| e.to_string())?;
+    crate::analysis::spatial_buffer_query(
+        &guard,
+        center_lon,
+        center_lat,
+        radius_meters,
+        layer_ids.as_deref(),
+        max_results,
+    )
+}
+
+#[tauri::command]
+pub async fn elevation_profile(
+    coords: Vec<(f64, f64)>,
+    sample_count: Option<usize>,
+) -> Result<crate::analysis::ElevationProfileResult, String> {
+    crate::analysis::compute_elevation_profile(&coords, sample_count.unwrap_or(40)).await
+}

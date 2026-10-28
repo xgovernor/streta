@@ -138,6 +138,29 @@ impl DatasetStore {
         self.datasets.remove(dataset_id).is_some()
     }
 
+    pub fn query_bbox(
+        &self,
+        min_x: f64,
+        min_y: f64,
+        max_x: f64,
+        max_y: f64,
+        dataset_ids: Option<&[String]>,
+    ) -> Vec<(&str, &IndexedFeature)> {
+        let envelope = AABB::from_corners([min_x, min_y], [max_x, max_y]);
+        let mut results = Vec::new();
+        for (id, dataset) in &self.datasets {
+            if let Some(target_ids) = dataset_ids {
+                if !target_ids.is_empty() && !target_ids.iter().any(|t| t == id) {
+                    continue;
+                }
+            }
+            for feat in dataset.tree.locate_in_envelope_intersecting(envelope) {
+                results.push((id.as_str(), feat));
+            }
+        }
+        results
+    }
+
     /// Renders an MVT tile for a dataset at (z, x, y).
     pub fn render_tile(&self, dataset_id: &str, z: u32, x: u32, y: u32) -> Result<Vec<u8>, String> {
         let dataset = self.datasets.get(dataset_id)
