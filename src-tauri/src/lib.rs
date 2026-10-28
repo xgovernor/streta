@@ -2,6 +2,7 @@ use std::sync::{Arc, RwLock};
 
 pub mod tiles;
 pub mod commands;
+pub mod manifest;
 
 use tiles::{DatasetStore, SharedDatasetStore};
 
@@ -24,6 +25,7 @@ pub fn run() {
             commands::get_layer_records,
             commands::remove_layer,
             commands::has_layer,
+            commands::get_dataset_manifest,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -121,10 +121,17 @@ function buildCard(
 
   const resolvedFeatureId =
     featureId ?? useProjectStore.getState().selection?.featureId;
-  const feature = useProjectStore.getState().selectionFeatureById(
-    layerId,
-    resolvedFeatureId,
-  );
+  const activeTarget = useMapStore.getState().popup ?? useMapStore.getState().activeFeature;
+  const feature =
+    useProjectStore.getState().selectionFeatureById(
+      layerId,
+      resolvedFeatureId,
+    ) ??
+    (activeTarget?.properties ? {
+      id: resolvedFeatureId ?? "",
+      geometry: { type: "Point" as const, coordinates: [lon, lat] },
+      properties: activeTarget.properties as Record<string, any>,
+    } : null);
 
   if (!feature) {
     return null;

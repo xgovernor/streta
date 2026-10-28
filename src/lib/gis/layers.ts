@@ -75,12 +75,14 @@ export function uniqueLayerName(existing: string[], wanted: string): string {
 }
 
 export interface CreateLayerInput {
+  id?: string;
   name: string;
   /** The dataset whose stack the layer joins. */
   datasetId: string;
   features: FeatureRecord[];
   crs: string;
   format: LayerFormat;
+  tileUrl?: string;
   source?: string | null;
   style?: Partial<LayerStyle>;
   filters?: LayerFilter[];
@@ -96,11 +98,12 @@ export function createLayer(input: CreateLayerInput): DatasetLayer {
   const color = input.style?.color ?? input.color ?? paletteColor(0);
 
   return {
-    id: layerId(),
+    id: input.id ?? layerId(),
     datasetId: input.datasetId,
     name: input.name.trim() || "Untitled layer",
     crs,
     format: input.format,
+    tileUrl: input.tileUrl,
     source: input.source ?? null,
     geometryKind: geometryKindOf(input.features),
     features: input.features,

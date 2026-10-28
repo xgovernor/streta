@@ -30,10 +30,12 @@ export interface ProjectStore {
     libraryId?: string | null;
     source?: string | null;
     layers: {
+      id?: string;
       name: string;
       features: import("../lib/gis/types").FeatureRecord[];
       crs: string;
       format: DatasetLayer["format"];
+      tileUrl?: string;
       source?: string | null;
       style?: Partial<LayerStyle>;
       color?: string;

@@ -248,16 +248,24 @@ export function createDatasetStyle(
     (typeof layer.source === "string" && /cctv/i.test(layer.source));
 
   return (feature: FeatureLike, resolution: number): Style[] => {
-    const geometry = feature.getGeometry() as Geometry | undefined;
-    const type = geometry?.getType() ?? "Point";
-    const selected = isSelected(String(feature.getId() ?? ""));
+    const geom = (feature as { getGeometry?: () => Geometry | undefined }).getGeometry?.();
+    const type =
+      (feature as { getType?: () => string }).getType?.() ??
+      geom?.getType() ??
+      "Point";
+    const rawId =
+      feature.getId?.() ??
+      feature.get("_id") ??
+      feature.get("id") ??
+      "";
+    const featureId = String(rawId);
+    const selected = isSelected(featureId);
     const options: StyleOptions = { resolution, selected, kind: type };
     const label = labelFor(feature, layer.style.labelField);
 
     switch (type) {
       case "Point":
       case "MultiPoint": {
-        const featureId = String(feature.getId() ?? "");
         const hasCameraProps =
           isCameraLayer ||
           feature.get("snapshot_url") !== undefined ||

@@ -23,6 +23,10 @@ import {
 } from "../../lib/gis/library";
 import type { LibraryProduct } from "../../lib/gis/library";
 import {
+  isTauriEnvironment,
+  registerGeoJsonWithRust,
+} from "../../lib/gis/tiledBackend";
+import {
   describeError,
   exportLayerAs,
   importDatasetFiles,
@@ -197,22 +201,48 @@ export function DatasetsPanel() {
 
     try {
       const results = await loadLibraryProduct(product);
+      const isTauri = isTauriEnvironment();
+
+      const layerInputs = await Promise.all(
+        results.map(async (result, idx) => {
+          const layerId = `${product.id}_${idx}_${Date.now().toString(36)}`;
+          let tileUrl: string | undefined = undefined;
+          let format = result.format ?? "geojson";
+
+          if (isTauri) {
+            const registered = await registerGeoJsonWithRust(
+              layerId,
+              result.features,
+            );
+            if (registered?.success) {
+              tileUrl = registered.tileUrl;
+              format = "mvt";
+            }
+          }
+
+          return {
+            id: layerId,
+            name: result.name ?? product.name,
+            features: result.features,
+            crs: result.crs ?? GEOGRAPHIC_CRS,
+            format,
+            tileUrl,
+            source: `${product.id}:${result.name ?? "layer"}`,
+          };
+        }),
+      );
+
       const { dataset, layers: created } = addDataset({
         name: product.name,
         kind: "library",
-        layers: results.map((result) => ({
-          name: result.name ?? product.name,
-          features: result.features,
-          crs: result.crs ?? GEOGRAPHIC_CRS,
-          format: "geojson",
-          source: `${product.id}:${result.name ?? "layer"}`,
-        })),
+        layers: layerInputs,
       });
 
+      const isMvt = created.some((l) => l.format === "mvt");
       notify(
         created.length === 1 ?
-          `Added “${dataset.name}” · ${formatCount(created[0].features.length)} features`
-          : `Added “${dataset.name}” · ${created.length} layers`,
+          `Added “${dataset.name}” · ${formatCount(created[0].features.length)} features${isMvt ? " (Vector Tiles)" : ""}`
+          : `Added “${dataset.name}” · ${created.length} layers${isMvt ? " (Vector Tiles)" : ""}`,
       );
     } catch (error) {
       notify(describeError(error));

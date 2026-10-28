@@ -7,15 +7,18 @@ import {
   type Geometry as OlGeometry,
 } from "ol/geom";
 import GeoJSON from "ol/format/GeoJSON";
+import MVT from "ol/format/MVT";
 import OlMap from "ol/Map";
 import View from "ol/View";
 import type BaseLayer from "ol/layer/Base";
 import LayerGroup from "ol/layer/Group";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
+import VectorTileLayer from "ol/layer/VectorTile";
 import { unByKey } from "ol/Observable";
 import { fromLonLat, transform } from "ol/proj";
 import VectorSource from "ol/source/Vector";
+import VectorTileSource from "ol/source/VectorTile";
 import XYZ from "ol/source/XYZ";
 import { Fill, Stroke, Style, Text } from "ol/style";
 import type { StyleFunction } from "ol/style/Style";
@@ -243,10 +246,11 @@ function createBasemapLayers(active: BasemapId): BasemapLayers {
 }
 
 interface LayerBinding {
-  layer: VectorLayer<VectorSource>;
+  layer: VectorLayer<VectorSource> | VectorTileLayer;
   features: DatasetLayer["features"];
   filters: DatasetLayer["filters"];
   style: DatasetLayer["style"];
+  tileUrl?: string;
 }
 
 export function mountMap(target: HTMLElement): () => void {
@@ -310,30 +314,82 @@ export function mountMap(target: HTMLElement): () => void {
 
     layers.forEach((layer, index) => {
       let binding = bindings.get(layer.id);
+      const isMvt = Boolean(layer.tileUrl || layer.format === "mvt");
+      const tileUrl = layer.tileUrl ?? `strata://tiles/${layer.id}/{z}/{x}/{y}.pbf`;
 
       if (!binding) {
-        const vectorLayer = new VectorLayer({
-          source: new VectorSource({ features: toOlFeatures(layer) }),
-          style: createDatasetStyle(layer, isSelectedIn(layer.id)),
-          declutter: true,
-          properties: { id: layer.id, dataset: true },
-        });
+        if (isMvt) {
+          const vtLayer = new VectorTileLayer({
+            source: new VectorTileSource({
+              format: new MVT({ idProperty: "id" }),
+              url: tileUrl,
+              maxZoom: 22,
+            }),
+            style: createDatasetStyle(layer, isSelectedIn(layer.id)),
+            declutter: true,
+            properties: { id: layer.id, dataset: true },
+          });
 
-        map.addLayer(vectorLayer);
-        binding = {
-          layer: vectorLayer,
-          features: layer.features,
-          filters: layer.filters,
-          style: layer.style,
-        };
-        bindings.set(layer.id, binding);
-      } else if (
-        binding.features !== layer.features ||
-        binding.filters !== layer.filters
-      ) {
-        binding.layer.setSource(
-          new VectorSource({ features: toOlFeatures(layer) }),
-        );
+          map.addLayer(vtLayer);
+          binding = {
+            layer: vtLayer,
+            features: layer.features,
+            filters: layer.filters,
+            style: layer.style,
+            tileUrl,
+          };
+          bindings.set(layer.id, binding);
+        } else {
+          const vectorLayer = new VectorLayer({
+            source: new VectorSource({ features: toOlFeatures(layer) }),
+            style: createDatasetStyle(layer, isSelectedIn(layer.id)),
+            declutter: true,
+            properties: { id: layer.id, dataset: true },
+          });
+
+          map.addLayer(vectorLayer);
+          binding = {
+            layer: vectorLayer,
+            features: layer.features,
+            filters: layer.filters,
+            style: layer.style,
+          };
+          bindings.set(layer.id, binding);
+        }
+      } else {
+        const currentIsMvt = binding.layer instanceof VectorTileLayer;
+        if (isMvt !== currentIsMvt || (isMvt && binding.tileUrl !== tileUrl)) {
+          map.removeLayer(binding.layer);
+          if (isMvt) {
+            const vtLayer = new VectorTileLayer({
+              source: new VectorTileSource({
+                format: new MVT({ idProperty: "id" }),
+                url: tileUrl,
+                maxZoom: 22,
+              }),
+              style: createDatasetStyle(layer, isSelectedIn(layer.id)),
+              declutter: true,
+              properties: { id: layer.id, dataset: true },
+            });
+            map.addLayer(vtLayer);
+            binding.layer = vtLayer;
+            binding.tileUrl = tileUrl;
+          } else {
+            const vectorLayer = new VectorLayer({
+              source: new VectorSource({ features: toOlFeatures(layer) }),
+              style: createDatasetStyle(layer, isSelectedIn(layer.id)),
+              declutter: true,
+              properties: { id: layer.id, dataset: true },
+            });
+            map.addLayer(vectorLayer);
+            binding.layer = vectorLayer;
+            binding.tileUrl = undefined;
+          }
+        } else if (!isMvt && (binding.features !== layer.features || binding.filters !== layer.filters)) {
+          (binding.layer as VectorLayer<VectorSource>).setSource(
+            new VectorSource({ features: toOlFeatures(layer) }),
+          );
+        }
         binding.features = layer.features;
         binding.filters = layer.filters;
       }
@@ -382,10 +438,11 @@ export function mountMap(target: HTMLElement): () => void {
 
     map.forEachFeatureAtPixel(
       pixel,
-      (feature) => {
+      (feature, layer) => {
+        const layerId = layer ? String(layer.get("id") ?? "") : String(feature.get("layerId") ?? "");
         hits.push({
           feature,
-          layerId: String(feature.get("layerId") ?? ""),
+          layerId,
         });
         return true;
       },
@@ -442,17 +499,22 @@ export function mountMap(target: HTMLElement): () => void {
     const hit = topFeatureAt(event.pixel);
     const store = useMapStore.getState();
 
-    let hover: { layerId: string; featureId: string; lon: number; lat: number } | null = null;
+    let hover: { layerId: string; featureId: string; lon: number; lat: number; properties?: Record<string, unknown> } | null = null;
 
     if (hit) {
-      const featureId = hit.feature.getId();
+      const rawId =
+        hit.feature.getId?.() ??
+        hit.feature.get("_id") ??
+        hit.feature.get("id");
 
-      if (featureId !== undefined && featureId !== null) {
+      if (rawId !== undefined && rawId !== null) {
+        const properties = (hit.feature as { getProperties?: () => Record<string, unknown> }).getProperties?.();
         hover = {
           layerId: hit.layerId,
-          featureId: String(featureId),
+          featureId: String(rawId),
           lon,
           lat,
+          properties,
         };
       }
     }
@@ -584,16 +646,19 @@ export function mountMap(target: HTMLElement): () => void {
       return;
     }
 
-    const featureId = hit.feature.getId();
+    const rawId =
+      hit.feature.getId?.() ??
+      hit.feature.get("_id") ??
+      hit.feature.get("id");
 
-    if (featureId === undefined || featureId === null) {
+    if (rawId === undefined || rawId === null) {
       return;
     }
 
     // A click selects the feature and opens the detailed feature panel directly (details, not popup)
     useProjectStore.getState().select({
       layerId: hit.layerId,
-      featureId: String(featureId),
+      featureId: String(rawId),
     });
     useMapStore.getState().setPopup(null);
     useMapStore.getState().setActiveFeature(null);

@@ -1,0 +1,179 @@
+# STRATA — Declarative Geospatial Dataset Manifest
+# Master specification for built-in and out-of-core GIS datasets
+
+[[dataset]]
+id = "cctv_cameras"
+name = "Traffic Cameras & Viewsheds"
+description = "Global traffic cameras with 3D ground heights and field-of-view coverage cones"
+category = "surveillance.traffic"
+license = "Open data DOTs & municipal transport portals"
+attribution = "Open data DOTs & municipal transport portals"
+requires_api_key = false
+min_zoom = 2
+default_crs = "EPSG:4326"
+
+[dataset.source]
+type = "topojson"
+path = "datasets/cctv-cameras.topo.json"
+objects = ["cameras", "viewsheds"]
+
+[dataset.style]
+geometry_type = "mixed"
+point_color = "#3b82f6"
+stroke_color = "#60a5fa"
+icon = "camera"
+cluster_below_zoom = 6
+
+[[dataset]]
+id = "osm_datacenters"
+name = "Datacenters"
+description = "OSM data-centre footprints"
+category = "infrastructure.compute"
+license = "ODbL 1.0"
+attribution = "OpenStreetMap contributors"
+requires_api_key = false
+min_zoom = 3
+default_crs = "EPSG:4326"
+
+[dataset.source]
+type = "topojson"
+path = "datasets/datacenters.topo.json"
+objects = ["areas"]
+
+[dataset.style]
+geometry_type = "mixed"
+point_color = "#ff7b29"
+stroke_color = "#ffffff"
+cluster_below_zoom = 6
+
+[[dataset]]
+id = "submarine_cables"
+name = "Submarine Cables & Landings"
+description = "Undersea fiber optic cable routes and coastal landing points"
+category = "infrastructure.telecom"
+license = "CC BY-NC-SA 3.0"
+attribution = "© TeleGeography · submarinecablemap.com"
+requires_api_key = false
+min_zoom = 2
+default_crs = "EPSG:4326"
+
+[dataset.source]
+type = "topojson"
+path = "datasets/submarine-cables.topo.json"
+objects = ["cables", "landings"]
+
+[dataset.style]
+geometry_type = "mixed"
+point_color = "#06b6d4"
+stroke_color = "#22d3ee"
+cluster_below_zoom = 4
+
+[[dataset]]
+id = "osm_military"
+name = "Military Areas"
+description = "OSM named bases, ranges and training areas"
+category = "security.military"
+license = "ODbL 1.0"
+attribution = "OpenStreetMap contributors"
+requires_api_key = false
+min_zoom = 3
+default_crs = "EPSG:4326"
+
+[dataset.source]
+type = "topojson"
+path = "datasets/military-areas.topo.json"
+objects = ["areas"]
+
+[dataset.style]
+geometry_type = "Point"
+point_color = "#ef4444"
+stroke_color = "#f87171"
+cluster_below_zoom = 5
+
+[[dataset]]
+id = "osm_dams"
+name = "Dams & Reservoirs"
+description = "OSM dam footprints and hydroelectric infrastructure"
+category = "infrastructure.water"
+license = "ODbL 1.0"
+attribution = "OpenStreetMap contributors"
+requires_api_key = false
+min_zoom = 3
+default_crs = "EPSG:4326"
+
+[dataset.source]
+type = "topojson"
+path = "datasets/dams.topo.json"
+objects = ["areas"]
+
+[dataset.style]
+geometry_type = "mixed"
+point_color = "#10b981"
+stroke_color = "#34d399"
+cluster_below_zoom = 6
+
+[[dataset]]
+id = "us_counties"
+name = "US Counties"
+description = "US Census cartographic boundary counties"
+category = "boundaries.admin"
+license = "Public Domain"
+attribution = "US Census Bureau"
+requires_api_key = false
+min_zoom = 4
+default_crs = "EPSG:4326"
+
+[dataset.source]
+type = "topojson"
+path = "datasets/us-counties.topo.json"
+objects = ["areas"]
+
+[dataset.style]
+geometry_type = "Polygon"
+point_color = "#64748b"
+stroke_color = "#64748b"
+cluster_below_zoom = 4
+
+[[dataset]]
+id = "world_admin1"
+name = "States & Provinces"
+description = "Natural Earth 10m first-level administrative units"
+category = "boundaries.admin"
+license = "Public Domain"
+attribution = "Natural Earth"
+requires_api_key = false
+min_zoom = 2
+default_crs = "EPSG:4326"
+
+[dataset.source]
+type = "topojson"
+path = "datasets/world-admin1.topo.json"
+objects = ["areas"]
+
+[dataset.style]
+geometry_type = "Polygon"
+point_color = "#94a3b8"
+stroke_color = "#94a3b8"
+cluster_below_zoom = 3
+
+[[dataset]]
+id = "bgd_adm2"
+name = "Bangladesh Districts"
+description = "OCHA COD-AB 64 administrative level 2 districts"
+category = "boundaries.admin"
+license = "CC BY-IGO"
+attribution = "OCHA COD-AB"
+requires_api_key = false
+min_zoom = 5
+default_crs = "EPSG:4326"
+
+[dataset.source]
+type = "topojson"
+path = "datasets/bgd-adm2.topo.json"
+objects = ["areas"]
+
+[dataset.style]
+geometry_type = "Polygon"
+point_color = "#64748b"
+stroke_color = "#64748b"
+cluster_below_zoom = 5

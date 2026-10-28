@@ -11,6 +11,7 @@ export interface MapPopup {
   featureId: string;
   lon: number;
   lat: number;
+  properties?: Record<string, unknown>;
 }
 
 interface MapState {

@@ -29,6 +29,7 @@ rstar = "0.13"
 fast-mvt = "0.7"
 geozero = { version = "0.15", features = ["with-mvt"] }
 flatgeobuf = "6.0"
+toml = "0.8"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

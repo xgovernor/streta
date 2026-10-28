@@ -83,7 +83,8 @@ export type LayerFormat =
   | "wkt"
   | "sample"
   | "shapefile"
-  | "gpkg";
+  | "gpkg"
+  | "mvt";
 
 /** Every format a stored layer may declare; unknown values fall back to GeoJSON. */
 export const LAYER_FORMATS: LayerFormat[] = [
@@ -93,6 +94,7 @@ export const LAYER_FORMATS: LayerFormat[] = [
   "sample",
   "shapefile",
   "gpkg",
+  "mvt",
 ];
 
 export function isLayerFormat(value: unknown): value is LayerFormat {
@@ -132,6 +134,8 @@ export interface DatasetLayer {
   /** CRS of the stored coordinates, e.g. "EPSG:4326". */
   crs: string;
   format: LayerFormat;
+  /** Optional vector tile endpoint, e.g. strata://tiles/{datasetId}/{z}/{x}/{y}.pbf */
+  tileUrl?: string;
   /** Original file name or path, when the layer came from disk. */
   source: string | null;
   geometryKind: GeometryKind | "Mixed";

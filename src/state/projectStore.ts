@@ -115,10 +115,12 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
     libraryId?: string | null;
     source?: string | null;
     layers: {
+      id?: string;
       name: string;
       features: FeatureRecord[];
       crs: string;
       format: DatasetLayer["format"];
+      tileUrl?: string;
       source?: string | null;
       style?: Partial<LayerStyle>;
       color?: string;
@@ -142,11 +144,13 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
       existingLayerNames.push(layerName);
 
       return createLayer({
+        id: layer.id,
         datasetId: dataset.id,
         name: layerName,
         features: layer.features,
         crs: layer.crs,
         format: layer.format,
+        tileUrl: layer.tileUrl,
         source: layer.source ?? null,
         style: layer.style,
         color: layer.color,

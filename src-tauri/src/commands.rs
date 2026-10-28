@@ -74,3 +74,9 @@ pub fn has_layer(
     let guard = store.read().map_err(|e| e.to_string())?;
     Ok(guard.has_dataset(&dataset_id))
 }
+
+#[tauri::command]
+pub fn get_dataset_manifest() -> Result<Vec<crate::manifest::DatasetManifestEntry>, String> {
+    let manifest = crate::manifest::Manifest::load_embedded()?;
+    Ok(manifest.datasets)
+}
