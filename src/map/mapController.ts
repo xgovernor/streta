@@ -851,8 +851,40 @@ export function mountMap(target: HTMLElement): () => void {
   if (initTelemetry.flights.length > 0) updateFlightFeatures(initTelemetry.flights);
   if (initTelemetry.earthquakes.length > 0) updateEarthquakeFeatures(initTelemetry.earthquakes);
   if (initTelemetry.satellites.length > 0) updateSatelliteFeatures(initTelemetry.satellites);
+  if (
+    initTelemetry.flights.length === 0 &&
+    initTelemetry.earthquakes.length === 0 &&
+    initTelemetry.satellites.length === 0
+  ) {
+    void initTelemetry.refreshFeeds();
+  }
+
+  let autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  const setupAutoRefresh = (seconds: number) => {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+    if (seconds > 0) {
+      autoRefreshTimer = setInterval(() => {
+        void useTelemetryStore.getState().refreshFeeds();
+      }, seconds * 1000);
+    }
+  };
+  setupAutoRefresh(initTelemetry.autoRefreshSeconds);
+
+  const autoRefreshSub = useTelemetryStore.subscribe((state, prev) => {
+    if (state.autoRefreshSeconds !== prev.autoRefreshSeconds) {
+      setupAutoRefresh(state.autoRefreshSeconds);
+    }
+  });
 
   const teardown = () => {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+    autoRefreshSub();
     activeMeasureClear = null;
     window.cancelAnimationFrame(sizeFrame);
     if (hoverTimer) {

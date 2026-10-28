@@ -33,8 +33,10 @@ import {
   reloadRecentLayer,
 } from "../../lib/projectFile";
 import { useProjectStore } from "../../state/projectStore";
+import { useTelemetryStore } from "../../state/telemetryStore";
 import { useUiStore } from "../../state/uiStore";
 import { PanelShell } from "../PanelShell";
+import { LiveFeedsSection } from "./LiveFeedsSection";
 import {
   EmptyState,
   ICON_BUTTON,
@@ -42,6 +44,7 @@ import {
   PRIMARY_BUTTON,
   SECONDARY_BUTTON,
   SectionLabel,
+  Switch,
 } from "./shared";
 
 const DATASET_KIND_LABEL: Record<string, string> = {
@@ -53,37 +56,6 @@ const DATASET_KIND_LABEL: Record<string, string> = {
 
 const STEP_BUTTON =
   "grid h-[11px] w-4 place-items-center rounded-[3px] text-ink-muted transition-colors hover:bg-tint hover:text-ink disabled:opacity-30";
-
-function Switch({
-  checked,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  label: string;
-  onChange: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      className={cx(
-        "relative h-4 w-7 flex-none rounded-[10px] border transition-colors",
-        checked ? "border-accent bg-accent" : "border-line bg-tint",
-      )}
-      onClick={onChange}
-    >
-      <span
-        className={cx(
-          "absolute left-0.5 top-0.5 size-2.5 rounded-full transition-[transform,background-color] duration-150",
-          checked ? "translate-x-3 bg-on-accent" : "bg-ink-muted",
-        )}
-      />
-    </button>
-  );
-}
 
 /** The dataset name edits in place, like a layer's does in its properties. */
 function DatasetNameField({ id, name }: { id: string; name: string }) {
@@ -154,6 +126,10 @@ export function DatasetsPanel() {
     (total, layer) => total + layer.features.length,
     0,
   );
+  const flightsCount = useTelemetryStore((state) => state.flightsEnabled ? state.flights.length : 0);
+  const earthquakesCount = useTelemetryStore((state) => state.earthquakesEnabled ? state.earthquakes.length : 0);
+  const satellitesCount = useTelemetryStore((state) => state.satellitesEnabled ? state.satellites.length : 0);
+  const activeLiveCount = flightsCount + earthquakesCount + satellitesCount;
   // Top of the stack first, as the map composites it.
   const groups = groupLayers(datasets, layers).reverse();
 
@@ -316,7 +292,8 @@ export function DatasetsPanel() {
           <span>
             {groups.length} dataset{groups.length === 1 ? "" : "s"} ·{" "}
             {layers.length} layer{layers.length === 1 ? "" : "s"} ·{" "}
-            {formatCount(featureCount)} features
+            {formatCount(featureCount + activeLiveCount)} features
+            {activeLiveCount > 0 ? ` (${formatCount(activeLiveCount)} live)` : ""}
           </span>
         </>
       }
@@ -332,6 +309,8 @@ export function DatasetsPanel() {
           Open datasets
         </button>
       </div>
+
+      <LiveFeedsSection />
 
       <SectionLabel trailing="Loaded on demand">Dataset library</SectionLabel>
       <div className="flex flex-col gap-1.5">

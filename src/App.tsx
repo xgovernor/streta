@@ -12,10 +12,9 @@ import { Toast } from "./components/Toast";
 import { useProjectStore } from "./state/projectStore";
 import { useUiStore } from "./state/uiStore";
 
-const PANEL_KEYS: Record<string, "data" | "table" | "measure" | "telemetry"> = {
+const PANEL_KEYS: Record<string, "data" | "table" | "measure"> = {
   d: "data",
-  l: "telemetry",
-  r: "telemetry",
+  l: "data",
   t: "table",
   m: "measure",
   a: "measure",

@@ -93,6 +93,7 @@ mod tests {
             vertical_rate_mps: Some(0.0),
             on_ground: false,
             last_contact_epoch: 1000,
+            simulated: false,
         }];
         let bytes = pack_flights_binary(&flights);
         assert_eq!(bytes.len(), 32);

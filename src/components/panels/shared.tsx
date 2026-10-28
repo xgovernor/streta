@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 export const PRIMARY_BUTTON =
   "inline-flex h-[30px] items-center justify-center gap-1.5 rounded-[7px] border border-accent bg-accent text-[10.5px] font-semibold text-on-accent transition-[background-color,border-color,transform] hover:border-accent-strong hover:bg-accent-strong active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45";
@@ -120,5 +121,36 @@ export function LayerSwatch({
       }}
       aria-hidden="true"
     />
+  );
+}
+
+export function Switch({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className={cx(
+        "relative h-4 w-7 flex-none rounded-[10px] border transition-colors",
+        checked ? "border-accent bg-accent" : "border-line bg-tint",
+      )}
+      onClick={onChange}
+    >
+      <span
+        className={cx(
+          "absolute left-0.5 top-0.5 size-2.5 rounded-full transition-[transform,background-color] duration-150",
+          checked ? "translate-x-3 bg-on-accent" : "bg-ink-muted",
+        )}
+      />
+    </button>
   );
 }

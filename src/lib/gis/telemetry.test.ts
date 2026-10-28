@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
+  earthquakeTargetsToFeatures,
   fetchLiveEarthquakes,
   fetchLiveFlights,
   fetchLiveSatellites,
+  flightTargetsToFeatures,
+  satelliteTargetsToFeatures,
 } from "./tiledBackend";
 import { useTelemetryStore } from "../../state/telemetryStore";
 
@@ -85,5 +88,26 @@ describe("Phase 4 Live Telemetry & Feeds", () => {
     // Clear selection
     store.setSelectedTarget(null);
     expect(useTelemetryStore.getState().selectedTarget).toBeNull();
+  });
+
+  it("converts live telemetry targets into standard GIS FeatureRecord items for datasets panel", async () => {
+    const store = useTelemetryStore.getState();
+    await store.refreshFeeds();
+    const { flights, earthquakes, satellites } = useTelemetryStore.getState();
+
+    const flightFeatures = flightTargetsToFeatures(flights);
+    expect(flightFeatures.length).toBe(flights.length);
+    expect(flightFeatures[0].geometry.type).toBe("Point");
+    expect(flightFeatures[0].properties.callsign).toBeDefined();
+
+    const quakeFeatures = earthquakeTargetsToFeatures(earthquakes);
+    expect(quakeFeatures.length).toBe(earthquakes.length);
+    expect(quakeFeatures[0].geometry.type).toBe("Point");
+    expect(typeof quakeFeatures[0].properties.magnitude).toBe("number");
+
+    const satFeatures = satelliteTargetsToFeatures(satellites);
+    expect(satFeatures.length).toBe(satellites.length);
+    expect(satFeatures[0].geometry.type).toBe("Point");
+    expect(satFeatures[0].properties.name).toBeDefined();
   });
 });

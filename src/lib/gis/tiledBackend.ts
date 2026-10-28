@@ -780,3 +780,63 @@ export async function fetchTelemetryBinary(
   }
   return new Float32Array(0);
 }
+
+/** Converts live FlightTarget items to standard GIS FeatureRecord items for analytical workflows. */
+export function flightTargetsToFeatures(flights: FlightTarget[]): FeatureRecord[] {
+  return flights.map((f) => ({
+    id: f.icao24,
+    geometry: {
+      type: "Point",
+      coordinates: [f.longitude, f.latitude],
+    },
+    properties: {
+      callsign: f.callsign || f.icao24,
+      icao24: f.icao24,
+      originCountry: f.originCountry,
+      altitudeMeters: Math.round(f.altitudeMeters),
+      altitudeFeet: Math.round(f.altitudeMeters * 3.28084),
+      velocityKmh: Math.round(f.velocityMps * 3.6),
+      velocityKnots: Math.round(f.velocityMps * 1.94384),
+      headingDeg: Math.round(f.headingDeg),
+      verticalRateMps: f.verticalRateMps,
+      squawk: f.squawk || "—",
+    },
+  }));
+}
+
+/** Converts live EarthquakeTarget items to standard GIS FeatureRecord items. */
+export function earthquakeTargetsToFeatures(earthquakes: EarthquakeTarget[]): FeatureRecord[] {
+  return earthquakes.map((e) => ({
+    id: e.id,
+    geometry: {
+      type: "Point",
+      coordinates: [e.longitude, e.latitude],
+    },
+    properties: {
+      place: e.place,
+      magnitude: Number(e.magnitude.toFixed(1)),
+      depthKm: Number(e.depthKm.toFixed(1)),
+      time: new Date(e.time).toISOString(),
+      tsunami: e.tsunami ? "Yes" : "No",
+      significance: e.significance,
+      alert: e.alert || "—",
+    },
+  }));
+}
+
+/** Converts live SatelliteTarget items to standard GIS FeatureRecord items. */
+export function satelliteTargetsToFeatures(satellites: SatelliteTarget[]): FeatureRecord[] {
+  return satellites.map((s) => ({
+    id: String(s.noradId),
+    geometry: {
+      type: "Point",
+      coordinates: [s.longitude, s.latitude],
+    },
+    properties: {
+      name: s.name,
+      noradId: s.noradId,
+      altitudeKm: Number((s.altitudeKm ?? 0).toFixed(1)),
+      velocityKmh: Math.round(s.velocityKmh ?? 0),
+    },
+  }));
+}
