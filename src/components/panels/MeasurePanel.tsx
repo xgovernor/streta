@@ -68,7 +68,8 @@ export function MeasurePanel() {
   const summary = useProjectStore((state) => state.measureSummary);
   const layers = useProjectStore((state) => state.layers);
 
-  const [activeTab, setActiveTab] = useState<AnalysisTab>("distance");
+  const activeTab = useUiStore((state) => state.analysisTab);
+  const setActiveTab = useUiStore((state) => state.setAnalysisTab);
 
   // Elevation Profile state
   const [elevationResult, setElevationResult] = useState<ElevationProfileResult | null>(null);

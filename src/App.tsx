@@ -18,6 +18,7 @@ const PANEL_KEYS: Record<string, "data" | "table" | "measure"> = {
   l: "data",
   t: "table",
   m: "measure",
+  a: "measure",
 };
 
 function App() {

@@ -8,8 +8,11 @@ import type {
   ThemeMode,
 } from "../lib/gis/types";
 
+export type AnalysisTab = "distance" | "area" | "elevation" | "buffer";
+
 interface UiState {
   activePanel: PanelId | null;
+  analysisTab: AnalysisTab;
   basemap: BasemapId;
   theme: ThemeMode;
   coordFormat: CoordinateFormat;
@@ -18,6 +21,8 @@ interface UiState {
   openPanel: (panel: PanelId) => void;
   togglePanel: (panel: PanelId) => void;
   closePanel: () => void;
+  setAnalysisTab: (tab: AnalysisTab) => void;
+  openAnalysisTab: (tab: AnalysisTab) => void;
   setBasemap: (basemap: BasemapId) => void;
   setTheme: (theme: ThemeMode) => void;
   setCoordFormat: (format: CoordinateFormat) => void;
@@ -84,6 +89,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       activePanel: null,
+      analysisTab: "distance",
       ...DEFAULT_PREFERENCES,
       toast: null,
 
@@ -95,6 +101,11 @@ export const useUiStore = create<UiState>()(
         })),
 
       closePanel: () => set({ activePanel: null }),
+
+      setAnalysisTab: (tab) => set({ analysisTab: tab }),
+
+      openAnalysisTab: (tab) =>
+        set({ activePanel: "measure", analysisTab: tab }),
 
       setBasemap: (basemap) => set({ basemap }),
 

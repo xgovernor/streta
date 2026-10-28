@@ -45,9 +45,10 @@ function CompassButton() {
 }
 
 export function RightRibbon() {
-  const openPanel = useUiStore((state) => state.openPanel);
+  const openAnalysisTab = useUiStore((state) => state.openAnalysisTab);
+  const analysisTab = useUiStore((state) => state.analysisTab);
+  const togglePanel = useUiStore((state) => state.togglePanel);
   const activePanel = useUiStore((state) => state.activePanel);
-  const measureMode = useProjectStore((state) => state.measureMode);
   const setMeasureMode = useProjectStore((state) => state.setMeasureMode);
   const layerCount = useProjectStore((state) => state.layers.length);
   const [fullscreen, setFullscreen] = useState(false);
@@ -63,9 +64,15 @@ export function RightRibbon() {
     };
   }, []);
 
-  const toggleMeasure = (mode: "distance" | "area") => {
-    setMeasureMode(measureMode === mode ? "off" : mode);
-    openPanel("measure");
+  const toggleTool = (tab: "distance" | "area" | "elevation" | "buffer") => {
+    if (activePanel === "measure" && analysisTab === tab) {
+      togglePanel("measure");
+    } else {
+      openAnalysisTab(tab);
+      if (tab === "distance") setMeasureMode("distance");
+      else if (tab === "area") setMeasureMode("area");
+      else setMeasureMode("off");
+    }
   };
 
   const locate = () => {
@@ -151,33 +158,29 @@ export function RightRibbon() {
           icon={Ruler}
           side="right"
           shortcut="M"
-          active={measureMode === "distance" && activePanel === "measure"}
-          onClick={() => toggleMeasure("distance")}
+          active={activePanel === "measure" && analysisTab === "distance"}
+          onClick={() => toggleTool("distance")}
         />
         <ToolButton
           label="Measure area"
           icon={Hexagon}
           side="right"
-          active={measureMode === "area" && activePanel === "measure"}
-          onClick={() => toggleMeasure("area")}
+          active={activePanel === "measure" && analysisTab === "area"}
+          onClick={() => toggleTool("area")}
         />
         <ToolButton
           label="Elevation profile"
           icon={Mountain}
           side="right"
-          active={activePanel === "measure" && measureMode === "off"}
-          onClick={() => {
-            openPanel("measure");
-          }}
+          active={activePanel === "measure" && analysisTab === "elevation"}
+          onClick={() => toggleTool("elevation")}
         />
         <ToolButton
           label="Proximity buffer"
           icon={Radar}
           side="right"
-          active={activePanel === "measure" && measureMode === "off"}
-          onClick={() => {
-            openPanel("measure");
-          }}
+          active={activePanel === "measure" && analysisTab === "buffer"}
+          onClick={() => toggleTool("buffer")}
         />
       </div>
 
