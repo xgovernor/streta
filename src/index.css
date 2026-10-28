@@ -35,6 +35,7 @@
 
   --animate-panel-left: panel-in-left 180ms var(--ease-out) both;
   --animate-panel-right: panel-in-right 180ms var(--ease-out) both;
+  --animate-panel-bottom: panel-in-bottom 180ms var(--ease-out) both;
   --animate-toast: toast-in 180ms var(--ease-out) both;
   --animate-pulse-dot: pulse-dot 2.4s ease-in-out infinite;
 }
@@ -206,6 +207,13 @@
   from {
     opacity: 0;
     transform: translate3d(8px, 0, 0) scale(0.99);
+  }
+}
+
+@keyframes panel-in-bottom {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
   }
 }
 
