@@ -12,10 +12,10 @@ import { Toast } from "./components/Toast";
 import { useProjectStore } from "./state/projectStore";
 import { useUiStore } from "./state/uiStore";
 
-const PANEL_KEYS: Record<string, "data" | "table" | "measure"> = {
+const PANEL_KEYS: Record<string, "data" | "table" | "measure" | "telemetry"> = {
   d: "data",
-  // The layer stack lives inside the Datasets panel; both keys open it.
-  l: "data",
+  l: "telemetry",
+  r: "telemetry",
   t: "table",
   m: "measure",
   a: "measure",

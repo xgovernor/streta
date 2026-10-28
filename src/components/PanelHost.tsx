@@ -9,6 +9,7 @@ import { MeasurePanel } from "./panels/MeasurePanel";
 import { ProjectPanel } from "./panels/ProjectPanel";
 import { SearchPanel } from "./panels/SearchPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
+import { TelemetryPanel } from "./panels/TelemetryPanel";
 
 export function PanelHost() {
   const activePanel = useUiStore((state) => state.activePanel);
@@ -34,6 +35,8 @@ export function PanelHost() {
       return <FeaturePanel />;
     case "settings":
       return <SettingsPanel />;
+    case "telemetry":
+      return <TelemetryPanel />;
     default:
       return null;
   }

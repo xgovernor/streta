@@ -50,6 +50,15 @@ import { useMapStore } from "../state/mapStore";
 import { useProjectStore } from "../state/projectStore";
 import { useUiStore } from "../state/uiStore";
 import { createDatasetStyle, measureStyle } from "./vectorStyle";
+import {
+  createTelemetryLayers,
+  updateFlightFeatures,
+  updateEarthquakeFeatures,
+  updateSatelliteFeatures,
+  setTelemetryLayerVisibility,
+  clearTelemetryLayers,
+} from "./webglTelemetry";
+import { useTelemetryStore } from "../state/telemetryStore";
 
 type BasemapLayers = Record<BasemapId, BaseLayer>;
 
@@ -308,6 +317,8 @@ export function mountMap(target: HTMLElement): () => void {
   });
 
   activeMap = map;
+
+  createTelemetryLayers(map);
 
   if (import.meta.env.DEV) {
     (window as unknown as { __strataMap?: OlMap }).__strataMap = map;
@@ -656,6 +667,27 @@ export function mountMap(target: HTMLElement): () => void {
     hoveredTarget = null;
     isOverPopup = false;
 
+    // Check if user clicked a telemetry target (flight, earthquake, or satellite)
+    let hitTelemetry: { type: "flight" | "earthquake" | "satellite"; data: unknown } | null = null;
+    map.forEachFeatureAtPixel(
+      event.pixel,
+      (feature) => {
+        const t = feature.get("telemetryType");
+        if (t === "flight" || t === "earthquake" || t === "satellite") {
+          hitTelemetry = { type: t, data: feature.get("raw") };
+          return true;
+        }
+        return false;
+      },
+      { hitTolerance: 8 }
+    );
+
+    if (hitTelemetry) {
+      useTelemetryStore.getState().setSelectedTarget(hitTelemetry as any);
+      useUiStore.getState().openPanel("telemetry");
+      return;
+    }
+
     const hit = topFeatureAt(event.pixel);
 
     if (!hit) {
@@ -794,6 +826,32 @@ export function mountMap(target: HTMLElement): () => void {
   applyMeasureMode(project.measureMode);
   emitCamera();
 
+  const telemetryUnsubscribe = useTelemetryStore.subscribe((state, previous) => {
+    if (state.flights !== previous.flights) {
+      updateFlightFeatures(state.flights);
+    }
+    if (state.earthquakes !== previous.earthquakes) {
+      updateEarthquakeFeatures(state.earthquakes);
+    }
+    if (state.satellites !== previous.satellites) {
+      updateSatelliteFeatures(state.satellites);
+    }
+    if (state.flightsEnabled !== previous.flightsEnabled) {
+      setTelemetryLayerVisibility("flights", state.flightsEnabled);
+    }
+    if (state.earthquakesEnabled !== previous.earthquakesEnabled) {
+      setTelemetryLayerVisibility("earthquakes", state.earthquakesEnabled);
+    }
+    if (state.satellitesEnabled !== previous.satellitesEnabled) {
+      setTelemetryLayerVisibility("satellites", state.satellitesEnabled);
+    }
+  });
+
+  const initTelemetry = useTelemetryStore.getState();
+  if (initTelemetry.flights.length > 0) updateFlightFeatures(initTelemetry.flights);
+  if (initTelemetry.earthquakes.length > 0) updateEarthquakeFeatures(initTelemetry.earthquakes);
+  if (initTelemetry.satellites.length > 0) updateSatelliteFeatures(initTelemetry.satellites);
+
   const teardown = () => {
     activeMeasureClear = null;
     window.cancelAnimationFrame(sizeFrame);
@@ -820,6 +878,8 @@ export function mountMap(target: HTMLElement): () => void {
 
     projectUnsubscribe();
     uiUnsubscribe();
+    telemetryUnsubscribe();
+    clearTelemetryLayers();
 
     target.classList.remove("is-ready");
     map.setTarget(undefined);

@@ -4,11 +4,22 @@ pub mod tiles;
 pub mod commands;
 pub mod manifest;
 pub mod analysis;
+pub mod telemetry;
 
 use tiles::{DatasetStore, SharedDatasetStore};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
+            // SAFETY: Executed at the very start of the process before worker threads are spawned
+            unsafe {
+                std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            }
+        }
+    }
+
     let store: SharedDatasetStore = Arc::new(RwLock::new(DatasetStore::new()));
     let protocol_store = store.clone();
 
@@ -30,6 +41,10 @@ pub fn run() {
             commands::measure_geodesic,
             commands::spatial_buffer_query,
             commands::elevation_profile,
+            commands::fetch_live_flights,
+            commands::fetch_live_earthquakes,
+            commands::fetch_live_satellites,
+            commands::fetch_telemetry_binary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

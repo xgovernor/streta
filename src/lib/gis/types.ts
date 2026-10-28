@@ -19,7 +19,8 @@ export type PanelId =
   | "table"
   | "measure"
   | "join"
-  | "project";
+  | "project"
+  | "telemetry";
 
 export type ThemeMode = "dark" | "light";
 
@@ -205,5 +206,43 @@ export interface MeasureSummary {
   area: number;
   vertices: number;
   geodesicDetails?: import("./tiledBackend").GeodesicMeasurementResult;
+}
+
+export interface FlightTarget {
+  icao24: string;
+  callsign: string;
+  originCountry: string;
+  longitude: number;
+  latitude: number;
+  altitudeMeters: number;
+  velocityMps: number;
+  headingDeg: number;
+  verticalRateMps: number;
+  onGround: boolean;
+  squawk?: string | null;
+}
+
+export interface EarthquakeTarget {
+  id: string;
+  place: string;
+  magnitude: number;
+  time: number;
+  longitude: number;
+  latitude: number;
+  depthKm: number;
+  significance: number;
+  alert?: string | null;
+  tsunami: number;
+}
+
+export interface SatelliteTarget {
+  id: string;
+  name: string;
+  noradId: number;
+  longitude: number;
+  latitude: number;
+  altitudeKm: number;
+  velocityKmh: number;
+  groundTrack: [number, number][];
 }
 

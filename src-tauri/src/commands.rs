@@ -116,3 +116,46 @@ pub async fn elevation_profile(
 ) -> Result<crate::analysis::ElevationProfileResult, String> {
     crate::analysis::compute_elevation_profile(&coords, sample_count.unwrap_or(40)).await
 }
+
+#[tauri::command]
+pub async fn fetch_live_flights(
+    bbox: Option<(f64, f64, f64, f64)>,
+) -> Result<Vec<crate::telemetry::FlightTarget>, String> {
+    crate::telemetry::fetch_live_flights(bbox).await
+}
+
+#[tauri::command]
+pub async fn fetch_live_earthquakes(
+    period: Option<String>,
+) -> Result<Vec<crate::telemetry::EarthquakeTarget>, String> {
+    let p = period.as_deref().unwrap_or("day");
+    crate::telemetry::fetch_live_earthquakes(p).await
+}
+
+#[tauri::command]
+pub fn fetch_live_satellites() -> Result<Vec<crate::telemetry::SatelliteTarget>, String> {
+    Ok(crate::telemetry::compute_live_satellites())
+}
+
+#[tauri::command]
+pub async fn fetch_telemetry_binary(
+    feed_type: String,
+    bbox: Option<(f64, f64, f64, f64)>,
+) -> Result<Vec<u8>, String> {
+    match feed_type.as_str() {
+        "flights" | "adsb" => {
+            let flights = crate::telemetry::fetch_live_flights(bbox).await?;
+            Ok(crate::telemetry::pack_flights_binary(&flights))
+        }
+        "earthquakes" | "seismic" => {
+            let quakes = crate::telemetry::fetch_live_earthquakes("day").await?;
+            Ok(crate::telemetry::pack_earthquakes_binary(&quakes))
+        }
+        "satellites" | "orbits" => {
+            let sats = crate::telemetry::compute_live_satellites();
+            Ok(crate::telemetry::pack_satellites_binary(&sats))
+        }
+        _ => Err(format!("Unknown telemetry feed type: {}", feed_type)),
+    }
+}
+
