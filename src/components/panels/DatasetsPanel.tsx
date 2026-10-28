@@ -644,7 +644,7 @@ export function DatasetsPanel() {
                   <button
                     type="button"
                     className="px-1 text-[9.5px] font-semibold text-accent transition-opacity hover:opacity-80"
-                    onClick={() => void importFile()}
+                    onClick={() => void reload(entry.source, entry.name)}
                   >
                     Reload
                   </button>

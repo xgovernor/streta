@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Copy, Crosshair, ExternalLink, Frame, RefreshCw } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Camera, Copy, Crosshair, ExternalLink, Frame, Pause, Play, RefreshCw } from "lucide-react";
+import { resolveSnapshotUrl } from "../../lib/gis/cctv";
 import { GEOGRAPHIC_CRS, transformGeometry, transformPosition } from "../../lib/gis/crs";
 import {
   displayValue,
@@ -56,13 +57,12 @@ function firstPosition(coordinates: unknown): Position | null {
 }
 
 type Loaded<T> =
-  | { status: "idle" }
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; value: T | null };
 
 /** Overpass waits for a click, so only its result may stay idle. */
-type OsmLoaded = Exclude<Loaded<OsmContext>, { status: "idle" }>;
+type OsmLoaded = Loaded<OsmContext> | { status: "idle" };
 
 function loadedValue<T>(loaded: Loaded<T>): T | null {
   return loaded.status === "ready" ? loaded.value : null;
@@ -248,7 +248,16 @@ function OnlineContext({
           ) : osm.status === "error" ? (
             <p className="m-0 text-[10.5px] text-ink-muted">
               {osm.message}. <RetryButton onClick={loadOsm} />
-            </p>          ) : loadedValue(osm) ? (
+            </p>
+          ) : osm.status === "idle" ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 self-start text-[10px] font-semibold text-accent hover:underline"
+              onClick={loadOsm}
+            >
+              Ask Overpass for all OSM tags
+            </button>
+          ) : loadedValue(osm) ? (
             <>
               <div className="panel-scroll max-h-[150px] overflow-auto rounded-[6px] border border-line bg-tint px-1.5 py-1">
                 {loadedValue(osm)!.tags.map(([key, value]: [string, string]) => (
@@ -283,6 +292,121 @@ function OnlineContext({
         {`Nominatim, Wikipedia and Overpass · © OpenStreetMap contributors (ODbL)`}
       </p>
     </>
+  );
+}
+
+function CctvSnapshotViewer({ rawUrl }: { rawUrl: string }) {
+  const [src, setSrc] = useState(() => resolveSnapshotUrl(rawUrl, false) ?? "");
+  const [isPaused, setIsPaused] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(() => new Date());
+
+  const refresh = useCallback(() => {
+    setSrc(resolveSnapshotUrl(rawUrl, true) ?? "");
+    setHasError(false);
+    setLastRefreshed(new Date());
+  }, [rawUrl]);
+
+  useEffect(() => {
+    setSrc(resolveSnapshotUrl(rawUrl, false) ?? "");
+    setHasError(false);
+    setIsPaused(false);
+    setLastRefreshed(new Date());
+  }, [rawUrl]);
+
+  useEffect(() => {
+    if (isPaused || hasError) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      refresh();
+    }, 10_000);
+
+    return () => clearInterval(interval);
+  }, [isPaused, hasError, refresh]);
+
+  return (
+    <div className="flex flex-col gap-2 rounded-[8px] border border-line bg-tint/60 p-2.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-muted">
+          <Camera size={11} strokeWidth={2} aria-hidden="true" />
+          <span>Live Snapshot</span>
+          <span
+            className={`inline-block size-1.5 rounded-full ${
+              hasError ? "bg-amber-500" : isPaused ? "bg-ink-muted" : "bg-emerald-500 animate-pulse"
+            }`}
+          />
+        </div>
+        <span className="font-mono text-[8px] text-ink-muted">
+          {isPaused ? "Paused" : `Refreshed ${lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}
+        </span>
+      </div>
+
+      {hasError ? (
+        <div className="flex flex-col items-center justify-center gap-1.5 rounded-[6px] border border-line/60 bg-surface/50 py-4 text-center">
+          <p className="m-0 text-[10.5px] text-ink-muted">Snapshot unavailable or blocked by CORS.</p>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[10px] font-semibold text-accent hover:underline"
+            onClick={() => void openExternal(rawUrl)}
+          >
+            <ExternalLink size={10} strokeWidth={2} aria-hidden="true" />
+            Open live feed in browser
+          </button>
+        </div>
+      ) : (
+        <div className="relative overflow-hidden rounded-[6px] border border-line bg-black/80">
+          <img
+            src={src}
+            alt="CCTV snapshot"
+            className="aspect-video w-full object-contain"
+            onError={() => setHasError(true)}
+          />
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-1 pt-0.5">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className={SECONDARY_BUTTON + " h-[22px] px-1.5 text-[9.5px]"}
+            onClick={refresh}
+            title="Refresh snapshot now"
+          >
+            <RefreshCw size={10} strokeWidth={2} aria-hidden="true" />
+            Refresh
+          </button>
+          <button
+            type="button"
+            className={SECONDARY_BUTTON + " h-[22px] px-1.5 text-[9.5px]"}
+            onClick={() => setIsPaused((prev) => !prev)}
+            title={isPaused ? "Resume auto-refresh (10s)" : "Pause auto-refresh"}
+          >
+            {isPaused ? (
+              <>
+                <Play size={10} strokeWidth={2} aria-hidden="true" />
+                Resume
+              </>
+            ) : (
+              <>
+                <Pause size={10} strokeWidth={2} aria-hidden="true" />
+                Pause
+              </>
+            )}
+          </button>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-[9.5px] font-medium text-accent hover:underline"
+          onClick={() => void openExternal(rawUrl)}
+          title="Open raw image URL in browser"
+        >
+          <ExternalLink size={10} strokeWidth={2} aria-hidden="true" />
+          Direct link
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -370,6 +494,10 @@ export function FeaturePanel() {
         ) : null}
         {area > 0 ? <KeyValue label="Area" value={formatArea(area)} /> : null}
       </div>
+
+      {typeof feature.properties.snapshot_url === "string" && feature.properties.snapshot_url ? (
+        <CctvSnapshotViewer rawUrl={feature.properties.snapshot_url} />
+      ) : null}
 
       <SectionLabel trailing={`${attributes.length}`}>Attributes</SectionLabel>
       {attributes.length ? (

@@ -43,7 +43,6 @@ function CompassButton() {
 }
 
 export function RightRibbon() {
-  const notify = useUiStore((state) => state.notify);
   const openPanel = useUiStore((state) => state.openPanel);
   const activePanel = useUiStore((state) => state.activePanel);
   const measureMode = useProjectStore((state) => state.measureMode);

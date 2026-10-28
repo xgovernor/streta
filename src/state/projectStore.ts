@@ -1,9 +1,20 @@
 import { create } from "zustand";
-import { createDataset } from "../lib/gis/datasets";
-import { createLayer } from "../lib/gis/layers";
+import {
+  createDataset,
+  moveDataset as moveDatasetHelper,
+  moveLayerWithinDataset,
+  reindexDatasets,
+  reindexLayers,
+  uniqueDatasetName,
+} from "../lib/gis/datasets";
+import {
+  createLayer,
+  reprojectLayer,
+  uniqueLayerName,
+} from "../lib/gis/layers";
 import { GEOGRAPHIC_CRS } from "../lib/gis/crs";
 import type { DatasetLayer, Dataset, LayerFilter, LayerStyle, MeasureSummary, Selection } from "../lib/gis/types";
-import type { ProjectStore } from "./projectStore.types";
+import type { ProjectStore, RecentEntry } from "./projectStore.types";
 import type { FeatureRecord } from "../lib/gis/types";
 
 
@@ -41,7 +52,17 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
   },
 
   addSampleDataset() {
-    const dataset = createDataset({ name: "Survey network" });
+    const existing = get().datasets.find((d) => d.name === "Survey network");
+    if (existing) {
+      const existingLayers = get().layers.filter((l) => l.datasetId === existing.id);
+      return { dataset: existing, layers: existingLayers };
+    }
+
+    const dataset = createDataset({
+      name: "Survey network",
+      kind: "sample",
+      order: get().datasets.length,
+    });
     const routesLayer = createLayer({
       datasetId: dataset.id,
       name: "Survey routes",
@@ -55,6 +76,7 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
       crs: GEOGRAPHIC_CRS,
       format: "geojson",
       source: "sample",
+      order: 0,
     });
     const stationsLayer = createLayer({
       datasetId: dataset.id,
@@ -74,6 +96,7 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
       crs: GEOGRAPHIC_CRS,
       format: "geojson",
       source: "sample",
+      order: 1,
     });
 
     set((state) => ({
@@ -101,29 +124,40 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
       color?: string;
     }[];
   }) {
+    const state = get();
+    const existingDatasetNames = state.datasets.map((d) => d.name);
+    const datasetName = uniqueDatasetName(existingDatasetNames, input.name);
+
     const dataset = createDataset({
-      name: input.name,
+      name: datasetName,
       kind: input.kind,
       libraryId: input.libraryId ?? null,
       source: input.source ?? null,
+      order: state.datasets.length,
     });
-    const layers = input.layers.map((layer) =>
-      createLayer({
+
+    const existingLayerNames = [...state.layers.map((l) => l.name)];
+    const layers = input.layers.map((layer, order) => {
+      const layerName = uniqueLayerName(existingLayerNames, layer.name);
+      existingLayerNames.push(layerName);
+
+      return createLayer({
         datasetId: dataset.id,
-        name: layer.name,
+        name: layerName,
         features: layer.features,
         crs: layer.crs,
         format: layer.format,
         source: layer.source ?? null,
         style: layer.style,
         color: layer.color,
-      })
-    );
+        order,
+      });
+    });
 
-    set((state) => ({
-      datasets: [...state.datasets, dataset],
-      layers: [...state.layers, ...layers],
-      activeLayerId: layers[0]?.id ?? state.activeLayerId,
+    set((current) => ({
+      datasets: [...current.datasets, dataset],
+      layers: [...current.layers, ...layers],
+      activeLayerId: layers[0]?.id ?? current.activeLayerId,
       dirty: true,
     }));
 
@@ -133,7 +167,7 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
   removeDataset(datasetId: string) {
     set((state) => {
       const nextLayers = state.layers.filter((layer) => layer.datasetId !== datasetId);
-      const nextDatasets = state.datasets.filter((dataset) => dataset.id !== datasetId);
+      const nextDatasets = reindexDatasets(state.datasets.filter((dataset) => dataset.id !== datasetId));
       const nextSelection = state.selection?.layerId.startsWith(datasetId) ? null : state.selection;
       const nextActiveLayerId = state.activeLayerId?.startsWith(datasetId) ? null : state.activeLayerId;
 
@@ -152,17 +186,18 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
       const layer = state.layers.find((item) => item.id === layerId);
       if (!layer) return state;
 
-      const nextLayers = state.layers.filter((item) => item.id !== layerId);
-      const datasetLayers = state.layers.filter((item) => item.datasetId === layer.datasetId);
-      const datasetStillHasLayers = datasetLayers.length > 1;
+      const nextLayers = reindexLayers(state.layers.filter((item) => item.id !== layerId));
+      const datasetLayers = nextLayers.filter((item) => item.datasetId === layer.datasetId);
+      const datasetStillHasLayers = datasetLayers.length > 0;
+      const nextDatasets = datasetStillHasLayers
+        ? state.datasets
+        : reindexDatasets(state.datasets.filter((dataset) => dataset.id !== layer.datasetId));
 
       return {
         layers: nextLayers,
         selection: state.selection?.layerId === layerId ? null : state.selection,
         activeLayerId: state.activeLayerId === layerId ? null : state.activeLayerId,
-        datasets: datasetStillHasLayers
-          ? state.datasets
-          : state.datasets.filter((dataset) => dataset.id !== layer.datasetId),
+        datasets: nextDatasets,
         dirty: true,
       };
     });
@@ -235,62 +270,32 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
     }));
   },
 
-  setLayerCrs(layerId: string, crs: string) {
+  setLayerCrs(layerId: string, crs: string): number {
+    let dropped = 0;
     set((state) => ({
-      layers: state.layers.map((layer) =>
-        layer.id === layerId ? { ...layer, crs } : layer
-      ),
+      layers: state.layers.map((layer) => {
+        if (layer.id !== layerId) return layer;
+        const result = reprojectLayer(layer, crs);
+        dropped = result.dropped;
+        return result.layer;
+      }),
+      dirty: true,
+    }));
+    return dropped;
+  },
+
+  moveDataset(datasetId: string, delta: number) {
+    set((state) => ({
+      datasets: moveDatasetHelper(state.datasets, datasetId, delta),
       dirty: true,
     }));
   },
 
-  moveDataset(datasetId: string, delta: number) {
-    set((state) => {
-      const datasets = [...state.datasets];
-      const index = datasets.findIndex((dataset) => dataset.id === datasetId);
-      const target = index + delta;
-
-      if (index < 0 || target < 0 || target >= datasets.length) {
-        return state;
-      }
-
-      const [moved] = datasets.splice(index, 1);
-      datasets.splice(target, 0, moved);
-
-      return {
-        datasets: datasets.map((dataset, order) =>
-          dataset.id === moved.id ? { ...dataset, order } : dataset
-        ),
-        dirty: true,
-      };
-    });
-  },
-
   moveLayer(layerId: string, delta: number) {
-    set((state) => {
-      const layer = state.layers.find((item) => item.id === layerId);
-      if (!layer) return state;
-
-      const siblings = state.layers.filter((item) => item.datasetId === layer.datasetId);
-      const index = siblings.findIndex((item) => item.id === layerId);
-      const target = index + delta;
-
-      if (index < 0 || target < 0 || target >= siblings.length) {
-        return state;
-      }
-
-      const [moved] = siblings.splice(index, 1);
-      siblings.splice(target, 0, moved);
-      const orderMap = new Map(siblings.map((item, order) => [item.id, order]));
-
-      return {
-        layers: state.layers.map((item) => {
-          const next = orderMap.get(item.id);
-          return next === undefined || item.order === next ? item : { ...item, order: next };
-        }),
-        dirty: true,
-      };
-    });
+    set((state) => ({
+      layers: moveLayerWithinDataset(state.layers, layerId, delta),
+      dirty: true,
+    }));
   },
 
   toggleDataset(datasetId: string) {
@@ -356,15 +361,15 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
     });
   },
 
-  forgetRecent(path: string) {
+  forgetRecent(name: string) {
     set((state) => ({
-      recent: state.recent.filter((entry) => entry !== path),
+      recent: state.recent.filter((entry) => entry.name !== name),
     }));
   },
 
-  addToRecent(path: string) {
+  addToRecent(entry: RecentEntry) {
     set((state) => ({
-      recent: [path, ...state.recent.filter((entry) => entry !== path)].slice(0, 10),
+      recent: [entry, ...state.recent.filter((item) => item.name !== entry.name)].slice(0, 10),
     }));
   },
 }));

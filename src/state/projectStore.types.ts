@@ -1,5 +1,13 @@
 import type { Dataset, DatasetLayer, LayerFilter, LayerStyle, MeasureSummary, Selection } from "../lib/gis/types";
 
+export interface RecentEntry {
+  name: string;
+  featureCount: number;
+  color: string;
+  crs: string;
+  source: string;
+}
+
 export interface ProjectStore {
   layers: DatasetLayer[];
   datasets: Dataset[];
@@ -11,7 +19,7 @@ export interface ProjectStore {
   projectPath: string | null;
   dirty: boolean;
   hydrationWarnings: string[];
-  recent: string[];
+  recent: RecentEntry[];
 
   dismissHydrationWarnings: () => void;
   newProject: () => void;
@@ -19,6 +27,7 @@ export interface ProjectStore {
   addDataset: (input: {
     name: string;
     kind?: "file" | "library" | "sample" | "join";
+    libraryId?: string | null;
     source?: string | null;
     layers: {
       name: string;
@@ -26,6 +35,8 @@ export interface ProjectStore {
       crs: string;
       format: DatasetLayer["format"];
       source?: string | null;
+      style?: Partial<LayerStyle>;
+      color?: string;
     }[];
   }) => { dataset: Dataset; layers: DatasetLayer[] };
   removeDataset: (datasetId: string) => void;
@@ -38,7 +49,7 @@ export interface ProjectStore {
   setLayerVisible: (layerId: string, visible: boolean) => void;
   setDatasetVisible: (datasetId: string, visible: boolean) => void;
   setLayerFilters: (layerId: string, filters: LayerFilter[]) => void;
-  setLayerCrs: (layerId: string, crs: string) => void;
+  setLayerCrs: (layerId: string, crs: string) => number;
   moveDataset: (datasetId: string, delta: number) => void;
   moveLayer: (layerId: string, delta: number) => void;
   toggleDataset: (datasetId: string) => void;
@@ -57,6 +68,7 @@ export interface ProjectStore {
     datasets: Dataset[];
     layers: DatasetLayer[];
   }) => void;
-  forgetRecent: (path: string) => void;
-  addToRecent: (path: string) => void;
+  forgetRecent: (name: string) => void;
+  addToRecent: (entry: RecentEntry) => void;
 }
+

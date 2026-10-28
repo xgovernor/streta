@@ -58,6 +58,34 @@ let activeMap: OlMap | null = null;
 let activeTeardown: (() => void) | null = null;
 let activeMeasureClear: (() => void) | null = null;
 
+let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+let hoveredTarget: { layerId: string; featureId: string } | null = null;
+let isOverPopup = false;
+
+const HOVER_DELAY_MS = 250;
+const LEAVE_DELAY_MS = 150;
+
+export function setPopupHovered(hovered: boolean): void {
+  isOverPopup = hovered;
+  if (hovered) {
+    if (leaveTimer) {
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+    }
+  } else {
+    if (!hoveredTarget && useMapStore.getState().activeFeature) {
+      if (leaveTimer) clearTimeout(leaveTimer);
+      leaveTimer = setTimeout(() => {
+        leaveTimer = null;
+        if (!isOverPopup && !hoveredTarget) {
+          useMapStore.getState().setActiveFeature(null);
+        }
+      }, LEAVE_DELAY_MS);
+    }
+  }
+}
+
 const geoJson = new GeoJSON();
 
 function isDatasetLayer(layer: BaseLayer): boolean {
@@ -414,7 +442,7 @@ export function mountMap(target: HTMLElement): () => void {
     const hit = topFeatureAt(event.pixel);
     const store = useMapStore.getState();
 
-    let hover: { layerId: string, featureId: string, lon: number, lat: number } | null = null;
+    let hover: { layerId: string; featureId: string; lon: number; lat: number } | null = null;
 
     if (hit) {
       const featureId = hit.feature.getId();
@@ -434,7 +462,6 @@ export function mountMap(target: HTMLElement): () => void {
       { x: event.coordinate[0], y: event.coordinate[1] },
     );
     store.setHoverLabel(hover ? hoverLabelFor(hit!.feature, hit!.layerId) : null);
-    store.setActiveFeature(hover);
 
     const element = map.getTargetElement();
     if (element) {
@@ -443,12 +470,73 @@ export function mountMap(target: HTMLElement): () => void {
         : hover ? "pointer"
         : "";
     }
+
+    if (!hover) {
+      hoveredTarget = null;
+      if (hoverTimer) {
+        clearTimeout(hoverTimer);
+        hoverTimer = null;
+      }
+      if (!isOverPopup && store.activeFeature && !leaveTimer) {
+        leaveTimer = setTimeout(() => {
+          leaveTimer = null;
+          if (!isOverPopup && !hoveredTarget) {
+            useMapStore.getState().setActiveFeature(null);
+          }
+        }, LEAVE_DELAY_MS);
+      }
+    } else {
+      if (leaveTimer) {
+        clearTimeout(leaveTimer);
+        leaveTimer = null;
+      }
+
+      const isSameFeature =
+        hoveredTarget?.layerId === hover.layerId &&
+        hoveredTarget?.featureId === hover.featureId;
+
+      if (!isSameFeature) {
+        hoveredTarget = { layerId: hover.layerId, featureId: hover.featureId };
+
+        if (hoverTimer) {
+          clearTimeout(hoverTimer);
+          hoverTimer = null;
+        }
+
+        const candidate = hover;
+        hoverTimer = setTimeout(() => {
+          hoverTimer = null;
+          if (
+            hoveredTarget?.layerId === candidate.layerId &&
+            hoveredTarget?.featureId === candidate.featureId
+          ) {
+            useMapStore.getState().setActiveFeature(candidate);
+          }
+        }, HOVER_DELAY_MS);
+      }
+    }
   });
 
   const handlePointerLeave = () => {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    hoveredTarget = null;
+
     const store = useMapStore.getState();
     store.setPointer(null, null);
     store.setHoverLabel(null);
+
+    if (!isOverPopup && store.activeFeature) {
+      if (leaveTimer) clearTimeout(leaveTimer);
+      leaveTimer = setTimeout(() => {
+        leaveTimer = null;
+        if (!isOverPopup && !hoveredTarget) {
+          useMapStore.getState().setActiveFeature(null);
+        }
+      }, LEAVE_DELAY_MS);
+    }
 
     const element = map.getTargetElement();
     if (element) {
@@ -458,16 +546,41 @@ export function mountMap(target: HTMLElement): () => void {
 
   target.addEventListener("pointerleave", handlePointerLeave);
 
+  const dragKey = map.on("pointerdrag", () => {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    if (leaveTimer) {
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+    }
+    hoveredTarget = null;
+    useMapStore.getState().setActiveFeature(null);
+  });
+
   const clickKey = map.on("singleclick", (event) => {
     if (useProjectStore.getState().measureMode !== "off") {
       return;
     }
+
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    if (leaveTimer) {
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+    }
+    hoveredTarget = null;
+    isOverPopup = false;
 
     const hit = topFeatureAt(event.pixel);
 
     if (!hit) {
       useProjectStore.getState().clearSelection();
       useMapStore.getState().setPopup(null);
+      useMapStore.getState().setActiveFeature(null);
       return;
     }
 
@@ -477,20 +590,13 @@ export function mountMap(target: HTMLElement): () => void {
       return;
     }
 
-    // A click owns the card and opens the detailed panel; hovering alone only
-    // follows the cursor.
-    const [lon, lat] = transform(event.coordinate, VIEW_CRS, GEOGRAPHIC_CRS);
-
+    // A click selects the feature and opens the detailed feature panel directly (details, not popup)
     useProjectStore.getState().select({
       layerId: hit.layerId,
       featureId: String(featureId),
     });
-    useMapStore.getState().setPopup({
-      layerId: hit.layerId,
-      featureId: String(featureId),
-      lon,
-      lat,
-    });
+    useMapStore.getState().setPopup(null);
+    useMapStore.getState().setActiveFeature(null);
     useUiStore.getState().openPanel("feature");
   });
 
@@ -607,9 +713,20 @@ export function mountMap(target: HTMLElement): () => void {
   const teardown = () => {
     activeMeasureClear = null;
     window.cancelAnimationFrame(sizeFrame);
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    if (leaveTimer) {
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+    }
+    hoveredTarget = null;
+    isOverPopup = false;
     target.removeEventListener("pointerleave", handlePointerLeave);
     unByKey(cameraKeys);
     unByKey(pointerKey);
+    unByKey(dragKey);
     unByKey(clickKey);
     unByKey(readyKey);
 

@@ -6,6 +6,7 @@ import type {
 } from "topojson-specification";
 import usStatesUrl from "us-atlas/states-10m.json?url";
 import countriesUrl from "world-atlas/countries-50m.json?url";
+import { mapCctvProperties } from "./cctv";
 import { GEOGRAPHIC_CRS } from "./crs";
 import { DataError, type ImportResult } from "./geojson";
 import type {
@@ -237,6 +238,35 @@ export const LIBRARY: LibraryProduct[] = [
           class: text(source.class),
           area_km2: text(source.area_km2),
           osm_id: text(source.osm_id) ?? id,
+        }),
+      },
+    ],
+  },
+  {
+    id: "cctv-cameras",
+    name: "Traffic cameras",
+    detail: "Global traffic cameras with 3D ground heights",
+    credit: "Open data DOTs & municipal transport portals",
+    layers: [
+      {
+        name: "Cameras",
+        url: asset("/datasets/cctv-cameras.topo.json"),
+        object: "cameras",
+        idPrefix: "cctv-cam-",
+        properties: mapCctvProperties,
+      },
+      {
+        name: "Coverage cones",
+        url: asset("/datasets/cctv-cameras.topo.json"),
+        object: "viewsheds",
+        idPrefix: "cctv-cone-",
+        properties: (source, id) => ({
+          name: text(source.name),
+          city: text(source.city),
+          provider: text(source.provider),
+          heading_deg: text(source.heading_deg),
+          range_m: text(source.range_m),
+          camera_id: text(source.camera_id) ?? id,
         }),
       },
     ],

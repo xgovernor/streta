@@ -30,7 +30,6 @@ export function AttributesPanel() {
   const selection = useProjectStore((state) => state.selection);
 
   const [query, setQuery] = useState("");
-  const notify = useUiStore((state) => state.notify);
   const [sort, setSort] = useState<SortState>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewport, setViewport] = useState(360);

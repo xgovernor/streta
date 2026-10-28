@@ -11,6 +11,7 @@
  *   dams.topo.json           OSM dam footprints
  *   military-areas.topo.json  OSM named military areas, as label points
  *   us-counties.topo.json    US Census cartographic counties
+ *   cctv-cameras.topo.json   Traffic cameras and coverage viewshed wedges
  *
  * TopoJSON rather than GeoJSON because it stores shared borders once, as
  * relative integer coordinates, which is what makes a 4,596-unit boundary pack
@@ -493,6 +494,134 @@ function buildCounties() {
   report("us-counties.topo.json", text);
 }
 
+/** Offset [lon, lat] along a bearing (degrees) and distance (metres). */
+function offsetCoord(lon, lat, bearingDeg, distanceM) {
+  const R = 6371000;
+  const rad = (d) => (d * Math.PI) / 180;
+  const deg = (r) => (r * 180) / Math.PI;
+
+  const theta = rad(bearingDeg);
+  const delta = distanceM / R;
+  const phi1 = rad(lat);
+  const lambda1 = rad(lon);
+
+  const sinPhi1 = Math.sin(phi1);
+  const cosPhi1 = Math.cos(phi1);
+  const sinDelta = Math.sin(delta);
+  const cosDelta = Math.cos(delta);
+
+  const sinPhi2 = sinPhi1 * cosDelta + cosPhi1 * sinDelta * Math.cos(theta);
+  const phi2 = Math.asin(sinPhi2);
+
+  const y = Math.sin(theta) * sinDelta * cosPhi1;
+  const x = cosDelta - sinPhi1 * Math.sin(phi2);
+  const lambda2 = lambda1 + Math.atan2(y, x);
+
+  const normLon = ((deg(lambda2) + 540) % 360) - 180;
+  return [Number(normLon.toFixed(6)), Number(deg(phi2).toFixed(6))];
+}
+
+/** Build viewshed sector polygon for a camera. */
+function buildWedge(lon, lat, headingDeg, fovDeg = 50, rangeM = 150) {
+  const center = [Number(lon.toFixed(6)), Number(lat.toFixed(6))];
+  const halfFov = Math.max(2, Math.min(160, fovDeg)) / 2;
+  const clampedRange = Math.max(10, Math.min(5000, rangeM));
+  const startAngle = headingDeg - halfFov;
+  const endAngle = headingDeg + halfFov;
+  const steps = 12;
+
+  const ring = [center];
+  for (let i = 0; i <= steps; i += 1) {
+    const fraction = i / steps;
+    const bearing = startAngle + fraction * (endAngle - startAngle);
+    ring.push(offsetCoord(lon, lat, bearing, clampedRange));
+  }
+  ring.push(center);
+  return [ring];
+}
+
+function buildCctv() {
+  console.log("Traffic CCTV cameras and ground heights");
+
+  const cameras = readLocal("cctv-ground-heights/cameras.json");
+  if (!cameras || !Array.isArray(cameras)) {
+    console.log("  skipped: data/local/cctv-ground-heights/cameras.json is missing");
+    return;
+  }
+
+  const cameraFeatures = [];
+  const viewshedFeatures = [];
+
+  for (const cam of cameras) {
+    if (!cam || !Number.isFinite(cam.lat) || !Number.isFinite(cam.lon)) continue;
+
+    cameraFeatures.push(
+      toFeature(
+        {
+          name: scalar(cam.name),
+          city: scalar(cam.city),
+          provider: scalar(cam.provider),
+          mount_ground_m: scalar(cam.mountGroundM),
+          mount_height_m: scalar(cam.mountHeightM),
+          total_elevation_m: scalar(cam.totalElevationM),
+          heading_deg: scalar(cam.headingDeg),
+          pitch_deg: scalar(cam.pitchDeg),
+          fov_deg: scalar(cam.fovDeg),
+          range_m: scalar(cam.rangeM),
+          snapshot_url: scalar(cam.snapshotUrl),
+          status: scalar(cam.status) || "ok",
+          support_bl: scalar(cam.supports?.bl),
+          support_bm: scalar(cam.supports?.bm),
+          support_br: scalar(cam.supports?.br),
+          support_ml: scalar(cam.supports?.ml),
+          support_mc: scalar(cam.supports?.mc),
+          support_mr: scalar(cam.supports?.mr),
+          support_tl: scalar(cam.supports?.tl),
+          support_tm: scalar(cam.supports?.tm),
+          support_tr: scalar(cam.supports?.tr),
+        },
+        { type: "Point", coordinates: [cam.lon, cam.lat] },
+      ),
+    );
+
+    // Only generate a viewshed wedge when camera heading is known
+    if (Number.isFinite(cam.headingDeg)) {
+      const wedgeCoordinates = buildWedge(
+        cam.lon,
+        cam.lat,
+        cam.headingDeg,
+        cam.fovDeg || 50,
+        cam.rangeM || 150,
+      );
+      viewshedFeatures.push(
+        toFeature(
+          {
+            name: scalar(cam.name),
+            city: scalar(cam.city),
+            provider: scalar(cam.provider),
+            heading_deg: scalar(cam.headingDeg),
+            range_m: scalar(cam.rangeM || 150),
+            camera_id: scalar(cam.id),
+          },
+          { type: "Polygon", coordinates: wedgeCoordinates },
+        ),
+      );
+    }
+  }
+
+  const { text, vertices } = pack(
+    { cameras: cameraFeatures, viewsheds: viewshedFeatures },
+    { minWeight: 0, decimals: 1e5 },
+  );
+
+  writeFileSync(path.join(OUT_DIR, "cctv-cameras.topo.json"), text);
+
+  console.log(
+    `  ${cameraFeatures.length} cameras · ${viewshedFeatures.length} viewsheds · ${vertices} vertices`,
+  );
+  report("cctv-cameras.topo.json", text);
+}
+
 const TASKS = {
   admin1: buildAdmin1,
   bangladesh: buildBangladesh,
@@ -501,9 +630,10 @@ const TASKS = {
   dams: buildDams,
   military: buildMilitary,
   counties: buildCounties,
+  cctv: buildCctv,
 };
 
-const LOCAL_PACKS = ["cables", "datacenters", "dams", "military", "counties"];
+const LOCAL_PACKS = ["cables", "datacenters", "dams", "military", "counties", "cctv"];
 
 mkdirSync(OUT_DIR, { recursive: true });
 
