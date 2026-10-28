@@ -1,11 +1,109 @@
 import type { FeatureLike } from "ol/Feature";
 import type { Geometry } from "ol/geom";
-import { Circle as CircleStyle, Fill, Stroke, Style, Text } from "ol/style";
+import { Circle as CircleStyle, Fill, Icon, Stroke, Style, Text } from "ol/style";
 import type { DatasetLayer, LayerStyle } from "../lib/gis/types";
 
 const SELECTION_COLOR = "#ff8a4d";
 const LABEL_COLOR = "#101820";
 const LABEL_HALO = "rgba(255,255,255,.94)";
+
+const cameraIconCache = new Map<string, Style>();
+
+function createCameraSvgUri(
+  color: string,
+  selected: boolean,
+  headingDeg: number | null,
+): string {
+  const size = 32;
+  const center = 16;
+  const badgeRadius = selected ? 12 : 10.5;
+  const strokeColor = "#ffffff";
+  const strokeWidth = selected ? 2.2 : 1.6;
+
+  // Direction pointer arrow if heading is known
+  const pointerSvg =
+    headingDeg != null ?
+      `<g transform="rotate(${headingDeg}, ${center}, ${center})">
+        <polygon points="${center},1.5 ${center - 3.5},5.5 ${center + 3.5},5.5" fill="${color}" stroke="${strokeColor}" stroke-width="1.2" stroke-linejoin="round" />
+      </g>`
+    : "";
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    ${pointerSvg}
+    <circle cx="${center}" cy="${center}" r="${badgeRadius}" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" />
+    <g transform="translate(9, 9)">
+      <path d="M4 1.5h6l1.2 1.5H13a1.5 1.5 0 0 1 1.5 1.5v6.5a1.5 1.5 0 0 1-1.5 1.5H1a1.5 1.5 0 0 1-1.5-1.5v-6.5A1.5 1.5 0 0 1 1 3h1.8L4 1.5z" fill="#ffffff" />
+      <circle cx="7" cy="7.2" r="2.2" fill="${color}" />
+    </g>
+  </svg>`;
+
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function cameraPointStyle(
+  style: LayerStyle,
+  options: StyleOptions,
+  label: string,
+  headingDeg: number | null,
+): Style[] {
+  const normHeading =
+    headingDeg != null ?
+      Math.round(((headingDeg % 360) + 360) % 360 / 5) * 5
+    : null;
+  const cacheKey = `${style.color}_${options.selected ? "1" : "0"}_${normHeading ?? "none"}`;
+
+  let iconStyle = cameraIconCache.get(cacheKey);
+  if (!iconStyle) {
+    const svgUri = createCameraSvgUri(style.color, options.selected, normHeading);
+    iconStyle = new Style({
+      image: new Icon({
+        src: svgUri,
+        width: 30,
+        height: 30,
+      }),
+      zIndex: options.selected ? 15 : 6,
+    });
+    cameraIconCache.set(cacheKey, iconStyle);
+  }
+
+  const styles: Style[] = [];
+
+  if (options.selected) {
+    styles.push(
+      new Style({
+        image: new CircleStyle({
+          radius: 17,
+          fill: new Fill({ color: alpha(SELECTION_COLOR, 0.22) }),
+          stroke: new Stroke({
+            color: alpha(SELECTION_COLOR, 0.95),
+            width: 2,
+          }),
+        }),
+        zIndex: 14,
+      }),
+    );
+  }
+
+  styles.push(iconStyle);
+
+  if (label && options.resolution < 3200) {
+    styles.push(
+      new Style({
+        text: new Text({
+          text: label,
+          font: '500 11px "IBM Plex Mono", monospace',
+          offsetY: -20,
+          fill: new Fill({ color: LABEL_COLOR }),
+          stroke: new Stroke({ color: LABEL_HALO, width: 3 }),
+          overflow: true,
+        }),
+        zIndex: options.selected ? 16 : 7,
+      }),
+    );
+  }
+
+  return styles;
+}
 
 function alpha(color: string, opacity: number): string {
   const hex = color.replace("#", "");
@@ -145,6 +243,10 @@ export function createDatasetStyle(
   layer: DatasetLayer,
   isSelected: (featureId: string) => boolean,
 ) {
+  const isCameraLayer =
+    /camera|cctv/i.test(layer.name) ||
+    (typeof layer.source === "string" && /cctv/i.test(layer.source));
+
   return (feature: FeatureLike, resolution: number): Style[] => {
     const geometry = feature.getGeometry() as Geometry | undefined;
     const type = geometry?.getType() ?? "Point";
@@ -154,8 +256,25 @@ export function createDatasetStyle(
 
     switch (type) {
       case "Point":
-      case "MultiPoint":
+      case "MultiPoint": {
+        const featureId = String(feature.getId() ?? "");
+        const hasCameraProps =
+          isCameraLayer ||
+          feature.get("snapshot_url") !== undefined ||
+          feature.get("mount_height_m") !== undefined ||
+          featureId.startsWith("cctv-cam-");
+
+        if (hasCameraProps) {
+          const rawHeading = feature.get("heading_deg");
+          const headingDeg =
+            typeof rawHeading === "number" && Number.isFinite(rawHeading) ?
+              rawHeading
+            : null;
+          return cameraPointStyle(layer.style, options, label, headingDeg);
+        }
+
         return pointStyle(layer.style, options, label);
+      }
       case "Polygon":
       case "MultiPolygon":
         return polygonStyle(layer.style, options, label);
