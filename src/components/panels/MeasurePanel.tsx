@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Check,
-  CheckCircle2,
   Compass,
   Copy,
   Crosshair,
@@ -42,8 +41,8 @@ import {
 import { useProjectStore } from "../../state/projectStore";
 import { useTelemetryStore } from "../../state/telemetryStore";
 import { useUiStore, type AnalysisTab } from "../../state/uiStore";
-import { createDataset, uniqueDatasetName } from "../../lib/gis/datasets";
-import { createLayer, uniqueLayerName } from "../../lib/gis/layers";
+import { uniqueDatasetName } from "../../lib/gis/datasets";
+import { uniqueLayerName } from "../../lib/gis/layers";
 import { GEOGRAPHIC_CRS } from "../../lib/gis/crs";
 import type { FeatureRecord } from "../../lib/gis/types";
 import { PanelShell } from "../PanelShell";
@@ -356,12 +355,6 @@ export function MeasurePanel() {
     const projectStore = useProjectStore.getState();
     const existingDatasetNames = projectStore.datasets.map((d) => d.name);
     const datasetName = uniqueDatasetName(existingDatasetNames, `Boolean ${booleanOp.toUpperCase()}`);
-    const dataset = createDataset({
-      name: datasetName,
-      kind: "file",
-      order: projectStore.datasets.length,
-    });
-
     const features: FeatureRecord[] = (booleanResult.geojson.features || []).map((f: any, idx: number) => ({
       id: f.id || `bool_${idx}`,
       geometry: f.geometry,
@@ -370,22 +363,22 @@ export function MeasurePanel() {
 
     const existingLayerNames = projectStore.layers.map((l) => l.name);
     const layerName = uniqueLayerName(existingLayerNames, `${booleanOp.toUpperCase()} result`);
-    const newLayer = createLayer({
-      datasetId: dataset.id,
-      name: layerName,
-      features,
-      crs: GEOGRAPHIC_CRS,
-      format: "geojson",
-      source: "derived",
-      order: 0,
-      style: {
-        color: "#10b981",
-        strokeWidth: 2,
-        fillOpacity: 0.25,
-      },
-    });
 
-    projectStore.addDataset(dataset, [newLayer]);
+    projectStore.addDataset({
+      name: datasetName,
+      kind: "file",
+      source: "derived:boolean",
+      layers: [
+        {
+          id: `bool_${Date.now().toString(36)}`,
+          name: layerName,
+          features,
+          crs: GEOGRAPHIC_CRS,
+          format: "geojson",
+          source: "derived:boolean",
+        },
+      ],
+    });
     notify(`Saved new layer: "${layerName}" (${features.length} polygons)`);
   };
 
@@ -1007,7 +1000,7 @@ export function MeasurePanel() {
                 <option value="earthquakes">Live Earthquakes (USGS)</option>
                 <option value="satellites">Live Satellites (SGP4)</option>
                 {layers
-                  .filter((l) => l.geometryKind === "point" || l.geometryKind === "mixed")
+                  .filter((l) => l.geometryKind === "Point" || l.geometryKind === "MultiPoint" || l.geometryKind === "Mixed")
                   .map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name}
@@ -1171,7 +1164,7 @@ export function MeasurePanel() {
               >
                 <option value="">Select Polygon Layer A...</option>
                 {layers
-                  .filter((l) => l.geometryKind === "polygon" || l.geometryKind === "mixed")
+                  .filter((l) => l.geometryKind === "Polygon" || l.geometryKind === "MultiPolygon" || l.geometryKind === "Mixed")
                   .map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name}
@@ -1190,7 +1183,7 @@ export function MeasurePanel() {
               >
                 <option value="">Select Polygon Layer B...</option>
                 {layers
-                  .filter((l) => l.geometryKind === "polygon" || l.geometryKind === "mixed")
+                  .filter((l) => l.geometryKind === "Polygon" || l.geometryKind === "MultiPolygon" || l.geometryKind === "Mixed")
                   .map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name}

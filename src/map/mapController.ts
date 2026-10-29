@@ -64,6 +64,8 @@ import {
   updateFlightFeatures,
   updateEarthquakeFeatures,
   updateSatelliteFeatures,
+  updateFireFeatures,
+  updateVesselFeatures,
   setTelemetryLayerVisibility,
   clearTelemetryLayers,
 } from "./webglTelemetry";
@@ -330,10 +332,37 @@ export function mountMap(target: HTMLElement): () => void {
     constrainResolution: false,
   });
 
+  const tomtomApiKey =
+    typeof import.meta !== "undefined" && import.meta.env?.TOMTOM_API_KEY
+      ? import.meta.env.TOMTOM_API_KEY
+      : "";
+
+  const trafficLayer = new TileLayer({
+    visible: ui.trafficFlow ?? false,
+    source: tomtomApiKey
+      ? new XYZ({
+          url: `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${tomtomApiKey}`,
+          maxZoom: 22,
+          attributions: ["© TomTom Real-Time Traffic"],
+        })
+      : new XYZ({
+          url: "",
+          maxZoom: 22,
+        }),
+    zIndex: 2,
+    properties: { id: "traffic-flow", overlay: true },
+  });
+
   const map = new OlMap({
     target,
     view,
-    layers: [...Object.values(basemapLayers), graticuleLayer, measureLayer, analysisLayer],
+    layers: [
+      ...Object.values(basemapLayers),
+      trafficLayer,
+      graticuleLayer,
+      measureLayer,
+      analysisLayer,
+    ],
     controls: [],
   });
 
@@ -848,6 +877,10 @@ export function mountMap(target: HTMLElement): () => void {
     if (state.graticule !== previous.graticule) {
       graticuleLayer.setVisible(state.graticule);
     }
+
+    if (state.trafficFlow !== previous.trafficFlow) {
+      trafficLayer.setVisible(state.trafficFlow);
+    }
   });
 
   const readyKey = map.once("postrender", () => {
@@ -859,6 +892,7 @@ export function mountMap(target: HTMLElement): () => void {
 
   applyBasemap(ui.basemap);
   graticuleLayer.setVisible(ui.graticule);
+  trafficLayer.setVisible(ui.trafficFlow);
   syncDatasetLayers(orderedLayers(project.datasets, project.layers));
   applyMeasureMode(project.measureMode);
   emitCamera();
@@ -873,6 +907,12 @@ export function mountMap(target: HTMLElement): () => void {
     if (state.satellites !== previous.satellites) {
       updateSatelliteFeatures(state.satellites);
     }
+    if (state.fires !== previous.fires) {
+      updateFireFeatures(state.fires);
+    }
+    if (state.vessels !== previous.vessels) {
+      updateVesselFeatures(state.vessels);
+    }
     if (state.flightsEnabled !== previous.flightsEnabled) {
       setTelemetryLayerVisibility("flights", state.flightsEnabled);
     }
@@ -882,16 +922,26 @@ export function mountMap(target: HTMLElement): () => void {
     if (state.satellitesEnabled !== previous.satellitesEnabled) {
       setTelemetryLayerVisibility("satellites", state.satellitesEnabled);
     }
+    if (state.firesEnabled !== previous.firesEnabled) {
+      setTelemetryLayerVisibility("fires", state.firesEnabled);
+    }
+    if (state.vesselsEnabled !== previous.vesselsEnabled) {
+      setTelemetryLayerVisibility("vessels", state.vesselsEnabled);
+    }
   });
 
   const initTelemetry = useTelemetryStore.getState();
   if (initTelemetry.flights.length > 0) updateFlightFeatures(initTelemetry.flights);
   if (initTelemetry.earthquakes.length > 0) updateEarthquakeFeatures(initTelemetry.earthquakes);
   if (initTelemetry.satellites.length > 0) updateSatelliteFeatures(initTelemetry.satellites);
+  if (initTelemetry.fires.length > 0) updateFireFeatures(initTelemetry.fires);
+  if (initTelemetry.vessels.length > 0) updateVesselFeatures(initTelemetry.vessels);
   if (
     initTelemetry.flights.length === 0 &&
     initTelemetry.earthquakes.length === 0 &&
-    initTelemetry.satellites.length === 0
+    initTelemetry.satellites.length === 0 &&
+    initTelemetry.fires.length === 0 &&
+    initTelemetry.vessels.length === 0
   ) {
     void initTelemetry.refreshFeeds();
   }

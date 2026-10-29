@@ -18,8 +18,8 @@ import {
   removeFilter,
   visibleFeatures,
 } from "../../lib/gis/filter";
-import { PALETTE, createLayer, measureLayer, uniqueLayerName } from "../../lib/gis/layers";
-import { createDataset, uniqueDatasetName } from "../../lib/gis/datasets";
+import { PALETTE, measureLayer, uniqueLayerName } from "../../lib/gis/layers";
+import { uniqueDatasetName } from "../../lib/gis/datasets";
 import { computeH3Aggregation } from "../../lib/gis/tiledBackend";
 import type { DatasetLayer, FeatureRecord } from "../../lib/gis/types";
 
@@ -343,7 +343,8 @@ export function LayerPanel() {
   const [h3Loading, setH3Loading] = useState(false);
 
   const isPointLayer =
-    layer?.geometryKind === "point" ||
+    layer?.geometryKind === "Point" ||
+    layer?.geometryKind === "MultiPoint" ||
     Boolean(
       layer?.features.some(
         (f) => f.geometry.type === "Point" || f.geometry.type === "MultiPoint",
@@ -391,12 +392,6 @@ export function LayerPanel() {
           existingDatasetNames,
           `${layer.name} H3 (Res ${h3Resolution})`,
         );
-        const dataset = createDataset({
-          name: datasetName,
-          kind: "file",
-          order: projectStore.datasets.length,
-        });
-
         const features: FeatureRecord[] = res.geojson.features.map(
           (f: any, idx: number) => ({
             id: f.id || `h3_${idx}`,
@@ -410,23 +405,22 @@ export function LayerPanel() {
           existingLayerNames,
           `${layer.name} H3 r${h3Resolution}`,
         );
-        const newLayer = createLayer({
-          datasetId: dataset.id,
-          name: layerName,
-          features,
-          crs: GEOGRAPHIC_CRS,
-          format: "geojson",
-          source: "derived",
-          order: 0,
-          style: {
-            color: "#8b5cf6",
-            strokeWidth: 1.5,
-            fillOpacity: 0.35,
-            labelField: "count",
-          },
-        });
 
-        projectStore.addDataset(dataset, [newLayer]);
+        projectStore.addDataset({
+          name: datasetName,
+          kind: "file",
+          source: "derived:h3",
+          layers: [
+            {
+              id: `h3_${Date.now().toString(36)}`,
+              name: layerName,
+              features,
+              crs: GEOGRAPHIC_CRS,
+              format: "geojson",
+              source: "derived:h3",
+            },
+          ],
+        });
         notify(
           `H3 Binning: aggregated ${res.total_points} points into ${res.cell_count} hexagons (Res ${h3Resolution})`,
         );

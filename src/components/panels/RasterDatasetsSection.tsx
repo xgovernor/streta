@@ -34,8 +34,8 @@ import {
   registerCogLayerWithRust,
   type CogPresetInfo,
 } from "../../lib/gis/tiledBackend";
-import { createDataset, uniqueDatasetName } from "../../lib/gis/datasets";
-import { createLayer, uniqueLayerName } from "../../lib/gis/layers";
+import { uniqueDatasetName } from "../../lib/gis/datasets";
+import { uniqueLayerName } from "../../lib/gis/layers";
 import { GEOGRAPHIC_CRS } from "../../lib/gis/crs";
 import type { FeatureRecord } from "../../lib/gis/types";
 import { useProjectStore } from "../../state/projectStore";
@@ -336,12 +336,6 @@ export function RasterDatasetsSection() {
           existingDatasetNames,
           `${preset.name} Contours (${contourInterval}m)`,
         );
-        const dataset = createDataset({
-          name: datasetName,
-          kind: "file",
-          order: projectStore.datasets.length,
-        });
-
         const features: FeatureRecord[] = result.geojson.features.map(
           (f: any, idx: number) => ({
             id: f.id || `contour_${idx}`,
@@ -355,23 +349,22 @@ export function RasterDatasetsSection() {
           existingLayerNames,
           `Contours ${contourInterval}m`,
         );
-        const newLayer = createLayer({
-          datasetId: dataset.id,
-          name: layerName,
-          features,
-          crs: GEOGRAPHIC_CRS,
-          format: "geojson",
-          source: "derived",
-          order: 0,
-          style: {
-            color: "#f59e0b",
-            strokeWidth: 1.5,
-            fillOpacity: 0.1,
-            labelField: "elevation",
-          },
-        });
 
-        projectStore.addDataset(dataset, [newLayer]);
+        projectStore.addDataset({
+          name: datasetName,
+          kind: "file",
+          source: "derived:contour",
+          layers: [
+            {
+              id: `contour_${Date.now().toString(36)}`,
+              name: layerName,
+              features,
+              crs: GEOGRAPHIC_CRS,
+              format: "geojson",
+              source: "derived:contour",
+            },
+          ],
+        });
         notify(
           `Generated ${result.feature_count} contour isolines at ${contourInterval}m intervals`,
         );

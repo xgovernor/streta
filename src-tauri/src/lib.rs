@@ -12,6 +12,10 @@ use raster::{RasterRegistry, SharedRasterRegistry};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Load environment variables from .env
+    let _ = dotenvy::dotenv();
+    let _ = dotenvy::from_path("../.env");
+
     #[cfg(target_os = "linux")]
     {
         if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
@@ -61,6 +65,9 @@ pub fn run() {
             commands::fetch_live_flights,
             commands::fetch_live_earthquakes,
             commands::fetch_live_satellites,
+            commands::fetch_live_fires,
+            commands::fetch_live_vessels,
+            commands::get_api_providers_status,
             commands::fetch_telemetry_binary,
             commands::register_cog_layer,
             commands::get_cog_presets,

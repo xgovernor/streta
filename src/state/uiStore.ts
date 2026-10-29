@@ -17,6 +17,7 @@ interface UiState {
   theme: ThemeMode;
   coordFormat: CoordinateFormat;
   graticule: boolean;
+  trafficFlow: boolean;
   toast: string | null;
   openPanel: (panel: PanelId) => void;
   togglePanel: (panel: PanelId) => void;
@@ -27,6 +28,7 @@ interface UiState {
   setTheme: (theme: ThemeMode) => void;
   setCoordFormat: (format: CoordinateFormat) => void;
   setGraticule: (visible: boolean) => void;
+  setTrafficFlow: (visible: boolean) => void;
   flash: (message: string) => void;
   dismissFlash: () => void;
   notify: (message: string) => void;
@@ -35,7 +37,7 @@ interface UiState {
 /** Preferences that survive an app restart, stored on the local device. */
 type PersistedUi = Pick<
   UiState,
-  "basemap" | "coordFormat" | "theme" | "graticule"
+  "basemap" | "coordFormat" | "theme" | "graticule" | "trafficFlow"
 >;
 
 export const DEFAULT_PREFERENCES: PersistedUi = {
@@ -43,6 +45,7 @@ export const DEFAULT_PREFERENCES: PersistedUi = {
   coordFormat: "decimal",
   theme: "dark",
   graticule: false,
+  trafficFlow: false,
 };
 
 const STORAGE_KEY = "strata.preferences";
@@ -80,6 +83,10 @@ function readPreferences(value: unknown): PersistedUi {
       typeof stored.graticule === "boolean" ?
         stored.graticule
       : DEFAULT_PREFERENCES.graticule,
+    trafficFlow:
+      typeof stored.trafficFlow === "boolean" ?
+        stored.trafficFlow
+      : DEFAULT_PREFERENCES.trafficFlow,
   };
 }
 
@@ -114,6 +121,8 @@ export const useUiStore = create<UiState>()(
       setCoordFormat: (coordFormat) => set({ coordFormat }),
 
       setGraticule: (graticule) => set({ graticule }),
+
+      setTrafficFlow: (trafficFlow) => set({ trafficFlow }),
 
       flash: (message) => {
         window.clearTimeout(flashTimer);
@@ -159,6 +168,7 @@ export const useUiStore = create<UiState>()(
         coordFormat: state.coordFormat,
         theme: state.theme,
         graticule: state.graticule,
+        trafficFlow: state.trafficFlow,
       }),
       merge: (persisted, current) => ({
         ...current,

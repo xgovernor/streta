@@ -625,7 +625,6 @@ export async function importDatasetFiles(): Promise<DatasetImportSummary | null>
         }
         const parsed = parseGeoJson(
           JSON.stringify(res.feature_collection),
-          job.name,
         );
         outcomes.push(registerImport(parsed, job.name, job.source));
         continue;

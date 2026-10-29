@@ -2,6 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    let _ = dotenvy::dotenv();
+    let _ = dotenvy::from_path("../.env");
+
     #[cfg(target_os = "linux")]
     {
         // Workaround for WebKitGTK 2.40+ bug where DMA-BUF renderer triggers NeedDebuggerBreak trap

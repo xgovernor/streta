@@ -30,9 +30,14 @@ export interface Route {
  * hybrid of imagery plus roads and labels.
  */
 function googleTiles(lyrs: string): string[] {
+  const apiKey =
+    typeof import.meta !== "undefined" && import.meta.env?.GOOGLE_MAPS_API_KEY
+      ? import.meta.env.GOOGLE_MAPS_API_KEY
+      : "";
+  const keyParam = apiKey ? `&key=${apiKey}` : "";
   return [0, 1, 2, 3].map(
     (host) =>
-      `https://mt${host}.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}&hl=en`,
+      `https://mt${host}.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}&hl=en${keyParam}`,
   );
 }
 

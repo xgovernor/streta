@@ -246,3 +246,32 @@ export interface SatelliteTarget {
   groundTrack: [number, number][];
 }
 
+export interface FireTarget {
+  id: string;
+  lon: number;
+  lat: number;
+  brightnessK: number;
+  frpMw: number;
+  confidence: string;
+  acqDate: string;
+  acqTime: string;
+  satellite: string;
+  dayNight: string;
+}
+
+export interface VesselTarget {
+  mmsi: number;
+  name: string;
+  callsign: string;
+  shipType: string;
+  lon: number;
+  lat: number;
+  speedKnots: number;
+  courseDeg: number;
+  headingDeg?: number;
+  destination: string;
+  status: string;
+  simulated: boolean;
+}
+
+

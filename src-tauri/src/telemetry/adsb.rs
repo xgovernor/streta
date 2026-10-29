@@ -44,6 +44,64 @@ fn warn_once(msg: &str) {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct OpenSkyTokenResponse {
+    access_token: String,
+    expires_in: u64,
+}
+
+static TOKEN_CACHE: OnceLock<tokio::sync::RwLock<Option<(String, std::time::Instant)>>> = OnceLock::new();
+
+fn token_cache() -> &'static tokio::sync::RwLock<Option<(String, std::time::Instant)>> {
+    TOKEN_CACHE.get_or_init(|| tokio::sync::RwLock::new(None))
+}
+
+pub async fn get_opensky_auth_token(client: &reqwest::Client) -> Option<String> {
+    let client_id = std::env::var("OPENSKY_CLIENT_ID").ok()?;
+    let client_secret = std::env::var("OPENSKY_CLIENT_SECRET").ok()?;
+    let cid = client_id.trim();
+    let csec = client_secret.trim();
+
+    if cid.is_empty() || csec.is_empty() {
+        return None;
+    }
+
+    // Check cached token
+    {
+        let guard = token_cache().read().await;
+        if let Some((ref tok, expiry)) = *guard {
+            if std::time::Instant::now() < expiry {
+                return Some(tok.clone());
+            }
+        }
+    }
+
+    // Request new token
+    let params = [
+        ("grant_type", "client_credentials"),
+        ("client_id", cid),
+        ("client_secret", csec),
+    ];
+
+    let resp = client
+        .post("https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token")
+        .form(&params)
+        .send()
+        .await
+        .ok()?;
+
+    if resp.status().is_success() {
+        if let Ok(data) = resp.json::<OpenSkyTokenResponse>().await {
+            let expiry = std::time::Instant::now() + Duration::from_secs(data.expires_in.saturating_sub(60));
+            let mut guard = token_cache().write().await;
+            *guard = Some((data.access_token.clone(), expiry));
+            return Some(data.access_token);
+        }
+    }
+
+    None
+}
+
 pub async fn fetch_live_flights(
     bbox: Option<(f64, f64, f64, f64)>,
 ) -> Result<Vec<FlightTarget>, String> {
@@ -64,7 +122,12 @@ pub async fn fetch_live_flights(
         }
     }
 
-    match client.get(&url).send().await {
+    let mut request_builder = client.get(&url);
+    if let Some(token) = get_opensky_auth_token(client).await {
+        request_builder = request_builder.bearer_auth(token);
+    }
+
+    match request_builder.send().await {
         Ok(resp) => {
             if !resp.status().is_success() {
                 warn_once(&format!("HTTP {}", resp.status()));

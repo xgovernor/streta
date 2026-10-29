@@ -191,6 +191,50 @@ pub fn fetch_live_satellites() -> Result<Vec<crate::telemetry::SatelliteTarget>,
 }
 
 #[tauri::command]
+pub async fn fetch_live_fires(
+    bbox: Option<(f64, f64, f64, f64)>,
+) -> Result<Vec<crate::telemetry::FireTarget>, String> {
+    crate::telemetry::fetch_live_fires(bbox).await
+}
+
+#[tauri::command]
+pub async fn fetch_live_vessels(
+    bbox: Option<(f64, f64, f64, f64)>,
+) -> Result<Vec<crate::telemetry::VesselTarget>, String> {
+    crate::telemetry::fetch_live_vessels(bbox).await
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ApiProvidersStatus {
+    pub google_maps: bool,
+    pub cesium_ion: bool,
+    pub opensky_oauth: bool,
+    pub nasa_firms: bool,
+    pub aisstream: bool,
+    pub tomtom_traffic: bool,
+}
+
+#[tauri::command]
+pub fn get_api_providers_status() -> ApiProvidersStatus {
+    let google_maps = std::env::var("GOOGLE_MAPS_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false);
+    let cesium_ion = std::env::var("CESIUM_ION_TOKEN").map(|s| !s.trim().is_empty()).unwrap_or(false);
+    let opensky_oauth = std::env::var("OPENSKY_CLIENT_ID").map(|s| !s.trim().is_empty()).unwrap_or(false)
+        && std::env::var("OPENSKY_CLIENT_SECRET").map(|s| !s.trim().is_empty()).unwrap_or(false);
+    let nasa_firms = std::env::var("FIRMS_MAP_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false);
+    let aisstream = std::env::var("AISSTREAM_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false);
+    let tomtom_traffic = std::env::var("TOMTOM_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false);
+
+    ApiProvidersStatus {
+        google_maps,
+        cesium_ion,
+        opensky_oauth,
+        nasa_firms,
+        aisstream,
+        tomtom_traffic,
+    }
+}
+
+#[tauri::command]
 pub async fn fetch_telemetry_binary(
     feed_type: String,
     bbox: Option<(f64, f64, f64, f64)>,

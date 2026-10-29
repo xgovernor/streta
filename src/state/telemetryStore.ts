@@ -1,22 +1,39 @@
 import { create } from "zustand";
 import {
   fetchLiveEarthquakes,
+  fetchLiveFires,
   fetchLiveFlights,
   fetchLiveSatellites,
+  fetchLiveVessels,
 } from "../lib/gis/tiledBackend";
-import type { EarthquakeTarget, FlightTarget, SatelliteTarget } from "../lib/gis/types";
+import type {
+  EarthquakeTarget,
+  FireTarget,
+  FlightTarget,
+  SatelliteTarget,
+  VesselTarget,
+} from "../lib/gis/types";
 
-export type TelemetryFeedType = "flights" | "earthquakes" | "satellites";
+export type TelemetryFeedType =
+  | "flights"
+  | "earthquakes"
+  | "satellites"
+  | "fires"
+  | "vessels";
 
 export type SelectedTelemetryTarget =
   | { type: "flight"; data: FlightTarget }
   | { type: "earthquake"; data: EarthquakeTarget }
-  | { type: "satellite"; data: SatelliteTarget };
+  | { type: "satellite"; data: SatelliteTarget }
+  | { type: "fire"; data: FireTarget }
+  | { type: "vessel"; data: VesselTarget };
 
 interface TelemetryState {
   flightsEnabled: boolean;
   earthquakesEnabled: boolean;
   satellitesEnabled: boolean;
+  firesEnabled: boolean;
+  vesselsEnabled: boolean;
   autoRefreshSeconds: number; // 0 (off), 10, 30, 60
   loading: boolean;
   lastUpdated: Date | null;
@@ -25,11 +42,15 @@ interface TelemetryState {
   flights: FlightTarget[];
   earthquakes: EarthquakeTarget[];
   satellites: SatelliteTarget[];
+  fires: FireTarget[];
+  vessels: VesselTarget[];
 
   // Search & filter
   flightSearch: string;
   earthquakeMinMag: number;
   satelliteSearch: string;
+  fireMinConfidence: number;
+  vesselSearch: string;
 
   // Actions
   toggleFeed: (feed: TelemetryFeedType) => void;
@@ -38,6 +59,8 @@ interface TelemetryState {
   setFlightSearch: (search: string) => void;
   setEarthquakeMinMag: (mag: number) => void;
   setSatelliteSearch: (search: string) => void;
+  setFireMinConfidence: (confidence: number) => void;
+  setVesselSearch: (search: string) => void;
   setSelectedTarget: (target: SelectedTelemetryTarget | null) => void;
   refreshFeeds: () => Promise<void>;
 }
@@ -46,6 +69,8 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
   flightsEnabled: true,
   earthquakesEnabled: true,
   satellitesEnabled: true,
+  firesEnabled: true,
+  vesselsEnabled: true,
   autoRefreshSeconds: 10,
   loading: false,
   lastUpdated: null,
@@ -54,10 +79,14 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
   flights: [],
   earthquakes: [],
   satellites: [],
+  fires: [],
+  vessels: [],
 
   flightSearch: "",
   earthquakeMinMag: 2.0,
   satelliteSearch: "",
+  fireMinConfidence: 50,
+  vesselSearch: "",
 
   toggleFeed: (feed) => {
     if (feed === "flights") {
@@ -75,6 +104,16 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
       set({ satellitesEnabled: next });
       if (next) get().refreshFeeds();
       else set({ satellites: [] });
+    } else if (feed === "fires") {
+      const next = !get().firesEnabled;
+      set({ firesEnabled: next });
+      if (next) get().refreshFeeds();
+      else set({ fires: [] });
+    } else if (feed === "vessels") {
+      const next = !get().vesselsEnabled;
+      set({ vesselsEnabled: next });
+      if (next) get().refreshFeeds();
+      else set({ vessels: [] });
     }
   },
 
@@ -82,6 +121,8 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     if (feed === "flights") set({ flightsEnabled: enabled });
     else if (feed === "earthquakes") set({ earthquakesEnabled: enabled });
     else if (feed === "satellites") set({ satellitesEnabled: enabled });
+    else if (feed === "fires") set({ firesEnabled: enabled });
+    else if (feed === "vessels") set({ vesselsEnabled: enabled });
   },
 
   setAutoRefresh: (seconds) => set({ autoRefreshSeconds: seconds }),
@@ -93,10 +134,24 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     }
   },
   setSatelliteSearch: (satelliteSearch) => set({ satelliteSearch }),
+  setFireMinConfidence: (fireMinConfidence) => {
+    set({ fireMinConfidence });
+    if (get().firesEnabled) {
+      get().refreshFeeds();
+    }
+  },
+  setVesselSearch: (vesselSearch) => set({ vesselSearch }),
   setSelectedTarget: (selectedTarget) => set({ selectedTarget }),
 
   refreshFeeds: async () => {
-    const { flightsEnabled, earthquakesEnabled, satellitesEnabled, earthquakeMinMag } = get();
+    const {
+      flightsEnabled,
+      earthquakesEnabled,
+      satellitesEnabled,
+      firesEnabled,
+      vesselsEnabled,
+      earthquakeMinMag,
+    } = get();
     set({ loading: true });
 
     try {
@@ -122,6 +177,22 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
         promises.push(
           fetchLiveSatellites().then((satellites) => {
             set({ satellites });
+          })
+        );
+      }
+
+      if (firesEnabled) {
+        promises.push(
+          fetchLiveFires().then((fires) => {
+            set({ fires });
+          })
+        );
+      }
+
+      if (vesselsEnabled) {
+        promises.push(
+          fetchLiveVessels().then((vessels) => {
+            set({ vessels });
           })
         );
       }

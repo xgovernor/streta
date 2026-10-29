@@ -841,6 +841,49 @@ export function satelliteTargetsToFeatures(satellites: SatelliteTarget[]): Featu
   }));
 }
 
+/** Converts live FireTarget items to standard GIS FeatureRecord items. */
+export function fireTargetsToFeatures(fires: FireTarget[]): FeatureRecord[] {
+  return fires.map((f) => ({
+    id: f.id,
+    geometry: {
+      type: "Point",
+      coordinates: [f.lon, f.lat],
+    },
+    properties: {
+      satellite: f.satellite,
+      brightnessK: Number(f.brightnessK.toFixed(1)),
+      confidence: f.confidence,
+      frpMw: Number(f.frpMw.toFixed(1)),
+      acqDate: f.acqDate,
+      acqTime: f.acqTime,
+      dayNight: f.dayNight,
+    },
+  }));
+}
+
+/** Converts live VesselTarget items to standard GIS FeatureRecord items. */
+export function vesselTargetsToFeatures(vessels: VesselTarget[]): FeatureRecord[] {
+  return vessels.map((v) => ({
+    id: String(v.mmsi),
+    geometry: {
+      type: "Point",
+      coordinates: [v.lon, v.lat],
+    },
+    properties: {
+      name: v.name,
+      mmsi: v.mmsi,
+      callsign: v.callsign,
+      shipType: v.shipType,
+      speedKnots: Number(v.speedKnots.toFixed(1)),
+      courseDeg: Math.round(v.courseDeg),
+      headingDeg: v.headingDeg ? Math.round(v.headingDeg) : null,
+      status: v.status,
+      destination: v.destination || "—",
+      simulated: v.simulated,
+    },
+  }));
+}
+
 export interface CogPresetInfo {
   id: string;
   name: string;
@@ -1027,7 +1070,6 @@ export async function generateContours(
   }
 
   // Client fallback for browser tests: synthesize isoline features across bounding box
-  const step = params.interval ?? 50;
   const thresholds = params.thresholds ?? [100, 200, 300, 400, 500];
   const [minX, minY, maxX, maxY] = params.bbox;
   const features = thresholds.map((th, idx) => ({
@@ -1198,5 +1240,87 @@ export async function loadGeoParquetLayer(
   }
   return null;
 }
+
+export interface FireTarget {
+  id: string;
+  lon: number;
+  lat: number;
+  brightnessK: number;
+  frpMw: number;
+  confidence: string;
+  acqDate: string;
+  acqTime: string;
+  satellite: string;
+  dayNight: string;
+}
+
+export interface VesselTarget {
+  mmsi: number;
+  name: string;
+  callsign: string;
+  shipType: string;
+  lon: number;
+  lat: number;
+  speedKnots: number;
+  courseDeg: number;
+  headingDeg?: number;
+  destination: string;
+  status: string;
+  simulated: boolean;
+}
+
+export interface ApiProvidersStatus {
+  google_maps: boolean;
+  cesium_ion: boolean;
+  opensky_oauth: boolean;
+  nasa_firms: boolean;
+  aisstream: boolean;
+  tomtom_traffic: boolean;
+}
+
+export async function fetchLiveFires(
+  bbox?: [number, number, number, number],
+): Promise<FireTarget[]> {
+  if (isTauriEnvironment()) {
+    try {
+      return await invoke<FireTarget[]>("fetch_live_fires", { bbox: bbox ?? null });
+    } catch (err) {
+      console.error("fetch_live_fires failed:", err);
+    }
+  }
+  return [];
+}
+
+export async function fetchLiveVessels(
+  bbox?: [number, number, number, number],
+): Promise<VesselTarget[]> {
+  if (isTauriEnvironment()) {
+    try {
+      return await invoke<VesselTarget[]>("fetch_live_vessels", { bbox: bbox ?? null });
+    } catch (err) {
+      console.error("fetch_live_vessels failed:", err);
+    }
+  }
+  return [];
+}
+
+export async function getApiProvidersStatus(): Promise<ApiProvidersStatus> {
+  if (isTauriEnvironment()) {
+    try {
+      return await invoke<ApiProvidersStatus>("get_api_providers_status");
+    } catch (err) {
+      console.error("get_api_providers_status failed:", err);
+    }
+  }
+  return {
+    google_maps: Boolean(import.meta.env.GOOGLE_MAPS_API_KEY),
+    cesium_ion: Boolean(import.meta.env.CESIUM_ION_TOKEN),
+    opensky_oauth: Boolean(import.meta.env.OPENSKY_CLIENT_ID),
+    nasa_firms: Boolean(import.meta.env.FIRMS_MAP_KEY),
+    aisstream: Boolean(import.meta.env.AISSTREAM_API_KEY),
+    tomtom_traffic: Boolean(import.meta.env.TOMTOM_API_KEY),
+  };
+}
+
 
 

@@ -7,12 +7,14 @@ import type OlMap from "ol/Map";
 import { fromLonLat } from "ol/proj";
 import VectorSource from "ol/source/Vector";
 import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style } from "ol/style";
-import type { EarthquakeTarget, FlightTarget, SatelliteTarget } from "../lib/gis/types";
+import type { EarthquakeTarget, FireTarget, FlightTarget, SatelliteTarget, VesselTarget } from "../lib/gis/types";
 
 export interface TelemetryLayers {
   flightsLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
   earthquakesLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
   satellitesLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
+  firesLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
+  vesselsLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
   tracksLayer: VectorLayer<VectorSource>;
 }
 
@@ -22,12 +24,43 @@ const TELEMETRY_POINTS_Z = 800;
 let flightsSource: VectorSource | null = null;
 let earthquakesSource: VectorSource | null = null;
 let satellitesSource: VectorSource | null = null;
+let firesSource: VectorSource | null = null;
+let vesselsSource: VectorSource | null = null;
 let tracksSource: VectorSource | null = null;
 
 let flightsLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
 let earthquakesLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
 let satellitesLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
+let firesLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
+let vesselsLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
 let tracksLayer: VectorLayer<VectorSource> | null = null;
+
+const fireCanvasStyle = (feature: FeatureLike) => {
+  const frp = (feature.get("frp") as number) || 10;
+  const radius = Math.min(18, Math.max(4, 4 + Math.sqrt(frp)));
+  const color = frp > 200 ? "#ef4444" : frp > 50 ? "#f97316" : "#eab308";
+  return new Style({
+    image: new CircleStyle({
+      radius,
+      fill: new Fill({ color }),
+      stroke: new Stroke({ color: "#ffffff", width: 1 }),
+    }),
+  });
+};
+
+const vesselCanvasStyle = (feature: FeatureLike) => {
+  const course = (feature.get("course") as number) || 0;
+  return new Style({
+    image: new RegularShape({
+      points: 3,
+      radius: 7,
+      rotation: (course * Math.PI) / 180,
+      rotateWithView: true,
+      fill: new Fill({ color: "#06b6d4" }),
+      stroke: new Stroke({ color: "#ffffff", width: 1 }),
+    }),
+  });
+};
 
 const flightCanvasStyle = (feature: FeatureLike) => {
   const heading = (feature.get("heading") as number) || 0;
@@ -97,11 +130,15 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
   if (flightsLayer) map.removeLayer(flightsLayer);
   if (earthquakesLayer) map.removeLayer(earthquakesLayer);
   if (satellitesLayer) map.removeLayer(satellitesLayer);
+  if (firesLayer) map.removeLayer(firesLayer);
+  if (vesselsLayer) map.removeLayer(vesselsLayer);
   if (tracksLayer) map.removeLayer(tracksLayer);
 
   flightsSource = new VectorSource();
   earthquakesSource = new VectorSource();
   satellitesSource = new VectorSource();
+  firesSource = new VectorSource();
+  vesselsSource = new VectorSource();
   tracksSource = new VectorSource();
 
   const hasWebGL = checkWebGLSupport();
@@ -166,11 +203,57 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
         },
         zIndex: TELEMETRY_POINTS_Z + 2,
       });
+
+      // 4. NASA FIRMS Active Fires: Intense heat anomaly circles
+      firesLayer = new WebGLVectorLayer({
+        source: firesSource,
+        style: {
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["get", "frp"],
+            0,
+            4,
+            100,
+            10,
+            500,
+            18,
+          ],
+          "circle-fill-color": [
+            "case",
+            [">=", ["get", "frp"], 200],
+            "rgba(239, 68, 68, 0.9)",
+            [">=", ["get", "frp"], 50],
+            "rgba(249, 115, 22, 0.85)",
+            "rgba(234, 179, 8, 0.8)",
+          ],
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1,
+        },
+        zIndex: TELEMETRY_POINTS_Z + 3,
+      });
+
+      // 5. AIS Maritime Vessels: Directional ship hulls
+      vesselsLayer = new WebGLVectorLayer({
+        source: vesselsSource,
+        style: {
+          "shape-points": 3,
+          "shape-radius": 7,
+          "shape-rotation": ["*", ["get", "course"], Math.PI / 180],
+          "shape-rotate-with-view": true,
+          "shape-fill-color": "#06b6d4",
+          "shape-stroke-color": "#ffffff",
+          "shape-stroke-width": 1,
+        },
+        zIndex: TELEMETRY_POINTS_Z,
+      });
     } catch (err) {
       console.warn("WebGL layer init failed, using Canvas fallback:", err);
       flightsLayer = null;
       earthquakesLayer = null;
       satellitesLayer = null;
+      firesLayer = null;
+      vesselsLayer = null;
     }
   }
 
@@ -196,8 +279,22 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
       zIndex: TELEMETRY_POINTS_Z + 2,
     });
   }
+  if (!firesLayer) {
+    firesLayer = new VectorLayer({
+      source: firesSource,
+      style: fireCanvasStyle,
+      zIndex: TELEMETRY_POINTS_Z + 3,
+    });
+  }
+  if (!vesselsLayer) {
+    vesselsLayer = new VectorLayer({
+      source: vesselsSource,
+      style: vesselCanvasStyle,
+      zIndex: TELEMETRY_POINTS_Z,
+    });
+  }
 
-  // 4. Satellite Ground Tracks (LineStrings)
+  // Satellite Ground Tracks (LineStrings)
   tracksLayer = new VectorLayer({
     source: tracksSource,
     style: new Style({
@@ -214,11 +311,15 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
   map.addLayer(flightsLayer);
   map.addLayer(earthquakesLayer);
   map.addLayer(satellitesLayer);
+  map.addLayer(firesLayer);
+  map.addLayer(vesselsLayer);
 
   return {
     flightsLayer,
     earthquakesLayer,
     satellitesLayer,
+    firesLayer,
+    vesselsLayer,
     tracksLayer,
   };
 }
@@ -367,10 +468,85 @@ export function updateSatelliteFeatures(satellites: SatelliteTarget[]) {
 }
 
 /**
+ * Updates active NASA FIRMS fire vector features on the telemetry layer.
+ */
+export function updateFireFeatures(fires: FireTarget[]) {
+  if (!firesSource) return;
+
+  const features: Feature[] = [];
+  for (const fire of fires) {
+    if (
+      fire.lon == null ||
+      fire.lat == null ||
+      isNaN(fire.lon) ||
+      isNaN(fire.lat)
+    ) {
+      continue;
+    }
+
+    const feature = new Feature({
+      geometry: new Point(fromLonLat([fire.lon, fire.lat])),
+      telemetryType: "fire",
+      id: fire.id,
+      frp: fire.frpMw || 0,
+      brightness: fire.brightnessK || 0,
+      confidence: fire.confidence || "n",
+      acqDate: fire.acqDate || "",
+      acqTime: fire.acqTime || "",
+      satellite: fire.satellite || "VIIRS",
+      dayNight: fire.dayNight || "N",
+      raw: fire,
+    });
+    features.push(feature);
+  }
+
+  firesSource.clear();
+  firesSource.addFeatures(features);
+}
+
+/**
+ * Updates active maritime vessel vector features on the telemetry layer.
+ */
+export function updateVesselFeatures(vessels: VesselTarget[]) {
+  if (!vesselsSource) return;
+
+  const features: Feature[] = [];
+  for (const vessel of vessels) {
+    if (
+      vessel.lon == null ||
+      vessel.lat == null ||
+      isNaN(vessel.lon) ||
+      isNaN(vessel.lat)
+    ) {
+      continue;
+    }
+
+    const feature = new Feature({
+      geometry: new Point(fromLonLat([vessel.lon, vessel.lat])),
+      telemetryType: "vessel",
+      id: String(vessel.mmsi),
+      name: vessel.name || `MMSI ${vessel.mmsi}`,
+      callsign: vessel.callsign || "",
+      shipType: vessel.shipType || "Cargo",
+      speed: vessel.speedKnots || 0,
+      course: vessel.courseDeg || 0,
+      heading: vessel.headingDeg ?? vessel.courseDeg ?? 0,
+      destination: vessel.destination || "",
+      status: vessel.status || "Under way",
+      raw: vessel,
+    });
+    features.push(feature);
+  }
+
+  vesselsSource.clear();
+  vesselsSource.addFeatures(features);
+}
+
+/**
  * Toggles visibility of specific telemetry layers.
  */
 export function setTelemetryLayerVisibility(
-  feed: "flights" | "earthquakes" | "satellites",
+  feed: "flights" | "earthquakes" | "satellites" | "fires" | "vessels",
   visible: boolean
 ) {
   if (feed === "flights" && flightsLayer) {
@@ -380,6 +556,10 @@ export function setTelemetryLayerVisibility(
   } else if (feed === "satellites") {
     if (satellitesLayer) satellitesLayer.setVisible(visible);
     if (tracksLayer) tracksLayer.setVisible(visible);
+  } else if (feed === "fires" && firesLayer) {
+    firesLayer.setVisible(visible);
+  } else if (feed === "vessels" && vesselsLayer) {
+    vesselsLayer.setVisible(visible);
   }
 }
 
@@ -390,5 +570,8 @@ export function clearTelemetryLayers() {
   flightsSource?.clear();
   earthquakesSource?.clear();
   satellitesSource?.clear();
+  firesSource?.clear();
+  vesselsSource?.clear();
   tracksSource?.clear();
 }
+
