@@ -2,8 +2,8 @@ use super::adsb::FlightTarget;
 use super::earthquakes::EarthquakeTarget;
 use super::satellites::SatelliteTarget;
 
-/// Packs telemetry points into a contiguous 32-byte Float32Array representation.
-/// Layout per element (8 x f32 = 32 bytes):
+/// Contiguous 32-byte Float32Array representation for high-throughput WebGL VBO uploads.
+/// Layout per vertex (8 x f32 = 32 bytes):
 /// [0] id_hash (f32)
 /// [1] lon (f32)
 /// [2] lat (f32)
@@ -12,67 +12,79 @@ use super::satellites::SatelliteTarget;
 /// [5] velocity / mag (f32)
 /// [6] aux_metric (f32)
 /// [7] category_code (f32: 1.0 = Flight, 2.0 = Earthquake, 3.0 = Satellite)
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct TelemetryVertex {
+    pub id_hash: f32,
+    pub lon: f32,
+    pub lat: f32,
+    pub heading_or_inc: f32,
+    pub altitude: f32,
+    pub velocity_or_mag: f32,
+    pub aux_metric: f32,
+    pub category_code: f32,
+}
+
+const _: () = assert!(std::mem::size_of::<TelemetryVertex>() == 32);
+
 pub fn pack_flights_binary(flights: &[FlightTarget]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(flights.len() * 32);
+    let vertices: Vec<TelemetryVertex> = flights
+        .iter()
+        .map(|f| {
+            let id_hash = (f.icao24.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)) % 1_000_000) as f32;
+            TelemetryVertex {
+                id_hash,
+                lon: f.lon as f32,
+                lat: f.lat as f32,
+                heading_or_inc: f.heading_deg.unwrap_or(0.0) as f32,
+                altitude: f.altitude_m.unwrap_or(0.0) as f32,
+                velocity_or_mag: f.velocity_mps.unwrap_or(0.0) as f32,
+                aux_metric: f.vertical_rate_mps.unwrap_or(0.0) as f32,
+                category_code: 1.0,
+            }
+        })
+        .collect();
 
-    for f in flights {
-        let id_hash = (f.icao24.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)) % 1000000) as f32;
-        let lon = f.lon as f32;
-        let lat = f.lat as f32;
-        let heading = f.heading_deg.unwrap_or(0.0) as f32;
-        let alt = f.altitude_m.unwrap_or(0.0) as f32;
-        let vel = f.velocity_mps.unwrap_or(0.0) as f32;
-        let v_rate = f.vertical_rate_mps.unwrap_or(0.0) as f32;
-        let cat = 1.0f32;
-
-        for &val in &[id_hash, lon, lat, heading, alt, vel, v_rate, cat] {
-            bytes.extend_from_slice(&val.to_le_bytes());
-        }
-    }
-
-    bytes
+    bytemuck::cast_slice(&vertices).to_vec()
 }
 
 pub fn pack_earthquakes_binary(quakes: &[EarthquakeTarget]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(quakes.len() * 32);
+    let vertices: Vec<TelemetryVertex> = quakes
+        .iter()
+        .map(|q| {
+            let id_hash = (q.id.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)) % 1_000_000) as f32;
+            TelemetryVertex {
+                id_hash,
+                lon: q.lon as f32,
+                lat: q.lat as f32,
+                heading_or_inc: 0.0,
+                altitude: q.depth_km as f32,
+                velocity_or_mag: q.mag as f32,
+                aux_metric: q.sig as f32,
+                category_code: 2.0,
+            }
+        })
+        .collect();
 
-    for q in quakes {
-        let id_hash = (q.id.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)) % 1000000) as f32;
-        let lon = q.lon as f32;
-        let lat = q.lat as f32;
-        let heading = 0.0f32;
-        let depth = q.depth_km as f32;
-        let mag = q.mag as f32;
-        let sig = q.sig as f32;
-        let cat = 2.0f32;
-
-        for &val in &[id_hash, lon, lat, heading, depth, mag, sig, cat] {
-            bytes.extend_from_slice(&val.to_le_bytes());
-        }
-    }
-
-    bytes
+    bytemuck::cast_slice(&vertices).to_vec()
 }
 
 pub fn pack_satellites_binary(sats: &[SatelliteTarget]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(sats.len() * 32);
+    let vertices: Vec<TelemetryVertex> = sats
+        .iter()
+        .map(|s| TelemetryVertex {
+            id_hash: s.norad_id as f32,
+            lon: s.lon as f32,
+            lat: s.lat as f32,
+            heading_or_inc: s.inclination_deg as f32,
+            altitude: s.altitude_km as f32,
+            velocity_or_mag: s.velocity_kms as f32,
+            aux_metric: s.period_mins as f32,
+            category_code: 3.0,
+        })
+        .collect();
 
-    for s in sats {
-        let id = s.norad_id as f32;
-        let lon = s.lon as f32;
-        let lat = s.lat as f32;
-        let inc = s.inclination_deg as f32;
-        let alt = s.altitude_km as f32;
-        let vel = s.velocity_kms as f32;
-        let period = s.period_mins as f32;
-        let cat = 3.0f32;
-
-        for &val in &[id, lon, lat, inc, alt, vel, period, cat] {
-            bytes.extend_from_slice(&val.to_le_bytes());
-        }
-    }
-
-    bytes
+    bytemuck::cast_slice(&vertices).to_vec()
 }
 
 #[cfg(test)]
@@ -97,5 +109,12 @@ mod tests {
         }];
         let bytes = pack_flights_binary(&flights);
         assert_eq!(bytes.len(), 32);
+
+        // Verify roundtrip read via bytemuck
+        let slice: &[TelemetryVertex] = bytemuck::cast_slice(&bytes);
+        assert_eq!(slice.len(), 1);
+        assert_eq!(slice[0].lon, -122.0);
+        assert_eq!(slice[0].lat, 37.0);
+        assert_eq!(slice[0].category_code, 1.0);
     }
 }

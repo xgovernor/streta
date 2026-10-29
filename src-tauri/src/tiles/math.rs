@@ -81,6 +81,13 @@ pub fn project_to_tile(x: f64, y: f64, bbox: &BBox3857, extent: f64) -> (i32, i3
     (px, py)
 }
 
+/// Projects a 3857 coordinate (x, y) to continuous float tile space [0.0, 4096.0].
+pub fn project_to_tile_f64(x: f64, y: f64, bbox: &BBox3857, extent: f64) -> (f64, f64) {
+    let px = (x - bbox.min_x) / bbox.width() * extent;
+    let py = (bbox.max_y - y) / bbox.height() * extent;
+    (px, py)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

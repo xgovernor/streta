@@ -1,4 +1,7 @@
-use geo::{Bearing, Coord, CoordsIter, Destination, Distance, Geodesic, GeodesicArea, Intersects, LineString, Point, Polygon};
+use geo::{
+    Bearing, Centroid, Closest, ClosestPoint, Contains, Coord, CoordsIter, Destination, Distance,
+    Geodesic, GeodesicArea, Intersects, LineString, Point, Polygon,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -89,13 +92,20 @@ pub fn measure_geodesic(coords: &[(f64, f64)], is_polygon: bool) -> Result<Geode
         area_acres = Some(((area / 4046.8564224) * 100.0).round() / 100.0);
         perimeter_m = Some((perim * 10.0).round() / 10.0);
 
-        // Centroid approximation
-        let sum_lon: f64 = coords.iter().map(|c| c.0).sum();
-        let sum_lat: f64 = coords.iter().map(|c| c.1).sum();
-        centroid = Some((
-            (sum_lon / coords.len() as f64 * 100000.0).round() / 100000.0,
-            (sum_lat / coords.len() as f64 * 100000.0).round() / 100000.0,
-        ));
+        // Centroid: use true area-weighted polygon centroid (falls back to mean if degenerated)
+        if let Some(c) = poly.centroid() {
+            centroid = Some((
+                (c.x() * 100000.0).round() / 100000.0,
+                (c.y() * 100000.0).round() / 100000.0,
+            ));
+        } else {
+            let sum_lon: f64 = coords.iter().map(|c| c.0).sum();
+            let sum_lat: f64 = coords.iter().map(|c| c.1).sum();
+            centroid = Some((
+                (sum_lon / coords.len() as f64 * 100000.0).round() / 100000.0,
+                (sum_lat / coords.len() as f64 * 100000.0).round() / 100000.0,
+            ));
+        }
     }
 
     Ok(GeodesicMeasurementResult {
@@ -286,11 +296,55 @@ pub fn spatial_buffer_query(
             other => {
                 if buffer_poly.intersects(other) {
                     intersects = true;
-                    if let Some(first_coord) = other.coords_iter().next() {
-                        let pt = Point::new(first_coord.x, first_coord.y);
-                        min_distance = Geodesic.distance(center_pt, pt);
-                        let b = Geodesic.bearing(center_pt, pt);
-                        bearing_deg = ((b % 360.0) + 360.0) % 360.0;
+                    let contains_center = match other {
+                        geo::Geometry::Polygon(poly) => poly.contains(&center_pt),
+                        geo::Geometry::MultiPolygon(mp) => mp.contains(&center_pt),
+                        _ => false,
+                    };
+
+                    if contains_center {
+                        min_distance = 0.0;
+                        bearing_deg = 0.0;
+                    } else {
+                        let closest = match other {
+                            geo::Geometry::LineString(ls) => ls.closest_point(&center_pt),
+                            geo::Geometry::MultiLineString(mls) => mls.closest_point(&center_pt),
+                            geo::Geometry::Polygon(poly) => poly.exterior().closest_point(&center_pt),
+                            geo::Geometry::MultiPolygon(mp) => {
+                                let mut best_pt = None;
+                                let mut best_d = f64::INFINITY;
+                                for p in mp {
+                                    if let Closest::SinglePoint(pt) | Closest::Intersection(pt) = p.exterior().closest_point(&center_pt) {
+                                        let d = Geodesic.distance(center_pt, pt);
+                                        if d < best_d {
+                                            best_d = d;
+                                            best_pt = Some(pt);
+                                        }
+                                    }
+                                }
+                                match best_pt {
+                                    Some(pt) => Closest::SinglePoint(pt),
+                                    None => Closest::Indeterminate,
+                                }
+                            }
+                            _ => Closest::Indeterminate,
+                        };
+
+                        match closest {
+                            Closest::SinglePoint(pt) | Closest::Intersection(pt) => {
+                                min_distance = Geodesic.distance(center_pt, pt);
+                                let b = Geodesic.bearing(center_pt, pt);
+                                bearing_deg = ((b % 360.0) + 360.0) % 360.0;
+                            }
+                            Closest::Indeterminate => {
+                                if let Some(first_coord) = other.coords_iter().next() {
+                                    let pt = Point::new(first_coord.x, first_coord.y);
+                                    min_distance = Geodesic.distance(center_pt, pt);
+                                    let b = Geodesic.bearing(center_pt, pt);
+                                    bearing_deg = ((b % 360.0) + 360.0) % 360.0;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -545,4 +599,28 @@ mod tests {
         let poly = create_geodesic_buffer_polygon(0.0, 0.0, 10_000.0, 64);
         assert_eq!(poly.exterior().coords().count(), 65);
     }
+
+    #[test]
+    fn test_measure_geodesic_polygon_non_uniform_centroid() {
+        let non_uniform = vec![
+            (0.0, 0.0),
+            (0.1, 0.0),
+            (0.2, 0.0),
+            (0.3, 0.0),
+            (0.4, 0.0),
+            (0.5, 0.0),
+            (0.6, 0.0),
+            (0.7, 0.0),
+            (0.8, 0.0),
+            (0.9, 0.0),
+            (1.0, 0.0),
+            (1.0, 1.0),
+            (0.0, 1.0),
+        ];
+        let res = measure_geodesic(&non_uniform, true).unwrap();
+        let (cx, cy) = res.centroid.unwrap();
+        assert!((cx - 0.5).abs() < 1e-4, "Centroid X should be 0.5, got {}", cx);
+        assert!((cy - 0.5).abs() < 1e-4, "Centroid Y should be 0.5, got {}", cy);
+    }
 }
+

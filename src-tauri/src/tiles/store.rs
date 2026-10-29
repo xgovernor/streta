@@ -4,9 +4,9 @@ use rstar::{RTree, RTreeObject, AABB};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::math::{lon_lat_to_epsg3857, tile_to_bbox_epsg3857, project_to_tile, EXTENT};
+use super::math::{lon_lat_to_epsg3857, project_to_tile, project_to_tile_f64, tile_to_bbox_epsg3857, EXTENT};
 use fast_mvt::{MvtGeometry, MvtLayerBuilder};
-use geo::{Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon};
+use geo::{Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Simplify};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Geometry3857 {
@@ -200,81 +200,136 @@ impl DatasetStore {
                     MvtGeometry::MultiPoint(MultiPoint::new(tile_pts))
                 }
                 Geometry3857::LineString(line) => {
-                    let tile_line: Vec<Coord<i32>> = line.iter()
+                    let tile_f64: Vec<Coord<f64>> = line.iter()
                         .map(|p| {
-                            let (px, py) = project_to_tile(p[0], p[1], &bbox, EXTENT);
+                            let (px, py) = project_to_tile_f64(p[0], p[1], &bbox, EXTENT);
                             Coord { x: px, y: py }
                         })
                         .collect();
+                    let simplified = LineString::new(tile_f64).simplify(1.0);
+                    let tile_line: Vec<Coord<i32>> = simplified.into_iter()
+                        .map(|c| Coord { x: c.x.round() as i32, y: c.y.round() as i32 })
+                        .collect();
+                    if tile_line.len() < 2 {
+                        continue;
+                    }
                     MvtGeometry::LineString(LineString::new(tile_line))
                 }
                 Geometry3857::MultiLineString(lines) => {
-                    let tile_lines: Vec<LineString<i32>> = lines.iter()
-                        .map(|l| {
-                            let coords = l.iter()
-                                .map(|p| {
-                                    let (px, py) = project_to_tile(p[0], p[1], &bbox, EXTENT);
-                                    Coord { x: px, y: py }
-                                })
-                                .collect();
-                            LineString::new(coords)
-                        })
-                        .collect();
+                    let mut tile_lines = Vec::new();
+                    for l in lines {
+                        let tile_f64: Vec<Coord<f64>> = l.iter()
+                            .map(|p| {
+                                let (px, py) = project_to_tile_f64(p[0], p[1], &bbox, EXTENT);
+                                Coord { x: px, y: py }
+                            })
+                            .collect();
+                        let simplified = LineString::new(tile_f64).simplify(1.0);
+                        let coords: Vec<Coord<i32>> = simplified.into_iter()
+                            .map(|c| Coord { x: c.x.round() as i32, y: c.y.round() as i32 })
+                            .collect();
+                        if coords.len() >= 2 {
+                            tile_lines.push(LineString::new(coords));
+                        }
+                    }
+                    if tile_lines.is_empty() {
+                        continue;
+                    }
                     MvtGeometry::MultiLineString(MultiLineString::new(tile_lines))
                 }
                 Geometry3857::Polygon(rings) => {
                     if rings.is_empty() {
                         continue;
                     }
-                    let exterior = LineString::new(
-                        rings[0].iter()
-                            .map(|p| {
-                                let (px, py) = project_to_tile(p[0], p[1], &bbox, EXTENT);
-                                Coord { x: px, y: py }
-                            })
-                            .collect(),
-                    );
-                    let interiors: Vec<LineString<i32>> = rings.iter().skip(1)
+                    let ext_f64: Vec<Coord<f64>> = rings[0].iter()
+                        .map(|p| {
+                            let (px, py) = project_to_tile_f64(p[0], p[1], &bbox, EXTENT);
+                            Coord { x: px, y: py }
+                        })
+                        .collect();
+                    let int_f64: Vec<LineString<f64>> = rings.iter().skip(1)
                         .map(|r| {
                             let coords = r.iter()
                                 .map(|p| {
-                                    let (px, py) = project_to_tile(p[0], p[1], &bbox, EXTENT);
+                                    let (px, py) = project_to_tile_f64(p[0], p[1], &bbox, EXTENT);
                                     Coord { x: px, y: py }
                                 })
                                 .collect();
                             LineString::new(coords)
                         })
                         .collect();
-                    MvtGeometry::Polygon(Polygon::new(exterior, interiors))
-                }
-                Geometry3857::MultiPolygon(polys) => {
-                    let tile_polys: Vec<Polygon<i32>> = polys.iter()
-                        .filter_map(|rings| {
-                            if rings.is_empty() {
-                                return None;
-                            }
-                            let exterior = LineString::new(
-                                rings[0].iter()
-                                    .map(|p| {
-                                        let (px, py) = project_to_tile(p[0], p[1], &bbox, EXTENT);
-                                        Coord { x: px, y: py }
-                                    })
-                                    .collect(),
-                            );
-                            let interiors = rings.iter().skip(1)
-                                .map(|r| {
-                                    let coords = r.iter()
-                                        .map(|p| {
-                                            let (px, py) = project_to_tile(p[0], p[1], &bbox, EXTENT);
-                                            Coord { x: px, y: py }
-                                        })
-                                        .collect();
-                                    LineString::new(coords)
-                                })
+
+                    let simplified_poly = Polygon::new(LineString::new(ext_f64), int_f64).simplify(1.0);
+                    let ext_coords: Vec<Coord<i32>> = simplified_poly.exterior().coords()
+                        .map(|c| Coord { x: c.x.round() as i32, y: c.y.round() as i32 })
+                        .collect();
+                    if ext_coords.len() < 4 {
+                        continue;
+                    }
+                    let int_rings: Vec<LineString<i32>> = simplified_poly.interiors().iter()
+                        .filter_map(|r| {
+                            let coords: Vec<Coord<i32>> = r.coords()
+                                .map(|c| Coord { x: c.x.round() as i32, y: c.y.round() as i32 })
                                 .collect();
-                            Some(Polygon::new(exterior, interiors))
+                            if coords.len() >= 4 {
+                                Some(LineString::new(coords))
+                            } else {
+                                None
+                            }
                         })
                         .collect();
+
+                    MvtGeometry::Polygon(Polygon::new(LineString::new(ext_coords), int_rings))
+                }
+                Geometry3857::MultiPolygon(polys) => {
+                    let mut tile_polys = Vec::new();
+                    for rings in polys {
+                        if rings.is_empty() {
+                            continue;
+                        }
+                        let ext_f64: Vec<Coord<f64>> = rings[0].iter()
+                            .map(|p| {
+                                let (px, py) = project_to_tile_f64(p[0], p[1], &bbox, EXTENT);
+                                Coord { x: px, y: py }
+                            })
+                            .collect();
+                        let int_f64: Vec<LineString<f64>> = rings.iter().skip(1)
+                            .map(|r| {
+                                let coords = r.iter()
+                                    .map(|p| {
+                                        let (px, py) = project_to_tile_f64(p[0], p[1], &bbox, EXTENT);
+                                        Coord { x: px, y: py }
+                                    })
+                                    .collect();
+                                LineString::new(coords)
+                            })
+                            .collect();
+
+                        let simplified_poly = Polygon::new(LineString::new(ext_f64), int_f64).simplify(1.0);
+                        let ext_coords: Vec<Coord<i32>> = simplified_poly.exterior().coords()
+                            .map(|c| Coord { x: c.x.round() as i32, y: c.y.round() as i32 })
+                            .collect();
+                        if ext_coords.len() < 4 {
+                            continue;
+                        }
+                        let int_rings: Vec<LineString<i32>> = simplified_poly.interiors().iter()
+                            .filter_map(|r| {
+                                let coords: Vec<Coord<i32>> = r.coords()
+                                    .map(|c| Coord { x: c.x.round() as i32, y: c.y.round() as i32 })
+                                    .collect();
+                                if coords.len() >= 4 {
+                                    Some(LineString::new(coords))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+
+                        tile_polys.push(Polygon::new(LineString::new(ext_coords), int_rings));
+                    }
+                    if tile_polys.is_empty() {
+                        continue;
+                    }
                     MvtGeometry::MultiPolygon(MultiPolygon::new(tile_polys))
                 }
             };
