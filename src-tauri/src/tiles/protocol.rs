@@ -161,21 +161,31 @@ async fn handle_cog_request(
         .or_else(|| request.headers().get("range"))
         .and_then(|v| v.to_str().ok());
 
-    let (start, end) = range_hdr_val
-        .and_then(|hdr| parse_range_header(hdr, None))
-        .unwrap_or((0, 65535)); // Default initial header probe chunk if unspecified
-
     match source {
         CogSource::Local(path) => {
+            let total_len = std::fs::metadata(&path).ok().map(|m| m.len());
+            let (start, end) = range_hdr_val
+                .and_then(|hdr| parse_range_header(hdr, total_len))
+                .unwrap_or_else(|| (0, total_len.map(|t| t.saturating_sub(1)).unwrap_or(65535)));
+
             match raster.read_local_range(&path, start, end) {
-                Ok((bytes, total_len)) => {
-                    let actual_end = start + bytes.len().saturating_sub(1) as u64;
-                    cog_response(
-                        StatusCode::PARTIAL_CONTENT,
-                        bytes,
-                        Some((start, actual_end, total_len)),
-                        total_len,
-                    )
+                Ok((bytes, total)) => {
+                    if bytes.is_empty() {
+                        cog_response(
+                            StatusCode::RANGE_NOT_SATISFIABLE,
+                            Vec::new(),
+                            None,
+                            total,
+                        )
+                    } else {
+                        let actual_end = start + (bytes.len() as u64).saturating_sub(1);
+                        cog_response(
+                            StatusCode::PARTIAL_CONTENT,
+                            bytes,
+                            Some((start, actual_end, total)),
+                            total,
+                        )
+                    }
                 }
                 Err(err) => {
                     cog_response(
@@ -188,18 +198,31 @@ async fn handle_cog_request(
             }
         }
         CogSource::Remote(url) => {
+            let (start, end) = range_hdr_val
+                .and_then(|hdr| parse_range_header(hdr, None))
+                .unwrap_or((0, 65535)); // Default initial header probe chunk if unspecified
+
             match raster
                 .fetch_remote_range(&url, layer_id, clean_band_id, start, end)
                 .await
             {
-                Ok((bytes, total_len)) => {
-                    let actual_end = start + bytes.len().saturating_sub(1) as u64;
-                    cog_response(
-                        StatusCode::PARTIAL_CONTENT,
-                        bytes,
-                        Some((start, actual_end, total_len)),
-                        total_len,
-                    )
+                Ok((bytes, total)) => {
+                    if bytes.is_empty() {
+                        cog_response(
+                            StatusCode::RANGE_NOT_SATISFIABLE,
+                            Vec::new(),
+                            None,
+                            total,
+                        )
+                    } else {
+                        let actual_end = start + (bytes.len() as u64).saturating_sub(1);
+                        cog_response(
+                            StatusCode::PARTIAL_CONTENT,
+                            bytes,
+                            Some((start, actual_end, total)),
+                            total,
+                        )
+                    }
                 }
                 Err(err) => {
                     cog_response(

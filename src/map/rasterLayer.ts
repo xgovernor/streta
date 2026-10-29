@@ -357,17 +357,36 @@ export function sampleRasterPixel(
   }
 
   const isDataView = data instanceof DataView;
-  const dataLen = isDataView ? Math.floor(data.byteLength / 4) : data.length;
+  const bytesPerSample =
+    isDataView && bandOrder.length > 0
+      ? Math.max(1, Math.floor(data.byteLength / bandOrder.length))
+      : 4;
+  const dataLen = isDataView
+    ? Math.floor(data.byteLength / bytesPerSample)
+    : data.length;
+
   if (dataLen === 0) {
     return null;
   }
 
   const getValueAt = (index: number): number => {
     if (isDataView) {
-      if (index * 4 + 4 <= data.byteLength) {
-        return data.getFloat32(index * 4, true);
+      if (bytesPerSample === 2) {
+        if (index * 2 + 2 <= data.byteLength) {
+          return data.getUint16(index * 2, true);
+        }
+        return 0;
+      } else if (bytesPerSample === 1) {
+        if (index < data.byteLength) {
+          return data.getUint8(index);
+        }
+        return 0;
+      } else {
+        if (index * 4 + 4 <= data.byteLength) {
+          return data.getFloat32(index * 4, true);
+        }
+        return 0;
       }
-      return 0;
     }
     return Number((data as ArrayLike<number>)[index] ?? 0);
   };
@@ -399,7 +418,6 @@ export function sampleRasterPixel(
   const b11 = rawBands["B11"] ?? 0;
   const b12 = rawBands["B12"] ?? 0;
   const elev = rawBands["elevation"] ?? rawBands["B01"] ?? getValueAt(0);
-
 
   switch (activeFormula) {
     case "NDVI": {
@@ -481,9 +499,15 @@ export function sampleRasterPixel(
     }
 
     case "Elevation": {
-      computedValue = elev;
-      formattedValue = `${elev.toFixed(1)} m`;
-      interpretation = `Elevation: ${elev.toFixed(1)} m above MSL`;
+      if (elev <= -9000 || isNaN(elev)) {
+        computedValue = null;
+        formattedValue = "No Data";
+        interpretation = "Outside terrain coverage / No Data";
+      } else {
+        computedValue = elev;
+        formattedValue = `${elev.toFixed(1)} m`;
+        interpretation = `Elevation: ${elev.toFixed(1)} m above MSL`;
+      }
       break;
     }
   }

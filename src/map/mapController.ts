@@ -657,6 +657,10 @@ export function mountMap(target: HTMLElement): () => void {
       }, LEAVE_DELAY_MS);
     }
 
+    if (rasterProbeCallback) {
+      rasterProbeCallback(null);
+    }
+
     const element = map.getTargetElement();
     if (element) {
       element.style.cursor = "";

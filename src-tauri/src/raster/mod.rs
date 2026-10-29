@@ -170,6 +170,10 @@ impl RasterRegistry {
         start: u64,
         end: u64,
     ) -> Result<(Vec<u8>, u64), String> {
+        if start > end {
+            return Err(format!("Invalid byte range: start {} > end {}", start, end));
+        }
+
         let mut file = File::open(path)
             .map_err(|e| format!("Failed to open local file {}: {}", path.display(), e))?;
 
@@ -190,6 +194,12 @@ impl RasterRegistry {
         }
 
         let clamped_end = end.min(total_len.saturating_sub(1));
+        if start > clamped_end {
+            return Err(format!(
+                "Requested start byte {} exceeds file extent {}",
+                start, clamped_end
+            ));
+        }
         let count = (clamped_end - start + 1) as usize;
 
         file.seek(SeekFrom::Start(start))
@@ -235,13 +245,15 @@ impl RasterRegistry {
 
         // Extract total length from Content-Range header if present: "bytes 0-1023/5000000"
         let mut total_len = 0u64;
-        if let Some(cr) = resp.headers().get("Content-Range") {
-            if let Ok(cr_str) = cr.to_str() {
-                if let Some(slash_pos) = cr_str.rfind('/') {
-                    let total_str = &cr_str[slash_pos + 1..].trim();
-                    if let Ok(parsed_total) = total_str.parse::<u64>() {
-                        total_len = parsed_total;
-                    }
+        if let Some(cr_str) = resp
+            .headers()
+            .get("Content-Range")
+            .and_then(|cr| cr.to_str().ok())
+        {
+            if let Some(slash_pos) = cr_str.rfind('/') {
+                let total_str = cr_str[slash_pos + 1..].trim();
+                if let Ok(parsed_total) = total_str.parse::<u64>() {
+                    total_len = parsed_total;
                 }
             }
         }
@@ -252,12 +264,17 @@ impl RasterRegistry {
             .map_err(|e| format!("Failed to read response body from {}: {}", url, e))?
             .to_vec();
 
+        if body_bytes.is_empty() {
+            return Ok((Vec::new(), total_len));
+        }
+
         // If server responded with 200 OK instead of 206, slice body to requested range
         let chunk = if status.as_u16() == 200 {
             if total_len == 0 {
                 total_len = body_bytes.len() as u64;
             }
-            let clamped_end = (end as usize).min(body_bytes.len().saturating_sub(1));
+            let max_idx = body_bytes.len().saturating_sub(1);
+            let clamped_end = (end as usize).min(max_idx);
             let s = (start as usize).min(clamped_end);
             body_bytes[s..=clamped_end].to_vec()
         } else {

@@ -17,8 +17,13 @@ pub struct CachedChunk {
     pub last_accessed: Instant,
 }
 
+struct CacheState {
+    map: HashMap<CacheKey, CachedChunk>,
+    current_bytes: usize,
+}
+
 pub struct ByteRangeCache {
-    entries: RwLock<HashMap<CacheKey, CachedChunk>>,
+    state: RwLock<CacheState>,
     max_bytes: usize,
     max_entries: usize,
 }
@@ -26,7 +31,10 @@ pub struct ByteRangeCache {
 impl ByteRangeCache {
     pub fn new(max_bytes: usize, max_entries: usize) -> Self {
         Self {
-            entries: RwLock::new(HashMap::new()),
+            state: RwLock::new(CacheState {
+                map: HashMap::new(),
+                current_bytes: 0,
+            }),
             max_bytes,
             max_entries,
         }
@@ -46,8 +54,8 @@ impl ByteRangeCache {
             end,
         };
 
-        let mut map = self.entries.write().ok()?;
-        if let Some(entry) = map.get_mut(&key) {
+        let mut state = self.state.write().ok()?;
+        if let Some(entry) = state.map.get_mut(&key) {
             entry.last_accessed = Instant::now();
             Some((entry.data.clone(), entry.total_length))
         } else {
@@ -71,7 +79,7 @@ impl ByteRangeCache {
             end,
         };
 
-        let mut map = match self.entries.write() {
+        let mut state = match self.state.write() {
             Ok(guard) => guard,
             Err(_) => return,
         };
@@ -83,25 +91,34 @@ impl ByteRangeCache {
 
         let chunk_size = data.len();
 
-        // Evict until under budget
-        while (map.len() >= self.max_entries
-            || map.values().map(|v| v.data.len()).sum::<usize>() + chunk_size > self.max_bytes)
-            && !map.is_empty()
+        // If key already exists, subtract old chunk's data length
+        if let Some(old) = state.map.get(&key) {
+            state.current_bytes = state.current_bytes.saturating_sub(old.data.len());
+        }
+
+        // Evict until under budget in O(1) size check
+        while (state.map.len() >= self.max_entries
+            || state.current_bytes + chunk_size > self.max_bytes)
+            && !state.map.is_empty()
         {
             // Find oldest key
-            let oldest_key = map
+            let oldest_key = state
+                .map
                 .iter()
                 .min_by_key(|(_, v)| v.last_accessed)
                 .map(|(k, _)| k.clone());
 
             if let Some(k) = oldest_key {
-                map.remove(&k);
+                if let Some(removed) = state.map.remove(&k) {
+                    state.current_bytes = state.current_bytes.saturating_sub(removed.data.len());
+                }
             } else {
                 break;
             }
         }
 
-        map.insert(
+        state.current_bytes += chunk_size;
+        state.map.insert(
             key,
             CachedChunk {
                 data,
@@ -112,7 +129,11 @@ impl ByteRangeCache {
     }
 
     pub fn len(&self) -> usize {
-        self.entries.read().map(|m| m.len()).unwrap_or(0)
+        self.state.read().map(|s| s.map.len()).unwrap_or(0)
+    }
+
+    pub fn current_bytes(&self) -> usize {
+        self.state.read().map(|s| s.current_bytes).unwrap_or(0)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -120,8 +141,9 @@ impl ByteRangeCache {
     }
 
     pub fn clear(&self) {
-        if let Ok(mut m) = self.entries.write() {
-            m.clear();
+        if let Ok(mut s) = self.state.write() {
+            s.map.clear();
+            s.current_bytes = 0;
         }
     }
 }
@@ -169,5 +191,6 @@ mod tests {
         assert!(cache.get("l", "b1", 0, 4).is_some());
         assert!(cache.get("l", "b2", 0, 4).is_none());
         assert!(cache.get("l", "b3", 0, 4).is_some());
+        assert_eq!(cache.current_bytes(), 10);
     }
 }

@@ -162,4 +162,35 @@ describe("Client-Side Pixel Probe Calculation", () => {
     const zeroLayer = { getData: () => new Float32Array([0, 0, 0, 0, 0, 0]) } as any;
     expect(sampleRasterPixel(zeroLayer, [0, 0], [0, 0], bandOrder, "NDVI")).toBeNull();
   });
+
+  test("correctly parses Uint16 samples inside a DataView", () => {
+    // 6 bands, 2 bytes each = 12 bytes buffer
+    const buffer = new ArrayBuffer(12);
+    const view = new DataView(buffer);
+    // B02: 400, B03: 600, B04: 300, B08: 3000, B11: 1000, B12: 500
+    view.setUint16(0, 400, true);
+    view.setUint16(2, 600, true);
+    view.setUint16(4, 300, true);
+    view.setUint16(6, 3000, true);
+    view.setUint16(8, 1000, true);
+    view.setUint16(10, 500, true);
+
+    const dataViewLayer = { getData: () => view } as any;
+    const probe = sampleRasterPixel(dataViewLayer, [50, 50], [-120.0, 39.0], bandOrder, "NDVI");
+    expect(probe).not.toBeNull();
+    // (3000 - 300) / (3000 + 300 + 1e-6) = 2700 / 3300 = 0.818
+    expect(probe!.computedValue).toBeCloseTo(0.818, 2);
+    expect(probe!.interpretation).toContain("forest canopy");
+  });
+
+  test("handles elevation nodata correctly", () => {
+    const demNoDataLayer = {
+      getData: () => new Float32Array([-9999.0]),
+    } as any;
+    const probe = sampleRasterPixel(demNoDataLayer, [10, 10], [-120.0, 39.0], ["elevation"], "Elevation");
+    expect(probe).not.toBeNull();
+    expect(probe!.computedValue).toBeNull();
+    expect(probe!.formattedValue).toBe("No Data");
+    expect(probe!.interpretation).toContain("Outside terrain coverage");
+  });
 });
