@@ -442,6 +442,58 @@ async function computeClientElevationFallback(
 // Phase 4: Real-time Telemetry & Feeds
 // ==========================================
 
+/**
+ * Maps ICAO DO-260B / OpenSky emitter category integer (0–18) to human-readable label.
+ */
+export function getEmitterCategoryLabel(code: number): string {
+  switch (code) {
+    case 0: return "Unknown";
+    case 1: return "No Info";
+    case 2: return "Light (< 15,500 lbs)";
+    case 3: return "Small (15,500–75,000 lbs)";
+    case 4: return "Large (75,000–300,000 lbs)";
+    case 5: return "High Vortex Large (B757)";
+    case 6: return "Heavy (> 300,000 lbs)";
+    case 7: return "High Performance (> 5g, > 400 kts)";
+    case 8: return "Rotorcraft / Helicopter";
+    case 9: return "Glider / Sailplane";
+    case 10: return "Lighter-than-Air";
+    case 11: return "Parachutist / Skydiver";
+    case 12: return "Ultralight / Hang Glider";
+    case 13: return "Reserved";
+    case 14: return "UAV / Drone";
+    case 15: return "Space / Transatmospheric";
+    case 16: return "Surface Emergency Vehicle";
+    case 17: return "Surface Service Vehicle";
+    case 18: return "Point Obstacle";
+    default: return "Unknown";
+  }
+}
+
+export interface AdsbTelemetryStatus {
+  cachedCredits: number | null;
+  currentTtlMs: number;
+  hasOauth: boolean;
+}
+
+export async function fetchAdsbTelemetryStatus(): Promise<AdsbTelemetryStatus | null> {
+  if (isTauriEnvironment()) {
+    try {
+      const res = await invoke<any>("get_adsb_telemetry_status");
+      if (res) {
+        return {
+          cachedCredits: res.cachedCredits ?? res.cached_credits ?? null,
+          currentTtlMs: res.currentTtlMs ?? res.current_ttl_ms ?? 9000,
+          hasOauth: Boolean(res.hasOauth ?? res.has_oauth),
+        };
+      }
+    } catch (e) {
+      console.warn("fetchAdsbTelemetryStatus failed:", e);
+    }
+  }
+  return null;
+}
+
 export async function fetchLiveFlights(
   bbox?: [number, number, number, number]
 ): Promise<FlightTarget[]> {
@@ -449,19 +501,33 @@ export async function fetchLiveFlights(
     try {
       const raw = await invoke<any[]>("fetch_live_flights", { bbox: bbox || null });
       if (Array.isArray(raw) && raw.length > 0) {
-        return raw.map((f) => ({
-          icao24: f.icao24,
-          callsign: f.callsign || f.icao24,
-          originCountry: f.originCountry ?? f.origin_country ?? "Unknown",
-          longitude: f.longitude ?? f.lon ?? 0,
-          latitude: f.latitude ?? f.lat ?? 0,
-          altitudeMeters: f.altitudeMeters ?? f.altitude_m ?? 0,
-          velocityMps: f.velocityMps ?? f.velocity_mps ?? 0,
-          headingDeg: f.headingDeg ?? f.heading_deg ?? 0,
-          verticalRateMps: f.verticalRateMps ?? f.vertical_rate_mps ?? 0,
-          onGround: f.onGround ?? f.on_ground ?? false,
-          squawk: f.squawk ?? null,
-        }));
+        return raw.map((f) => {
+          const cat = f.category ?? 0;
+          const vRate = f.verticalRateMps ?? f.vertical_rate_mps ?? 0;
+          return {
+            icao24: f.icao24,
+            callsign: f.callsign || f.icao24,
+            originCountry: f.originCountry ?? f.origin_country ?? "Unknown",
+            longitude: f.longitude ?? f.lon ?? 0,
+            latitude: f.latitude ?? f.lat ?? 0,
+            altitudeMeters: f.altitudeMeters ?? f.altitude_m ?? 0,
+            geoAltitudeMeters: f.geoAltitudeMeters ?? f.geo_altitude_m ?? null,
+            velocityMps: f.velocityMps ?? f.velocity_mps ?? 0,
+            headingDeg: f.headingDeg ?? f.heading_deg ?? 0,
+            verticalRateMps: vRate,
+            verticalRateFpm: Math.round(vRate * 196.85),
+            onGround: f.onGround ?? f.on_ground ?? false,
+            squawk: f.squawk ?? null,
+            emergency: f.emergency ?? null,
+            category: cat,
+            categoryLabel: getEmitterCategoryLabel(cat),
+            spi: f.spi ?? false,
+            positionSource: f.positionSource ?? f.position_source ?? 0,
+            lastContactEpoch: f.lastContactEpoch ?? f.last_contact_epoch ?? 0,
+            positionTimeEpoch: f.positionTimeEpoch ?? f.position_time_epoch ?? null,
+            simulated: f.simulated ?? false,
+          };
+        });
       }
     } catch (e) {
       console.warn("Tauri fetch_live_flights failed, falling back:", e);
@@ -795,11 +861,18 @@ export function flightTargetsToFeatures(flights: FlightTarget[]): FeatureRecord[
       originCountry: f.originCountry,
       altitudeMeters: Math.round(f.altitudeMeters),
       altitudeFeet: Math.round(f.altitudeMeters * 3.28084),
+      geoAltitudeMeters: f.geoAltitudeMeters != null ? Math.round(f.geoAltitudeMeters) : null,
       velocityKmh: Math.round(f.velocityMps * 3.6),
       velocityKnots: Math.round(f.velocityMps * 1.94384),
       headingDeg: Math.round(f.headingDeg),
       verticalRateMps: f.verticalRateMps,
+      verticalRateFpm: f.verticalRateFpm ?? Math.round(f.verticalRateMps * 196.85),
       squawk: f.squawk || "—",
+      emergency: f.emergency || "—",
+      category: f.category ?? 0,
+      categoryLabel: f.categoryLabel || getEmitterCategoryLabel(f.category ?? 0),
+      onGround: f.onGround ? "Yes" : "No",
+      simulated: f.simulated ? "Yes" : "No",
     },
   }));
 }
@@ -1296,12 +1369,54 @@ export async function fetchLiveVessels(
 ): Promise<VesselTarget[]> {
   if (isTauriEnvironment()) {
     try {
-      return await invoke<VesselTarget[]>("fetch_live_vessels", { bbox: bbox ?? null });
+      const res = await invoke<VesselTarget[]>("fetch_live_vessels", { bbox: bbox ?? null });
+      if (Array.isArray(res) && res.length > 0) {
+        return res;
+      }
     } catch (err) {
       console.error("fetch_live_vessels failed:", err);
     }
   }
-  return [];
+
+  // Realistic global maritime shipping corridor fallback (English Channel, Malacca, Gibraltar, Suez, Pacific, Atlantic, Panama, etc.)
+  const baseVessels: VesselTarget[] = [
+    { mmsi: 235089332, name: "EVER GIVEN", callsign: "H3RC", shipType: "Container", lon: 1.45, lat: 51.12, speedKnots: 16.4, courseDeg: 235, headingDeg: 234, destination: "ROTTERDAM", status: "Under way using engine", simulated: true },
+    { mmsi: 244710000, name: "ROTTERDAM EXPRESS", callsign: "PDBC", shipType: "Cargo", lon: 1.82, lat: 51.28, speedKnots: 14.2, courseDeg: 55, headingDeg: 56, destination: "HAMBURG", status: "Under way using engine", simulated: true },
+    { mmsi: 211281820, name: "CMA CGM ANTOINE", callsign: "DJCG", shipType: "Container", lon: 0.95, lat: 50.85, speedKnots: 18.1, courseDeg: 240, headingDeg: 239, destination: "LE HAVRE", status: "Under way using engine", simulated: true },
+    { mmsi: 257076820, name: "NORDIC PASSION", callsign: "LAKR", shipType: "Tanker", lon: 2.15, lat: 51.52, speedKnots: 11.5, courseDeg: 62, headingDeg: 60, destination: "ANTWERP", status: "Under way using engine", simulated: true },
+    { mmsi: 232005670, name: "QUEEN MARY 2", callsign: "GBDY", shipType: "Passenger", lon: -1.25, lat: 50.45, speedKnots: 21.0, courseDeg: 210, headingDeg: 210, destination: "NEW YORK", status: "Under way using engine", simulated: true },
+    { mmsi: 255806490, name: "GRANDE EUROPA", callsign: "IBEE", shipType: "Cargo", lon: -5.35, lat: 35.98, speedKnots: 15.6, courseDeg: 85, headingDeg: 84, destination: "VALENCIA", status: "Under way using engine", simulated: true },
+    { mmsi: 228389600, name: "MEDITERRANEAN SEA", callsign: "FNRW", shipType: "Passenger", lon: -5.45, lat: 36.12, speedKnots: 22.0, courseDeg: 195, headingDeg: 194, destination: "TANGER MED", status: "Under way using engine", simulated: true },
+    { mmsi: 247385200, name: "MSC GRANDIOSA", callsign: "IBIR", shipType: "Passenger", lon: 14.25, lat: 40.75, speedKnots: 18.4, courseDeg: 150, headingDeg: 150, destination: "NAPLES", status: "Under way using engine", simulated: true },
+    { mmsi: 563004000, name: "MAERSK MC-KINNEY MOLLER", callsign: "9V9876", shipType: "Container", lon: 32.55, lat: 30.25, speedKnots: 9.5, courseDeg: 165, headingDeg: 166, destination: "SUEZ CANAL", status: "Under way using engine", simulated: true },
+    { mmsi: 371822000, name: "PACIFIC PIONEER", callsign: "3ELQ2", shipType: "Tanker", lon: 32.35, lat: 30.82, speedKnots: 8.2, courseDeg: 345, headingDeg: 344, destination: "PORT SAID", status: "Under way using engine", simulated: true },
+    { mmsi: 422019900, name: "GULF STAR", callsign: "EQPQ", shipType: "Tanker", lon: 56.45, lat: 26.25, speedKnots: 12.0, courseDeg: 130, headingDeg: 130, destination: "RAS TANURA", status: "Under way using engine", simulated: true },
+    { mmsi: 470123000, name: "AL GHARIYA", callsign: "A7FA", shipType: "Tanker", lon: 55.15, lat: 25.85, speedKnots: 15.2, courseDeg: 315, headingDeg: 315, destination: "RAS LAFFAN", status: "Under way using engine", simulated: true },
+    { mmsi: 352002194, name: "ONE OLYMPUS", callsign: "3FBL5", shipType: "Container", lon: 103.82, lat: 1.25, speedKnots: 12.8, courseDeg: 290, headingDeg: 292, destination: "SINGAPORE", status: "Under way using engine", simulated: true },
+    { mmsi: 477123400, name: "COSCO SHIPPING GALAXY", callsign: "VRQY", shipType: "Container", lon: 101.95, lat: 2.45, speedKnots: 17.5, courseDeg: 130, headingDeg: 132, destination: "PORT KLANG", status: "Under way using engine", simulated: true },
+    { mmsi: 636019822, name: "BERGE TOKYO", callsign: "D5TI3", shipType: "Cargo", lon: 102.55, lat: 2.12, speedKnots: 10.4, courseDeg: 305, headingDeg: 304, destination: "CHINA OFFSHORE", status: "Under way using engine", simulated: true },
+    { mmsi: 413000000, name: "YANTIAN EXPRESS", callsign: "BRLG", shipType: "Container", lon: 114.25, lat: 22.15, speedKnots: 18.2, courseDeg: 75, headingDeg: 75, destination: "SHENZHEN", status: "Under way using engine", simulated: true },
+    { mmsi: 416000000, name: "EVER ACE", callsign: "BKHE", shipType: "Container", lon: 119.5, lat: 23.85, speedKnots: 20.4, courseDeg: 40, headingDeg: 40, destination: "KAOHSIUNG", status: "Under way using engine", simulated: true },
+    { mmsi: 431000000, name: "MOL TRIUMPH", callsign: "7JAL", shipType: "Container", lon: 139.85, lat: 35.35, speedKnots: 14.5, courseDeg: 195, headingDeg: 195, destination: "TOKYO", status: "Under way using engine", simulated: true },
+    { mmsi: 355000000, name: "OOCL HONG KONG", callsign: "3FLM", shipType: "Container", lon: 175.5, lat: 38.25, speedKnots: 21.5, courseDeg: 88, headingDeg: 88, destination: "LONG BEACH", status: "Under way using engine", simulated: true },
+    { mmsi: 477000000, name: "CMA CGM ANTOINE", callsign: "VRXJ", shipType: "Container", lon: -155.0, lat: 36.5, speedKnots: 20.0, courseDeg: 92, headingDeg: 92, destination: "LOS ANGELES", status: "Under way using engine", simulated: true },
+    { mmsi: 244000000, name: "ATLANTIC CONVEYOR", callsign: "PDBN", shipType: "Container", lon: -35.5, lat: 48.25, speedKnots: 19.0, courseDeg: 255, headingDeg: 255, destination: "NEW YORK", status: "Under way using engine", simulated: true },
+    { mmsi: 257000000, name: "NORDIC POLARIS", callsign: "LAKX", shipType: "Tanker", lon: -30.0, lat: 38.0, speedKnots: 13.0, courseDeg: 240, headingDeg: 240, destination: "HOUSTON", status: "Under way using engine", simulated: true },
+    { mmsi: 303123000, name: "AMERICAN EAGLE", callsign: "WDDB", shipType: "Tug", lon: -74.02, lat: 40.65, speedKnots: 8.5, courseDeg: 180, headingDeg: 182, destination: "NEW YORK HARBOR", status: "Under way using engine", simulated: true },
+    { mmsi: 368000000, name: "HORIZON PACIFIC", callsign: "WYX1", shipType: "Container", lon: -73.85, lat: 40.48, speedKnots: 15.2, courseDeg: 310, headingDeg: 311, destination: "PORT NEWARK", status: "Under way using engine", simulated: true },
+    { mmsi: 366989000, name: "PACIFIC HORIZON", callsign: "WRH9", shipType: "Tanker", lon: -118.22, lat: 33.71, speedKnots: 0.2, courseDeg: 110, headingDeg: 110, destination: "LOS ANGELES", status: "At anchor", simulated: true },
+    { mmsi: 351234000, name: "HYUNDAI BRAVE", callsign: "D7TK", shipType: "Container", lon: -118.15, lat: 33.68, speedKnots: 11.2, courseDeg: 225, headingDeg: 226, destination: "LONG BEACH", status: "Under way using engine", simulated: true },
+    { mmsi: 372991000, name: "PANAMA GLORY", callsign: "3FTX", shipType: "Cargo", lon: -79.91, lat: 9.35, speedKnots: 6.5, courseDeg: 140, headingDeg: 140, destination: "COLON", status: "Under way using engine", simulated: true },
+    { mmsi: 311999000, name: "WONDER OF THE SEAS", callsign: "C6CX4", shipType: "Passenger", lon: -80.12, lat: 25.75, speedKnots: 18.5, courseDeg: 125, headingDeg: 125, destination: "MIAMI", status: "Under way using engine", simulated: true },
+    { mmsi: 601000000, name: "CAPE DISCOVERY", callsign: "ZRCD", shipType: "Cargo", lon: 18.45, lat: -34.45, speedKnots: 12.8, courseDeg: 110, headingDeg: 110, destination: "DURBAN", status: "Under way using engine", simulated: true },
+    { mmsi: 503000000, name: "PACIFIC JEWEL", callsign: "VJN2", shipType: "Passenger", lon: 151.25, lat: -33.85, speedKnots: 16.0, courseDeg: 75, headingDeg: 75, destination: "SYDNEY", status: "Under way using engine", simulated: true },
+  ];
+
+  if (bbox) {
+    const [minLon, minLat, maxLon, maxLat] = bbox;
+    return baseVessels.filter((v) => v.lon >= minLon && v.lon <= maxLon && v.lat >= minLat && v.lat <= maxLat);
+  }
+  return baseVessels;
 }
 
 export async function getApiProvidersStatus(): Promise<ApiProvidersStatus> {

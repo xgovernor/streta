@@ -68,6 +68,7 @@ pub fn run() {
             commands::fetch_live_fires,
             commands::fetch_live_vessels,
             commands::get_api_providers_status,
+            commands::get_adsb_telemetry_status,
             commands::fetch_telemetry_binary,
             commands::register_cog_layer,
             commands::get_cog_presets,

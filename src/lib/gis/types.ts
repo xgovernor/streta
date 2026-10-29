@@ -215,11 +215,21 @@ export interface FlightTarget {
   longitude: number;
   latitude: number;
   altitudeMeters: number;
+  geoAltitudeMeters?: number | null;
   velocityMps: number;
   headingDeg: number;
   verticalRateMps: number;
+  verticalRateFpm?: number;
   onGround: boolean;
   squawk?: string | null;
+  emergency?: string | null;
+  category?: number;
+  categoryLabel?: string;
+  spi?: boolean;
+  positionSource?: number;
+  lastContactEpoch?: number;
+  positionTimeEpoch?: number | null;
+  simulated?: boolean;
 }
 
 export interface EarthquakeTarget {

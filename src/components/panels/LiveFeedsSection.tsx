@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  AlertTriangle,
   ArrowUpRight,
   Car,
   CheckCircle2,
@@ -21,11 +22,13 @@ import { formatCount } from "../../lib/format";
 import { GEOGRAPHIC_CRS } from "../../lib/gis/crs";
 import {
   earthquakeTargetsToFeatures,
+  fetchAdsbTelemetryStatus,
   fireTargetsToFeatures,
   flightTargetsToFeatures,
   getApiProvidersStatus,
   satelliteTargetsToFeatures,
   vesselTargetsToFeatures,
+  type AdsbTelemetryStatus,
   type ApiProvidersStatus,
 } from "../../lib/gis/tiledBackend";
 import { flyTo } from "../../map/mapController";
@@ -111,6 +114,12 @@ export function LiveFeedsSection() {
   const setSelectedTarget = useTelemetryStore((state) => state.setSelectedTarget);
   const refreshFeeds = useTelemetryStore((state) => state.refreshFeeds);
 
+  const [adsbStatus, setAdsbStatus] = useState<AdsbTelemetryStatus | null>(null);
+
+  useEffect(() => {
+    fetchAdsbTelemetryStatus().then(setAdsbStatus);
+  }, [flights.length]);
+
   // Filtered target lists
   const filteredFlights = useMemo(() => {
     const q = flightSearch.trim().toLowerCase();
@@ -119,7 +128,10 @@ export function LiveFeedsSection() {
       (f) =>
         f.callsign.toLowerCase().includes(q) ||
         f.icao24.toLowerCase().includes(q) ||
-        f.originCountry.toLowerCase().includes(q)
+        f.originCountry.toLowerCase().includes(q) ||
+        (f.squawk && f.squawk.includes(q)) ||
+        (f.emergency && f.emergency.toLowerCase().includes(q)) ||
+        (f.categoryLabel && f.categoryLabel.toLowerCase().includes(q))
     );
   }, [flights, flightSearch]);
 
@@ -483,37 +495,89 @@ export function LiveFeedsSection() {
 
           {selectedTarget.type === "flight" && (
             <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-1.5">
+              {/* Emergency Transponder Alert Banner */}
+              {selectedTarget.data.emergency && (
+                <div className="flex items-center gap-1.5 rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-[9.5px] font-bold text-red-400 animate-pulse">
+                  <AlertTriangle size={12} className="flex-shrink-0" />
+                  <span>TRANSPONDER ALERT: {selectedTarget.data.emergency}</span>
+                  <span className="ml-auto font-mono text-[9px] bg-red-500/30 px-1 py-0.5 rounded">
+                    SQK {selectedTarget.data.squawk || "7700"}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="rounded bg-sky-500/20 px-1 py-0.5 font-mono text-[9px] font-semibold uppercase text-sky-400">
-                  ADS-B Flight
+                  ADS-B Mode-S
                 </span>
                 <strong className="font-mono text-[11px] text-ink">
                   {selectedTarget.data.callsign || selectedTarget.data.icao24}
                 </strong>
-                <span className="truncate text-[10px] text-ink-muted">
-                  ({selectedTarget.data.originCountry})
+                <span className="font-mono text-[9px] text-ink-subtle">
+                  [{selectedTarget.data.icao24.toUpperCase()}]
+                </span>
+                {selectedTarget.data.squawk && !selectedTarget.data.emergency && (
+                  <span className="rounded bg-shell-2 border border-line px-1 py-0.5 font-mono text-[8.5px] text-ink-muted">
+                    SQK {selectedTarget.data.squawk}
+                  </span>
+                )}
+                {selectedTarget.data.categoryLabel && selectedTarget.data.category !== 0 && (
+                  <span className="rounded bg-accent/15 px-1 py-0.5 font-mono text-[8.5px] font-medium text-accent">
+                    {selectedTarget.data.categoryLabel}
+                  </span>
+                )}
+                <span className="truncate text-[10px] text-ink-muted ml-auto">
+                  {selectedTarget.data.originCountry}
                 </span>
               </div>
+
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
                 <div className="flex flex-col rounded bg-surface/70 p-1">
                   <span className="text-[8px] text-ink-subtle">ALTITUDE</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.altitudeMeters).toLocaleString()} m
                   </span>
+                  <span className="text-[7.5px] text-ink-muted">
+                    {Math.round(selectedTarget.data.altitudeMeters * 3.28084).toLocaleString()} ft
+                  </span>
                 </div>
                 <div className="flex flex-col rounded bg-surface/70 p-1">
-                  <span className="text-[8px] text-ink-subtle">SPEED</span>
+                  <span className="text-[8px] text-ink-subtle">GROUND SPEED</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.velocityMps * 3.6)} km/h
                   </span>
+                  <span className="text-[7.5px] text-ink-muted">
+                    {Math.round(selectedTarget.data.velocityMps * 1.94384)} kts
+                  </span>
                 </div>
                 <div className="flex flex-col rounded bg-surface/70 p-1">
-                  <span className="text-[8px] text-ink-subtle">HEADING</span>
-                  <span className="font-semibold text-ink">
-                    {Math.round(selectedTarget.data.headingDeg)}°
+                  <span className="text-[8px] text-ink-subtle">V-SPEED</span>
+                  <span
+                    className={cx(
+                      "font-semibold",
+                      (selectedTarget.data.verticalRateFpm ?? 0) > 60
+                        ? "text-emerald-400"
+                        : (selectedTarget.data.verticalRateFpm ?? 0) < -60
+                          ? "text-amber-400"
+                          : "text-ink"
+                    )}
+                  >
+                    {(selectedTarget.data.verticalRateFpm ?? 0) > 0 ? "+" : ""}
+                    {selectedTarget.data.verticalRateFpm ?? Math.round(selectedTarget.data.verticalRateMps * 196.85)} fpm
+                  </span>
+                  <span className="text-[7.5px] text-ink-muted">
+                    Track: {Math.round(selectedTarget.data.headingDeg)}°
                   </span>
                 </div>
               </div>
+
+              {selectedTarget.data.geoAltitudeMeters != null && (
+                <div className="flex items-center justify-between px-1 text-[8.5px] font-mono text-ink-subtle">
+                  <span>GNSS Geometric Alt: {Math.round(selectedTarget.data.geoAltitudeMeters).toLocaleString()}m</span>
+                  <span>Source: {selectedTarget.data.positionSource === 0 ? "ADS-B" : selectedTarget.data.positionSource === 2 ? "MLAT" : "Direct"}</span>
+                </div>
+              )}
+
               <div className="flex justify-end pt-0.5">
                 <button
                   type="button"
@@ -805,6 +869,26 @@ export function LiveFeedsSection() {
                 </button>
               </div>
 
+              {/* OpenSky Adaptive Quota / OAuth Status Banner */}
+              {adsbStatus && (
+                <div className="flex items-center justify-between rounded bg-shell-2/60 px-2 py-1 font-mono text-[8.5px] text-ink-subtle border border-line/60">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={cx(
+                        "size-1.5 rounded-full",
+                        adsbStatus.hasOauth ? "bg-emerald-400" : "bg-sky-400"
+                      )}
+                    />
+                    <span>
+                      {adsbStatus.hasOauth
+                        ? `OpenSky OAuth · ${adsbStatus.cachedCredits != null ? `${adsbStatus.cachedCredits.toLocaleString()} credits left` : "4,000/day tier"}`
+                        : "OpenSky Anonymous (400 credits/day)"}
+                    </span>
+                  </div>
+                  <span>Rate: {(adsbStatus.currentTtlMs / 1000).toFixed(0)}s</span>
+                </div>
+              )}
+
               {/* Scrollable Flights Target List */}
               <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded border border-line bg-shell-2">
                 {filteredFlights.length === 0 ? (
@@ -814,61 +898,87 @@ export function LiveFeedsSection() {
                       : "Flight radar feed is currently disabled."}
                   </div>
                 ) : (
-                  filteredFlights.map((flight) => (
-                    <div
-                      key={flight.icao24}
-                      onClick={() => setSelectedTarget({ type: "flight", data: flight })}
-                      className={cx(
-                        "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
-                        selectedTarget?.type === "flight" &&
-                          selectedTarget.data.icao24 === flight.icao24 &&
-                          "bg-accent-soft/20"
-                      )}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="grid size-5 flex-none place-items-center rounded bg-tint text-sky-400 group-hover:text-accent"
-                          style={{
-                            transform: `rotate(${flight.headingDeg}deg)`,
-                            transition: "transform 0.2s ease-out",
-                          }}
-                          title={`Heading ${Math.round(flight.headingDeg)}°`}
-                        >
-                          <Plane size={11} strokeWidth={2} />
-                        </span>
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-mono font-semibold text-ink truncate">
-                            {flight.callsign || flight.icao24}
+                  filteredFlights.map((flight) => {
+                    const isEmg = Boolean(flight.emergency);
+                    return (
+                      <div
+                        key={flight.icao24}
+                        onClick={() => setSelectedTarget({ type: "flight", data: flight })}
+                        className={cx(
+                          "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
+                          isEmg && "border-l-2 border-red-500 bg-red-500/10",
+                          selectedTarget?.type === "flight" &&
+                            selectedTarget.data.icao24 === flight.icao24 &&
+                            "bg-accent-soft/20"
+                        )}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={cx(
+                              "grid size-5 flex-none place-items-center rounded",
+                              isEmg
+                                ? "bg-red-500/20 text-red-400 animate-pulse"
+                                : "bg-tint text-sky-400 group-hover:text-accent"
+                            )}
+                            style={{
+                              transform: `rotate(${flight.headingDeg}deg)`,
+                              transition: "transform 0.2s ease-out",
+                            }}
+                            title={`Heading ${Math.round(flight.headingDeg)}°`}
+                          >
+                            <Plane size={11} strokeWidth={2} />
                           </span>
-                          <span className="truncate text-[8.5px] text-ink-muted">
-                            {flight.originCountry}
-                          </span>
+                          <div className="flex flex-col min-w-0">
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono font-semibold text-ink truncate">
+                                {flight.callsign || flight.icao24}
+                              </span>
+                              {isEmg && (
+                                <span className="rounded bg-red-500/30 px-1 py-0.2 font-mono text-[7.5px] font-bold text-red-300">
+                                  {flight.emergency}
+                                </span>
+                              )}
+                              {flight.squawk && !isEmg && (
+                                <span className="font-mono text-[7.5px] text-ink-subtle">
+                                  {flight.squawk}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 text-[8.5px] text-ink-muted truncate">
+                              <span className="truncate">{flight.originCountry}</span>
+                              {flight.categoryLabel && flight.category !== 0 && (
+                                <span className="text-[7.5px] text-ink-subtle">
+                                  · {flight.categoryLabel.split(" ")[0]}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2 font-mono text-[9px]">
-                        <div className="flex flex-col text-right">
-                          <span className="text-ink">
-                            {Math.round(flight.altitudeMeters).toLocaleString()}m
-                          </span>
-                          <span className="text-[8px] text-ink-subtle">
-                            {Math.round(flight.velocityMps * 3.6)}km/h
-                          </span>
+                        <div className="flex items-center gap-2 font-mono text-[9px]">
+                          <div className="flex flex-col text-right">
+                            <span className={cx(isEmg ? "text-red-400 font-bold" : "text-ink")}>
+                              {Math.round(flight.altitudeMeters).toLocaleString()}m
+                            </span>
+                            <span className="text-[8px] text-ink-subtle">
+                              {Math.round(flight.velocityMps * 3.6)}km/h
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFlyToTarget({ type: "flight", data: flight });
+                            }}
+                            className="rounded p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
+                            title="Fly to aircraft"
+                          >
+                            <ArrowUpRight size={11} />
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleFlyToTarget({ type: "flight", data: flight });
-                          }}
-                          className="rounded p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
-                          title="Fly to aircraft"
-                        >
-                          <ArrowUpRight size={11} />
-                        </button>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>

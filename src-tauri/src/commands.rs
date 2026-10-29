@@ -234,6 +234,27 @@ pub fn get_api_providers_status() -> ApiProvidersStatus {
     }
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct AdsbTelemetryStatus {
+    pub cached_credits: Option<u32>,
+    pub current_ttl_ms: u64,
+    pub has_oauth: bool,
+}
+
+#[tauri::command]
+pub async fn get_adsb_telemetry_status() -> AdsbTelemetryStatus {
+    let has_oauth = std::env::var("OPENSKY_CLIENT_ID").map(|s| !s.trim().is_empty()).unwrap_or(false)
+        && std::env::var("OPENSKY_CLIENT_SECRET").map(|s| !s.trim().is_empty()).unwrap_or(false);
+    let cached_credits = crate::telemetry::adsb::get_cached_credits().await;
+    let current_ttl_ms = crate::telemetry::adsb::get_current_ttl_ms().await;
+
+    AdsbTelemetryStatus {
+        cached_credits,
+        current_ttl_ms,
+        has_oauth,
+    }
+}
+
 #[tauri::command]
 pub async fn fetch_telemetry_binary(
     feed_type: String,

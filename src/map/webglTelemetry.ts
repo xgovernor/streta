@@ -1,20 +1,26 @@
-import Feature, { type FeatureLike } from "ol/Feature";
+import Feature from "ol/Feature";
 import LineString from "ol/geom/LineString";
 import Point from "ol/geom/Point";
-import WebGLVectorLayer from "ol/layer/WebGLVector";
 import VectorLayer from "ol/layer/Vector";
 import type OlMap from "ol/Map";
 import { fromLonLat } from "ol/proj";
 import VectorSource from "ol/source/Vector";
-import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style } from "ol/style";
+import { Stroke, Style } from "ol/style";
 import type { EarthquakeTarget, FireTarget, FlightTarget, SatelliteTarget, VesselTarget } from "../lib/gis/types";
+import {
+  getEarthquakeStyle,
+  getFireStyle,
+  getFlightStyle,
+  getSatelliteStyle,
+  getVesselStyle,
+} from "./telemetryIcons";
 
 export interface TelemetryLayers {
-  flightsLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
-  earthquakesLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
-  satellitesLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
-  firesLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
-  vesselsLayer: WebGLVectorLayer | VectorLayer<VectorSource>;
+  flightsLayer: VectorLayer<VectorSource>;
+  earthquakesLayer: VectorLayer<VectorSource>;
+  satellitesLayer: VectorLayer<VectorSource>;
+  firesLayer: VectorLayer<VectorSource>;
+  vesselsLayer: VectorLayer<VectorSource>;
   tracksLayer: VectorLayer<VectorSource>;
 }
 
@@ -28,102 +34,17 @@ let firesSource: VectorSource | null = null;
 let vesselsSource: VectorSource | null = null;
 let tracksSource: VectorSource | null = null;
 
-let flightsLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
-let earthquakesLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
-let satellitesLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
-let firesLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
-let vesselsLayer: WebGLVectorLayer | VectorLayer<VectorSource> | null = null;
+let flightsLayer: VectorLayer<VectorSource> | null = null;
+let earthquakesLayer: VectorLayer<VectorSource> | null = null;
+let satellitesLayer: VectorLayer<VectorSource> | null = null;
+let firesLayer: VectorLayer<VectorSource> | null = null;
+let vesselsLayer: VectorLayer<VectorSource> | null = null;
 let tracksLayer: VectorLayer<VectorSource> | null = null;
 
-const fireCanvasStyle = (feature: FeatureLike) => {
-  const frp = (feature.get("frp") as number) || 10;
-  const radius = Math.min(18, Math.max(4, 4 + Math.sqrt(frp)));
-  const color = frp > 200 ? "#ef4444" : frp > 50 ? "#f97316" : "#eab308";
-  return new Style({
-    image: new CircleStyle({
-      radius,
-      fill: new Fill({ color }),
-      stroke: new Stroke({ color: "#ffffff", width: 1 }),
-    }),
-  });
-};
-
-const vesselCanvasStyle = (feature: FeatureLike) => {
-  const course = (feature.get("course") as number) || 0;
-  return new Style({
-    image: new RegularShape({
-      points: 3,
-      radius: 7,
-      rotation: (course * Math.PI) / 180,
-      rotateWithView: true,
-      fill: new Fill({ color: "#06b6d4" }),
-      stroke: new Stroke({ color: "#ffffff", width: 1 }),
-    }),
-  });
-};
-
-const flightCanvasStyle = (feature: FeatureLike) => {
-  const heading = (feature.get("heading") as number) || 0;
-  const alt = (feature.get("altitude") as number) || 0;
-  const color =
-    alt > 10000 ? "#f59e0b" : alt > 7000 ? "#10b981" : alt > 3000 ? "#06b6d4" : "#38bdf8";
-  return new Style({
-    image: new RegularShape({
-      points: 3,
-      radius: 8,
-      rotation: (heading * Math.PI) / 180,
-      rotateWithView: true,
-      fill: new Fill({ color }),
-      stroke: new Stroke({ color: "#ffffff", width: 1 }),
-    }),
-  });
-};
-
-const earthquakeCanvasStyle = (feature: FeatureLike) => {
-  const mag = (feature.get("magnitude") as number) || 3;
-  const color =
-    mag >= 6.0
-      ? "rgba(239, 68, 68, 0.85)"
-      : mag >= 4.5
-        ? "rgba(245, 158, 11, 0.8)"
-        : "rgba(6, 182, 212, 0.75)";
-  const radius = Math.min(22, Math.max(5, 4 + mag * 2.5));
-  return new Style({
-    image: new CircleStyle({
-      radius,
-      fill: new Fill({ color }),
-      stroke: new Stroke({ color: "#ffffff", width: 1.5 }),
-    }),
-  });
-};
-
-const satelliteCanvasStyle = () => {
-  return new Style({
-    image: new RegularShape({
-      points: 4,
-      radius: 9,
-      fill: new Fill({ color: "#c084fc" }),
-      stroke: new Stroke({ color: "#ffffff", width: 1.5 }),
-    }),
-  });
-};
-
-function checkWebGLSupport(): boolean {
-  try {
-    const canvas = document.createElement("canvas");
-    const gl =
-      canvas.getContext("webgl2") ||
-      canvas.getContext("webgl") ||
-      canvas.getContext("experimental-webgl");
-    return Boolean(gl);
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Creates and attaches high-performance WebGL telemetry layers to the OpenLayers map,
- * with an automatic fallback to 2D Canvas VectorLayers if WebGL is unavailable or fails.
+ * Creates and attaches high-fidelity telemetry layers with category-specific
+ * vector icons (airliners, helicopters, drones, satellites, container ships, tankers,
+ * cruise ships, flames, and seismic epicenter rings) to the OpenLayers map.
  */
 export function createTelemetryLayers(map: OlMap): TelemetryLayers {
   // Clean up any existing instances first
@@ -141,160 +62,42 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
   vesselsSource = new VectorSource();
   tracksSource = new VectorSource();
 
-  const hasWebGL = checkWebGLSupport();
+  // 1. ADS-B Flights: Category-specific aircraft silhouette (Airliner / Heavy / Rotorcraft / Drone / Prop)
+  flightsLayer = new VectorLayer({
+    source: flightsSource,
+    style: getFlightStyle,
+    zIndex: TELEMETRY_POINTS_Z,
+  });
 
-  if (hasWebGL) {
-    try {
-      // 1. ADS-B Flights: GPU Triangle symbol rotated by heading & colored by altitude
-      flightsLayer = new WebGLVectorLayer({
-        source: flightsSource,
-        style: {
-          "shape-points": 3,
-          "shape-radius": 8,
-          "shape-rotation": ["*", ["get", "heading"], Math.PI / 180],
-          "shape-rotate-with-view": true,
-          "shape-fill-color": [
-            "interpolate",
-            ["linear"],
-            ["get", "altitude"],
-            0,
-            "#38bdf8",
-            3000,
-            "#06b6d4",
-            7000,
-            "#10b981",
-            11000,
-            "#f59e0b",
-          ],
-          "shape-stroke-color": "#ffffff",
-          "shape-stroke-width": 1,
-        },
-        zIndex: TELEMETRY_POINTS_Z,
-      });
+  // 2. Real-Time Earthquakes: Concentric seismic shockwave epicenter rings
+  earthquakesLayer = new VectorLayer({
+    source: earthquakesSource,
+    style: getEarthquakeStyle,
+    zIndex: TELEMETRY_POINTS_Z + 1,
+  });
 
-      // 2. Real-Time Earthquakes: Proportional pulsating circles by magnitude
-      earthquakesLayer = new WebGLVectorLayer({
-        source: earthquakesSource,
-        style: {
-          "circle-radius": ["+", 4, ["*", ["get", "magnitude"], 2.5]],
-          "circle-fill-color": [
-            "case",
-            [">=", ["get", "magnitude"], 6.0],
-            "rgba(239, 68, 68, 0.85)",
-            [">=", ["get", "magnitude"], 4.5],
-            "rgba(245, 158, 11, 0.8)",
-            "rgba(6, 182, 212, 0.75)",
-          ],
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1.5,
-        },
-        zIndex: TELEMETRY_POINTS_Z + 1,
-      });
+  // 3. Orbital Satellites: Satellite bus with dual solar array wings
+  satellitesLayer = new VectorLayer({
+    source: satellitesSource,
+    style: getSatelliteStyle,
+    zIndex: TELEMETRY_POINTS_Z + 2,
+  });
 
-      // 3. Orbital Satellites: Diamond symbol
-      satellitesLayer = new WebGLVectorLayer({
-        source: satellitesSource,
-        style: {
-          "shape-points": 4,
-          "shape-radius": 9,
-          "shape-fill-color": "#c084fc",
-          "shape-stroke-color": "#ffffff",
-          "shape-stroke-width": 1.5,
-        },
-        zIndex: TELEMETRY_POINTS_Z + 2,
-      });
+  // 4. NASA FIRMS Active Fires: Thermal hotspot flame glyphs
+  firesLayer = new VectorLayer({
+    source: firesSource,
+    style: getFireStyle,
+    zIndex: TELEMETRY_POINTS_Z + 3,
+  });
 
-      // 4. NASA FIRMS Active Fires: Intense heat anomaly circles
-      firesLayer = new WebGLVectorLayer({
-        source: firesSource,
-        style: {
-          "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["get", "frp"],
-            0,
-            4,
-            100,
-            10,
-            500,
-            18,
-          ],
-          "circle-fill-color": [
-            "case",
-            [">=", ["get", "frp"], 200],
-            "rgba(239, 68, 68, 0.9)",
-            [">=", ["get", "frp"], 50],
-            "rgba(249, 115, 22, 0.85)",
-            "rgba(234, 179, 8, 0.8)",
-          ],
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1,
-        },
-        zIndex: TELEMETRY_POINTS_Z + 3,
-      });
+  // 5. AIS Maritime Vessels: Category-specific ship hulls (Container / Tanker / Cruise / Tug)
+  vesselsLayer = new VectorLayer({
+    source: vesselsSource,
+    style: getVesselStyle,
+    zIndex: TELEMETRY_POINTS_Z,
+  });
 
-      // 5. AIS Maritime Vessels: Directional ship hulls
-      vesselsLayer = new WebGLVectorLayer({
-        source: vesselsSource,
-        style: {
-          "shape-points": 3,
-          "shape-radius": 7,
-          "shape-rotation": ["*", ["get", "course"], Math.PI / 180],
-          "shape-rotate-with-view": true,
-          "shape-fill-color": "#06b6d4",
-          "shape-stroke-color": "#ffffff",
-          "shape-stroke-width": 1,
-        },
-        zIndex: TELEMETRY_POINTS_Z,
-      });
-    } catch (err) {
-      console.warn("WebGL layer init failed, using Canvas fallback:", err);
-      flightsLayer = null;
-      earthquakesLayer = null;
-      satellitesLayer = null;
-      firesLayer = null;
-      vesselsLayer = null;
-    }
-  }
-
-  // Graceful fallback to Canvas VectorLayers
-  if (!flightsLayer) {
-    flightsLayer = new VectorLayer({
-      source: flightsSource,
-      style: flightCanvasStyle,
-      zIndex: TELEMETRY_POINTS_Z,
-    });
-  }
-  if (!earthquakesLayer) {
-    earthquakesLayer = new VectorLayer({
-      source: earthquakesSource,
-      style: earthquakeCanvasStyle,
-      zIndex: TELEMETRY_POINTS_Z + 1,
-    });
-  }
-  if (!satellitesLayer) {
-    satellitesLayer = new VectorLayer({
-      source: satellitesSource,
-      style: satelliteCanvasStyle,
-      zIndex: TELEMETRY_POINTS_Z + 2,
-    });
-  }
-  if (!firesLayer) {
-    firesLayer = new VectorLayer({
-      source: firesSource,
-      style: fireCanvasStyle,
-      zIndex: TELEMETRY_POINTS_Z + 3,
-    });
-  }
-  if (!vesselsLayer) {
-    vesselsLayer = new VectorLayer({
-      source: vesselsSource,
-      style: vesselCanvasStyle,
-      zIndex: TELEMETRY_POINTS_Z,
-    });
-  }
-
-  // Satellite Ground Tracks (LineStrings)
+  // 6. Satellite Ground Tracks (LineStrings)
   tracksLayer = new VectorLayer({
     source: tracksSource,
     style: new Style({
@@ -341,6 +144,7 @@ export function updateFlightFeatures(flights: FlightTarget[]) {
       continue;
     }
 
+    const isEmergency = Boolean(flight.emergency);
     const feature = new Feature({
       geometry: new Point(fromLonLat([flight.longitude, flight.latitude])),
       telemetryType: "flight",
@@ -350,6 +154,10 @@ export function updateFlightFeatures(flights: FlightTarget[]) {
       altitude: flight.altitudeMeters || 0,
       velocity: flight.velocityMps || 0,
       country: flight.originCountry,
+      isEmergency: isEmergency ? 1 : 0,
+      squawk: flight.squawk || "",
+      category: flight.category || 0,
+      categoryLabel: flight.categoryLabel || "",
       raw: flight,
     });
     features.push(feature);
@@ -399,7 +207,7 @@ export function updateEarthquakeFeatures(earthquakes: EarthquakeTarget[]) {
 export function updateSatelliteFeatures(satellites: SatelliteTarget[]) {
   if (!satellitesSource || !tracksSource) return;
 
-  const satFeatures: Feature[] = [];
+  const pointFeatures: Feature[] = [];
   const trackFeatures: Feature[] = [];
 
   for (const sat of satellites) {
@@ -412,48 +220,49 @@ export function updateSatelliteFeatures(satellites: SatelliteTarget[]) {
       continue;
     }
 
-    // Point feature for the satellite
-    const ptFeature = new Feature({
+    const point = new Feature({
       geometry: new Point(fromLonLat([sat.longitude, sat.latitude])),
       telemetryType: "satellite",
-      id: sat.id,
+      id: String(sat.noradId),
       name: sat.name,
-      altitude: sat.altitudeKm,
-      velocity: sat.velocityKmh,
+      altitudeKm: sat.altitudeKm,
+      velocityKmh: sat.velocityKmh,
       raw: sat,
     });
-    satFeatures.push(ptFeature);
+    pointFeatures.push(point);
 
-    // Ground track lines
     if (sat.groundTrack && sat.groundTrack.length > 1) {
-      let currentSegment: [number, number][] = [];
-      for (let i = 0; i < sat.groundTrack.length; i++) {
-        const [lon, lat] = sat.groundTrack[i];
-        if (currentSegment.length > 0) {
-          const prevLon = currentSegment[currentSegment.length - 1][0];
-          if (Math.abs(lon - prevLon) > 180) {
-            if (currentSegment.length > 1) {
-              const lineCoords = currentSegment.map((c) => fromLonLat(c));
-              trackFeatures.push(
-                new Feature({
-                  geometry: new LineString(lineCoords),
-                  telemetryType: "satellite_track",
-                  satelliteId: sat.id,
-                })
-              );
-            }
-            currentSegment = [];
+      const coords = sat.groundTrack.map(([lon, lat]) => fromLonLat([lon, lat]));
+
+      // Split track at antimeridian (when adjacent points jump > 180° longitude)
+      let currentSegment: number[][] = [coords[0]];
+      for (let i = 1; i < coords.length; i++) {
+        const prev = coords[i - 1];
+        const curr = coords[i];
+        if (Math.abs(curr[0] - prev[0]) > 20000000) {
+          if (currentSegment.length > 1) {
+            trackFeatures.push(
+              new Feature({
+                geometry: new LineString(currentSegment),
+                telemetryType: "satellite_track",
+                id: `${sat.noradId}_track_${i}`,
+                satelliteName: sat.name,
+              })
+            );
           }
+          currentSegment = [curr];
+        } else {
+          currentSegment.push(curr);
         }
-        currentSegment.push([lon, lat]);
       }
+
       if (currentSegment.length > 1) {
-        const lineCoords = currentSegment.map((c) => fromLonLat(c));
         trackFeatures.push(
           new Feature({
-            geometry: new LineString(lineCoords),
+            geometry: new LineString(currentSegment),
             telemetryType: "satellite_track",
-            satelliteId: sat.id,
+            id: `${sat.noradId}_track_end`,
+            satelliteName: sat.name,
           })
         );
       }
@@ -461,14 +270,14 @@ export function updateSatelliteFeatures(satellites: SatelliteTarget[]) {
   }
 
   satellitesSource.clear();
-  satellitesSource.addFeatures(satFeatures);
+  satellitesSource.addFeatures(pointFeatures);
 
   tracksSource.clear();
   tracksSource.addFeatures(trackFeatures);
 }
 
 /**
- * Updates active NASA FIRMS fire vector features on the telemetry layer.
+ * Updates active thermal hotspot features (NASA FIRMS) on the telemetry layer.
  */
 export function updateFireFeatures(fires: FireTarget[]) {
   if (!firesSource) return;
@@ -574,4 +383,3 @@ export function clearTelemetryLayers() {
   vesselsSource?.clear();
   tracksSource?.clear();
 }
-

@@ -100,12 +100,19 @@ mod tests {
             lon: -122.0,
             lat: 37.0,
             altitude_m: Some(10000.0),
+            geo_altitude_m: Some(10050.0),
             velocity_mps: Some(250.0),
             heading_deg: Some(90.0),
             vertical_rate_mps: Some(0.0),
             on_ground: false,
             last_contact_epoch: 1000,
+            position_time_epoch: Some(1000),
             simulated: false,
+            squawk: Some("1200".to_string()),
+            spi: false,
+            position_source: 0,
+            category: 4,
+            emergency: None,
         }];
         let bytes = pack_flights_binary(&flights);
         assert_eq!(bytes.len(), 32);

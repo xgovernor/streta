@@ -5,6 +5,7 @@ import {
   fetchLiveFlights,
   fetchLiveSatellites,
   flightTargetsToFeatures,
+  getEmitterCategoryLabel,
   satelliteTargetsToFeatures,
 } from "./tiledBackend";
 import { useTelemetryStore } from "../../state/telemetryStore";
@@ -109,5 +110,14 @@ describe("Phase 4 Live Telemetry & Feeds", () => {
     expect(satFeatures.length).toBe(satellites.length);
     expect(satFeatures[0].geometry.type).toBe("Point");
     expect(satFeatures[0].properties.name).toBeDefined();
+  });
+
+  it("decodes ICAO DO-260B aircraft emitter categories accurately", () => {
+    expect(getEmitterCategoryLabel(2)).toBe("Light (< 15,500 lbs)");
+    expect(getEmitterCategoryLabel(4)).toBe("Large (75,000–300,000 lbs)");
+    expect(getEmitterCategoryLabel(6)).toBe("Heavy (> 300,000 lbs)");
+    expect(getEmitterCategoryLabel(8)).toBe("Rotorcraft / Helicopter");
+    expect(getEmitterCategoryLabel(14)).toBe("UAV / Drone");
+    expect(getEmitterCategoryLabel(99)).toBe("Unknown");
   });
 });
