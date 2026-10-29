@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use std::sync::RwLock;
-use std::time::Instant;
+use moka::future::Cache;
+use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CacheKey {
@@ -12,35 +12,29 @@ pub struct CacheKey {
 
 #[derive(Clone)]
 pub struct CachedChunk {
-    pub data: Vec<u8>,
+    pub data: Arc<Vec<u8>>,
     pub total_length: u64,
-    pub last_accessed: Instant,
-}
-
-struct CacheState {
-    map: HashMap<CacheKey, CachedChunk>,
-    current_bytes: usize,
 }
 
 pub struct ByteRangeCache {
-    state: RwLock<CacheState>,
-    max_bytes: usize,
-    max_entries: usize,
+    inner: Cache<CacheKey, CachedChunk>,
 }
 
 impl ByteRangeCache {
-    pub fn new(max_bytes: usize, max_entries: usize) -> Self {
-        Self {
-            state: RwLock::new(CacheState {
-                map: HashMap::new(),
-                current_bytes: 0,
-            }),
-            max_bytes,
-            max_entries,
-        }
+    pub fn new(max_bytes: u64, max_entries: u64) -> Self {
+        let inner = Cache::builder()
+            .max_capacity(max_bytes)
+            .weigher(|_key, chunk: &CachedChunk| -> u32 {
+                chunk.data.len().try_into().unwrap_or(u32::MAX)
+            })
+            .initial_capacity((max_entries / 4).max(1) as usize)
+            .time_to_idle(Duration::from_secs(7200))
+            .build();
+
+        Self { inner }
     }
 
-    pub fn get(
+    pub async fn get(
         &self,
         layer_id: &str,
         band_id: &str,
@@ -54,16 +48,13 @@ impl ByteRangeCache {
             end,
         };
 
-        let mut state = self.state.write().ok()?;
-        if let Some(entry) = state.map.get_mut(&key) {
-            entry.last_accessed = Instant::now();
-            Some((entry.data.clone(), entry.total_length))
-        } else {
-            None
-        }
+        self.inner
+            .get(&key)
+            .await
+            .map(|chunk| ((*chunk.data).clone(), chunk.total_length))
     }
 
-    pub fn put(
+    pub async fn put(
         &self,
         layer_id: String,
         band_id: String,
@@ -79,61 +70,27 @@ impl ByteRangeCache {
             end,
         };
 
-        let mut state = match self.state.write() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
-
-        // If single chunk exceeds half max_bytes, don't overwhelm cache
-        if data.len() > self.max_bytes / 2 {
-            return;
-        }
-
-        let chunk_size = data.len();
-
-        // If key already exists, subtract old chunk's data length
-        if let Some(old) = state.map.get(&key) {
-            state.current_bytes = state.current_bytes.saturating_sub(old.data.len());
-        }
-
-        // Evict until under budget in O(1) size check
-        while (state.map.len() >= self.max_entries
-            || state.current_bytes + chunk_size > self.max_bytes)
-            && !state.map.is_empty()
-        {
-            // Find oldest key
-            let oldest_key = state
-                .map
-                .iter()
-                .min_by_key(|(_, v)| v.last_accessed)
-                .map(|(k, _)| k.clone());
-
-            if let Some(k) = oldest_key {
-                if let Some(removed) = state.map.remove(&k) {
-                    state.current_bytes = state.current_bytes.saturating_sub(removed.data.len());
-                }
-            } else {
-                break;
-            }
-        }
-
-        state.current_bytes += chunk_size;
-        state.map.insert(
-            key,
-            CachedChunk {
-                data,
-                total_length,
-                last_accessed: Instant::now(),
-            },
-        );
+        self.inner
+            .insert(
+                key,
+                CachedChunk {
+                    data: Arc::new(data),
+                    total_length,
+                },
+            )
+            .await;
     }
 
-    pub fn len(&self) -> usize {
-        self.state.read().map(|s| s.map.len()).unwrap_or(0)
+    pub async fn run_pending_tasks(&self) {
+        self.inner.run_pending_tasks().await;
     }
 
-    pub fn current_bytes(&self) -> usize {
-        self.state.read().map(|s| s.current_bytes).unwrap_or(0)
+    pub fn len(&self) -> u64 {
+        self.inner.entry_count()
+    }
+
+    pub fn current_bytes(&self) -> u64 {
+        self.inner.weighted_size()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -141,10 +98,7 @@ impl ByteRangeCache {
     }
 
     pub fn clear(&self) {
-        if let Ok(mut s) = self.state.write() {
-            s.map.clear();
-            s.current_bytes = 0;
-        }
+        self.inner.invalidate_all();
     }
 }
 
@@ -152,45 +106,44 @@ impl ByteRangeCache {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_byte_range_cache_basic_put_get() {
+    #[tokio::test]
+    async fn test_byte_range_cache_basic_put_get() {
         let cache = ByteRangeCache::new(1024 * 1024, 100);
-        cache.put(
-            "layer_1".into(),
-            "B04".into(),
-            0,
-            1023,
-            vec![1, 2, 3, 4],
-            5000,
-        );
+        cache
+            .put(
+                "layer_1".into(),
+                "B04".into(),
+                0,
+                1023,
+                vec![1, 2, 3, 4],
+                5000,
+            )
+            .await;
 
-        let hit = cache.get("layer_1", "B04", 0, 1023);
+        let hit = cache.get("layer_1", "B04", 0, 1023).await;
         assert!(hit.is_some());
         let (bytes, total) = hit.unwrap();
         assert_eq!(bytes, vec![1, 2, 3, 4]);
         assert_eq!(total, 5000);
 
-        let miss = cache.get("layer_1", "B04", 1024, 2047);
+        let miss = cache.get("layer_1", "B04", 1024, 2047).await;
         assert!(miss.is_none());
     }
 
-    #[test]
-    fn test_byte_range_cache_eviction() {
-        let cache = ByteRangeCache::new(20, 2);
-        cache.put("l".into(), "b1".into(), 0, 4, vec![0; 5], 100);
-        cache.put("l".into(), "b2".into(), 0, 4, vec![1; 5], 100);
-        assert_eq!(cache.len(), 2);
+    #[tokio::test]
+    async fn test_byte_range_cache_eviction() {
+        // Cache with max capacity 100 bytes weight
+        let cache = ByteRangeCache::new(100, 100);
+        // Insert 15 chunks of 10 bytes each = 150 bytes total > 100 capacity
+        for i in 0..15 {
+            cache
+                .put("l".into(), format!("b{}", i), 0, 9, vec![0; 10], 100)
+                .await;
+        }
+        cache.run_pending_tasks().await;
 
-        // Access b1 to refresh its last_accessed
-        assert!(cache.get("l", "b1", 0, 4).is_some());
-
-        // Insert b3 -> b2 should be evicted because b1 was recently accessed
-        cache.put("l".into(), "b3".into(), 0, 4, vec![2; 5], 100);
-        assert_eq!(cache.len(), 2);
-
-        assert!(cache.get("l", "b1", 0, 4).is_some());
-        assert!(cache.get("l", "b2", 0, 4).is_none());
-        assert!(cache.get("l", "b3", 0, 4).is_some());
-        assert_eq!(cache.current_bytes(), 10);
+        // Weighted capacity limit must be respected
+        assert!(cache.current_bytes() <= 100);
+        assert!(cache.len() <= 10);
     }
 }

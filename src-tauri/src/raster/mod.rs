@@ -220,8 +220,8 @@ impl RasterRegistry {
         start: u64,
         end: u64,
     ) -> Result<(Vec<u8>, u64), String> {
-        // 1. Check LRU Cache
-        if let Some((cached_data, total_len)) = self.cache.get(layer_id, band_id, start, end) {
+        // 1. Check Moka Cache
+        if let Some((cached_data, total_len)) = self.cache.get(layer_id, band_id, start, end).await {
             return Ok((cached_data, total_len));
         }
 
@@ -284,15 +284,17 @@ impl RasterRegistry {
             body_bytes
         };
 
-        // Cache the chunk in our LRU cache
-        self.cache.put(
-            layer_id.to_string(),
-            band_id.to_string(),
-            start,
-            end,
-            chunk.clone(),
-            total_len,
-        );
+        // Cache the chunk in our Moka cache
+        self.cache
+            .put(
+                layer_id.to_string(),
+                band_id.to_string(),
+                start,
+                end,
+                chunk.clone(),
+                total_len,
+            )
+            .await;
 
         Ok((chunk, total_len))
     }
