@@ -11,10 +11,11 @@ import {
   Radar,
   Ruler,
 } from "lucide-react";
+
 import { fitToData, flyTo, resetNorth, zoomBy } from "../map/mapController";
 import { useMapStore } from "../state/mapStore";
 import { useProjectStore } from "../state/projectStore";
-import { useUiStore } from "../state/uiStore";
+import { useUiStore, type AnalysisTab } from "../state/uiStore";
 import { RailButton } from "./RailButton";
 import { ToolButton } from "./ToolButton";
 
@@ -64,7 +65,7 @@ export function RightRibbon() {
     };
   }, []);
 
-  const toggleTool = (tab: "distance" | "area" | "elevation" | "buffer") => {
+  const toggleTool = (tab: AnalysisTab) => {
     if (activePanel === "measure" && analysisTab === tab) {
       togglePanel("measure");
     } else {
@@ -183,6 +184,7 @@ export function RightRibbon() {
           onClick={() => toggleTool("buffer")}
         />
       </div>
+
 
       <div className="flex-1" />
 

@@ -1,5 +1,4 @@
 import {
-  Compass,
   Database,
   FolderOpen,
   GitMerge,
@@ -21,11 +20,11 @@ const TOOLS: {
     { id: "search", label: "Search features", icon: Search, shortcut: "/" },
     { id: "project", label: "Project file", icon: FolderOpen },
     { id: "data", label: "Datasets", icon: Database, shortcut: "D" },
-    { id: "measure", label: "Analytical workbench", icon: Compass, shortcut: "A" },
     { id: "table", label: "Attribute table", icon: Table, shortcut: "T" },
     { id: "join", label: "Join table", icon: GitMerge },
     { id: "basemaps", label: "Basemaps", icon: Map },
   ];
+
 
 function BrandMark() {
   return (

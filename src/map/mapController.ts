@@ -22,8 +22,17 @@ import VectorTileSource from "ol/source/VectorTile";
 import XYZ from "ol/source/XYZ";
 import { Circle as CircleStyle, Fill, Stroke, Style, Text } from "ol/style";
 import type { StyleFunction } from "ol/style/Style";
-import type { EventsKey } from "ol/events";
 import { apply } from "ol-mapbox-style";
+import type { EventsKey } from "ol/events";
+import WebGLTileLayer from "ol/layer/WebGLTile";
+import type GeoTIFF from "ol/source/GeoTIFF";
+import {
+  createCogLayer,
+  sampleRasterPixel,
+  type PixelProbeData,
+  type RasterFormula,
+  type RasterLayerConfig,
+} from "./rasterLayer";
 import "./projections";
 import { BASEMAPS } from "../lib/gis/data";
 import { GEOGRAPHIC_CRS, VIEW_CRS } from "../lib/gis/crs";
@@ -73,6 +82,18 @@ let activeTeardown: (() => void) | null = null;
 let activeMeasureClear: (() => void) | null = null;
 let activeAnalysisSource: VectorSource | null = null;
 let activeBufferPicker: ((coord: [number, number]) => void) | null = null;
+
+let activeRasterBinding: {
+  layer: WebGLTileLayer;
+  source: GeoTIFF;
+  config: RasterLayerConfig;
+  bandOrder: string[];
+  formula: RasterFormula;
+  setFormula: (f: RasterFormula) => void;
+  setOpacity: (o: number) => void;
+  setContrastScale: (c: number) => void;
+} | null = null;
+let rasterProbeCallback: ((data: PixelProbeData | null) => void) | null = null;
 
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 let leaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -548,6 +569,18 @@ export function mountMap(target: HTMLElement): () => void {
       { x: event.coordinate[0], y: event.coordinate[1] },
     );
     store.setHoverLabel(hover ? hoverLabelFor(hit!.feature, hit!.layerId) : null);
+
+    // Synchronous client-side pixel probe from GPU tile texture (< 0.1ms)
+    if (activeRasterBinding && rasterProbeCallback) {
+      const probe = sampleRasterPixel(
+        activeRasterBinding.layer,
+        event.pixel,
+        [lon, lat],
+        activeRasterBinding.bandOrder,
+        activeRasterBinding.formula,
+      );
+      rasterProbeCallback(probe);
+    }
 
     const element = map.getTargetElement();
     if (element) {
@@ -1487,4 +1520,79 @@ export function flyToCoordinate(lon: number, lat: number, zoom = 14): void {
     duration: 500,
   });
 }
+
+/**
+ * Mounts a Cloud-Optimized GeoTIFF raster layer into OpenLayers.
+ * All sources are guaranteed to be strata://cog/... URLs.
+ */
+export function mountRasterLayer(config: RasterLayerConfig): void {
+  if (!activeMap) return;
+  unmountRasterLayer();
+
+  const binding = createCogLayer(config);
+  activeRasterBinding = {
+    ...binding,
+    config,
+    formula:
+      config.initialFormula ??
+      (config.kind === "multispectral" ? "NDVI" : "Elevation"),
+  };
+
+  activeMap.addLayer(binding.layer);
+}
+
+/**
+ * Removes the active COG raster layer from the map.
+ */
+export function unmountRasterLayer(): void {
+  if (activeMap && activeRasterBinding) {
+    activeMap.removeLayer(activeRasterBinding.layer);
+    activeRasterBinding = null;
+  }
+}
+
+/**
+ * Dynamically switches the active GPU formula (NDVI, NDWI, NDBI, NBR, CIR, RGB, Elevation).
+ */
+export function setRasterFormula(formula: RasterFormula): void {
+  if (activeRasterBinding) {
+    activeRasterBinding.formula = formula;
+    activeRasterBinding.setFormula(formula);
+  }
+}
+
+/**
+ * Adjusts the raster layer opacity.
+ */
+export function setRasterOpacity(opacity: number): void {
+  if (activeRasterBinding) {
+    activeRasterBinding.setOpacity(opacity);
+  }
+}
+
+/**
+ * Updates the contrast scaling variable in the WebGL shader.
+ */
+export function setRasterContrast(scale: number): void {
+  if (activeRasterBinding) {
+    activeRasterBinding.setContrastScale(scale);
+  }
+}
+
+/**
+ * Subscribes to live cursor pixel probe events evaluated from GPU texture memory.
+ */
+export function onRasterProbe(
+  callback: ((data: PixelProbeData | null) => void) | null,
+): void {
+  rasterProbeCallback = callback;
+}
+
+/**
+ * Returns the currently active raster layer binding, if any.
+ */
+export function getActiveRasterBinding() {
+  return activeRasterBinding;
+}
+
 

@@ -159,3 +159,41 @@ pub async fn fetch_telemetry_binary(
     }
 }
 
+#[tauri::command]
+pub fn register_cog_layer(
+    raster: State<'_, crate::raster::SharedRasterRegistry>,
+    layer_id: String,
+    name: String,
+    bands: std::collections::HashMap<String, String>,
+) -> Result<serde_json::Value, String> {
+    let mut cog_bands = std::collections::HashMap::new();
+    let mut mapped_urls = std::collections::HashMap::new();
+
+    for (band_id, source_str) in bands {
+        let trimmed = source_str.trim();
+        let source = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            crate::raster::CogSource::Remote(trimmed.to_string())
+        } else {
+            crate::raster::CogSource::Local(std::path::PathBuf::from(trimmed))
+        };
+        cog_bands.insert(band_id.clone(), source);
+        mapped_urls.insert(band_id.clone(), format!("strata://cog/{layer_id}/{band_id}"));
+    }
+
+    raster.register_layer(layer_id.clone(), name, cog_bands);
+
+    Ok(serde_json::json!({
+        "success": true,
+        "layer_id": layer_id,
+        "bands": mapped_urls
+    }))
+}
+
+#[tauri::command]
+pub fn get_cog_presets(
+    raster: State<'_, crate::raster::SharedRasterRegistry>,
+) -> Result<Vec<crate::raster::CogPresetInfo>, String> {
+    Ok(raster.get_presets())
+}
+
+

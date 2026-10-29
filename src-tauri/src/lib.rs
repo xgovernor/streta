@@ -5,8 +5,10 @@ pub mod commands;
 pub mod manifest;
 pub mod analysis;
 pub mod telemetry;
+pub mod raster;
 
 use tiles::{DatasetStore, SharedDatasetStore};
+use raster::{RasterRegistry, SharedRasterRegistry};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -21,15 +23,24 @@ pub fn run() {
     }
 
     let store: SharedDatasetStore = Arc::new(RwLock::new(DatasetStore::new()));
+    let raster_store: SharedRasterRegistry = Arc::new(RasterRegistry::new());
+
     let protocol_store = store.clone();
+    let protocol_raster = raster_store.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(store)
-        .register_uri_scheme_protocol("strata", move |_ctx, request| {
-            tiles::handle_strata_protocol(&protocol_store, &request)
+        .manage(raster_store)
+        .register_asynchronous_uri_scheme_protocol("strata", move |_ctx, request, responder| {
+            let s = protocol_store.clone();
+            let r = protocol_raster.clone();
+            tauri::async_runtime::spawn(async move {
+                let response = tiles::handle_strata_protocol_async(&s, &r, &request).await;
+                responder.respond(response);
+            });
         })
         .invoke_handler(tauri::generate_handler![
             commands::register_geojson_layer,
@@ -45,6 +56,8 @@ pub fn run() {
             commands::fetch_live_earthquakes,
             commands::fetch_live_satellites,
             commands::fetch_telemetry_binary,
+            commands::register_cog_layer,
+            commands::get_cog_presets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

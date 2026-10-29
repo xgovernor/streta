@@ -37,6 +37,7 @@ import { useTelemetryStore } from "../../state/telemetryStore";
 import { useUiStore } from "../../state/uiStore";
 import { PanelShell } from "../PanelShell";
 import { LiveFeedsSection } from "./LiveFeedsSection";
+import { RasterDatasetsSection } from "./RasterDatasetsSection";
 import {
   EmptyState,
   ICON_BUTTON,
@@ -311,6 +312,8 @@ export function DatasetsPanel() {
       </div>
 
       <LiveFeedsSection />
+
+      <RasterDatasetsSection />
 
       <SectionLabel trailing="Loaded on demand">Dataset library</SectionLabel>
       <div className="flex flex-col gap-1.5">

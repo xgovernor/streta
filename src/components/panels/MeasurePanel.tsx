@@ -29,7 +29,7 @@ import {
   type SpatialQueryResult,
 } from "../../lib/gis/tiledBackend";
 import { useProjectStore } from "../../state/projectStore";
-import { useUiStore } from "../../state/uiStore";
+import { useUiStore, type AnalysisTab } from "../../state/uiStore";
 import { PanelShell } from "../PanelShell";
 import {
   FIELD_INPUT,
@@ -41,14 +41,14 @@ import {
 } from "./shared";
 import { ElevationChart } from "../analysis/ElevationChart";
 
-type AnalysisTab = "distance" | "area" | "elevation" | "buffer";
-
 const MODES = [
   { id: "distance" as const, label: "Distance", icon: Ruler },
   { id: "area" as const, label: "Area", icon: Hexagon },
   { id: "elevation" as const, label: "Elevation", icon: Mountain },
   { id: "buffer" as const, label: "Buffer", icon: Radar },
 ];
+
+
 
 function bearingToDirection(deg: number): string {
   const normalized = ((deg % 360) + 360) % 360;
@@ -735,3 +735,5 @@ export function MeasurePanel() {
     </PanelShell>
   );
 }
+
+

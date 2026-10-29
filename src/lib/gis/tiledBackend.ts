@@ -840,3 +840,77 @@ export function satelliteTargetsToFeatures(satellites: SatelliteTarget[]): Featu
     },
   }));
 }
+
+export interface CogPresetInfo {
+  id: string;
+  name: string;
+  description: string;
+  kind: "multispectral" | "elevation";
+  bands: string[];
+  default_formula: string;
+  center: [number, number];
+  zoom: number;
+}
+
+export interface RegisterCogResult {
+  success: boolean;
+  layer_id: string;
+  bands: Record<string, string>;
+}
+
+/**
+ * Registers a local or remote COG with the Rust backend.
+ * Returns mapped strata://cog/{layerId}/{bandId} URLs for each band.
+ */
+export async function registerCogLayerWithRust(
+  layerId: string,
+  name: string,
+  bands: Record<string, string>,
+): Promise<RegisterCogResult> {
+  if (!isTauriEnvironment()) {
+    const mapped: Record<string, string> = {};
+    for (const k of Object.keys(bands)) {
+      mapped[k] = `strata://cog/${layerId}/${k}`;
+    }
+    return { success: true, layer_id: layerId, bands: mapped };
+  }
+  return await invoke<RegisterCogResult>("register_cog_layer", {
+    layerId,
+    name,
+    bands,
+  });
+}
+
+/**
+ * Fetches curated COG presets initialized in the Rust backend.
+ */
+export async function getCogPresetsFromRust(): Promise<CogPresetInfo[]> {
+  if (!isTauriEnvironment()) {
+    return [
+      {
+        id: "sentinel2_tahoe",
+        name: "Sentinel-2 Multispectral (Lake Tahoe)",
+        description:
+          "6-band Sentinel-2 L2A tile over Lake Tahoe. Real-time GPU NDVI, NDWI, NDBI, NBR, and CIR computation.",
+        kind: "multispectral",
+        bands: ["B02", "B03", "B04", "B08", "B11", "B12"],
+        default_formula: "NDVI",
+        center: [-120.0324, 39.0968],
+        zoom: 10.5,
+      },
+      {
+        id: "copernicus_dem_rainier",
+        name: "Copernicus DEM 30m (Mt. Rainier)",
+        description:
+          "30-meter global elevation raster of Mount Rainier and the Pacific Northwest Cascades.",
+        kind: "elevation",
+        bands: ["elevation"],
+        default_formula: "Elevation",
+        center: [-121.7603, 46.8523],
+        zoom: 10.0,
+      },
+    ];
+  }
+  return await invoke<CogPresetInfo[]>("get_cog_presets");
+}
+
