@@ -63,6 +63,8 @@ pub fn run() {
             commands::inspect_geoparquet,
             commands::load_geoparquet_layer,
             commands::fetch_live_flights,
+            commands::get_flight_trail,
+            commands::query_live_flights_binary,
             commands::fetch_live_earthquakes,
             commands::fetch_live_satellites,
             commands::fetch_live_fires,

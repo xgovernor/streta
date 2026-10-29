@@ -41,6 +41,9 @@ contour = "0.13.1"
 kiddo = "6.3.0"
 parquet = { version = "60.1.0", default-features = false, features = ["flate2", "flate2-rust_backend", "snap"] }
 dotenvy = "0.15"
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+jord = "0.20.0"
+aircraft_icao_country = "1.0.4"
 
 
 [dev-dependencies]

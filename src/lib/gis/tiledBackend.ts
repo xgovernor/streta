@@ -645,6 +645,55 @@ export async function fetchLiveFlights(
   return corridorFlights;
 }
 
+/**
+ * Fetches packed 32-byte Float32Array telemetry binary slice over strata://telemetry/flights/live.bin?bbox=...
+ * for zero-copy 60 FPS viewport rendering.
+ */
+export async function fetchLiveFlightsBinary(
+  bbox?: [number, number, number, number]
+): Promise<Float32Array | null> {
+  const query = bbox ? `?bbox=${bbox.join(",")}` : "";
+  if (isTauriEnvironment()) {
+    try {
+      const res = await fetch(`strata://telemetry/flights/live.bin${query}`);
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        return new Float32Array(buf);
+      }
+    } catch {
+      try {
+        const raw = await invoke<number[]>("query_live_flights_binary", { bbox: bbox || null });
+        return new Float32Array(new Uint8Array(raw).buffer);
+      } catch (err) {
+        console.warn("query_live_flights_binary invoke failed:", err);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Fetches the rolling historical breadcrumb flight trail for an aircraft
+ * as a GeoJSON Feature<LineString>.
+ */
+export async function fetchFlightTrail(icao24: string): Promise<any> {
+  if (isTauriEnvironment()) {
+    try {
+      const res = await fetch(`strata://telemetry/flights/${icao24}/trail.json`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      try {
+        return await invoke<any>("get_flight_trail", { icao24 });
+      } catch (err) {
+        console.warn("get_flight_trail invoke failed:", err);
+      }
+    }
+  }
+  return null;
+}
+
 export async function fetchLiveEarthquakes(minMagnitude = 1.0): Promise<EarthquakeTarget[]> {
   if (isTauriEnvironment()) {
     try {

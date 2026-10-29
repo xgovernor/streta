@@ -178,6 +178,19 @@ pub async fn fetch_live_flights(
 }
 
 #[tauri::command]
+pub fn get_flight_trail(icao24: String) -> Result<serde_json::Value, String> {
+    crate::telemetry::TelemetryDb::global().get_flight_trail(&icao24)
+}
+
+#[tauri::command]
+pub fn query_live_flights_binary(
+    bbox: Option<(f64, f64, f64, f64)>,
+) -> Result<Vec<u8>, String> {
+    let (min_lon, min_lat, max_lon, max_lat) = bbox.unwrap_or((-180.0, -90.0, 180.0, 90.0));
+    crate::telemetry::TelemetryDb::global().query_binary_bbox(min_lon, min_lat, max_lon, max_lat)
+}
+
+#[tauri::command]
 pub async fn fetch_live_earthquakes(
     period: Option<String>,
 ) -> Result<Vec<crate::telemetry::EarthquakeTarget>, String> {

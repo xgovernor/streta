@@ -16,7 +16,7 @@ import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import VectorTileLayer from "ol/layer/VectorTile";
 import { unByKey } from "ol/Observable";
-import { fromLonLat, transform } from "ol/proj";
+import { fromLonLat, transform, transformExtent } from "ol/proj";
 import VectorSource from "ol/source/Vector";
 import VectorTileSource from "ol/source/VectorTile";
 import XYZ from "ol/source/XYZ";
@@ -54,7 +54,7 @@ import type {
   MeasureSummary,
 } from "../lib/gis/types";
 import { formatArea, formatDistance } from "../lib/format";
-import { measureGeodesic } from "../lib/gis/tiledBackend";
+import { measureGeodesic, fetchFlightTrail } from "../lib/gis/tiledBackend";
 import { useMapStore } from "../state/mapStore";
 import { useProjectStore } from "../state/projectStore";
 import { useUiStore } from "../state/uiStore";
@@ -68,6 +68,8 @@ import {
   updateVesselFeatures,
   setTelemetryLayerVisibility,
   clearTelemetryLayers,
+  displayFlightTrail,
+  clearFlightTrails,
 } from "./webglTelemetry";
 import { useTelemetryStore } from "../state/telemetryStore";
 
@@ -733,13 +735,13 @@ export function mountMap(target: HTMLElement): () => void {
     hoveredTarget = null;
     isOverPopup = false;
 
-    // Check if user clicked a telemetry target (flight, earthquake, or satellite)
-    let hitTelemetry: { type: "flight" | "earthquake" | "satellite"; data: unknown } | null = null;
+    // Check if user clicked a telemetry target (flight, earthquake, satellite, vessel, or fire)
+    let hitTelemetry: { type: "flight" | "earthquake" | "satellite" | "vessel" | "fire"; data: unknown } | null = null;
     map.forEachFeatureAtPixel(
       event.pixel,
       (feature) => {
         const t = feature.get("telemetryType");
-        if (t === "flight" || t === "earthquake" || t === "satellite") {
+        if (t === "flight" || t === "earthquake" || t === "satellite" || t === "vessel" || t === "fire") {
           hitTelemetry = { type: t, data: feature.get("raw") };
           return true;
         }
@@ -928,6 +930,19 @@ export function mountMap(target: HTMLElement): () => void {
     if (state.vesselsEnabled !== previous.vesselsEnabled) {
       setTelemetryLayerVisibility("vessels", state.vesselsEnabled);
     }
+    if (state.selectedTarget !== previous.selectedTarget) {
+      if (state.selectedTarget?.type === "flight" && (state.selectedTarget.data as any)?.icao24) {
+        fetchFlightTrail((state.selectedTarget.data as any).icao24)
+          .then((trail) => {
+            if (trail) {
+              displayFlightTrail(trail);
+            }
+          })
+          .catch((err) => console.warn("Failed to load flight trail:", err));
+      } else {
+        clearFlightTrails();
+      }
+    }
   });
 
   const initTelemetry = useTelemetryStore.getState();
@@ -966,7 +981,46 @@ export function mountMap(target: HTMLElement): () => void {
     }
   });
 
+  let moveEndTimer: ReturnType<typeof setTimeout> | null = null;
+  const handleMoveEnd = () => {
+    if (moveEndTimer) {
+      clearTimeout(moveEndTimer);
+    }
+    moveEndTimer = setTimeout(() => {
+      const size = map.getSize();
+      if (!size) return;
+      const extent = view.calculateExtent(size);
+      if (!extent || extent.some((v) => !isFinite(v))) return;
+
+      const [minLon, minLat, maxLon, maxLat] = transformExtent(
+        extent,
+        VIEW_CRS,
+        GEOGRAPHIC_CRS
+      );
+
+      // Clamp coordinates to valid WGS-84 ranges
+      const clampedBbox: [number, number, number, number] = [
+        Math.max(-180, Math.min(180, Math.min(minLon, maxLon))),
+        Math.max(-85, Math.min(85, Math.min(minLat, maxLat))),
+        Math.max(-180, Math.min(180, Math.max(minLon, maxLon))),
+        Math.max(-85, Math.min(85, Math.max(minLat, maxLat))),
+      ];
+
+      // If wrapped or wide world view, pass full bounds
+      if (clampedBbox[2] - clampedBbox[0] >= 350 || (minLon < -180 && maxLon > 180)) {
+        void useTelemetryStore.getState().refreshFeeds([-180, -85, 180, 85]);
+      } else {
+        void useTelemetryStore.getState().refreshFeeds(clampedBbox);
+      }
+    }, 350);
+  };
+  const moveEndKey = map.on("moveend", handleMoveEnd);
+
   const teardown = () => {
+    if (moveEndTimer) {
+      clearTimeout(moveEndTimer);
+      moveEndTimer = null;
+    }
     if (autoRefreshTimer) {
       clearInterval(autoRefreshTimer);
       autoRefreshTimer = null;
@@ -990,6 +1044,7 @@ export function mountMap(target: HTMLElement): () => void {
     unByKey(dragKey);
     unByKey(clickKey);
     unByKey(readyKey);
+    unByKey(moveEndKey);
 
     if (sketchKey) {
       unByKey(sketchKey);

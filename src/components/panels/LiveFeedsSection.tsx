@@ -28,10 +28,12 @@ import {
   getApiProvidersStatus,
   satelliteTargetsToFeatures,
   vesselTargetsToFeatures,
+  fetchFlightTrail,
   type AdsbTelemetryStatus,
   type ApiProvidersStatus,
 } from "../../lib/gis/tiledBackend";
 import { flyTo } from "../../map/mapController";
+import { displayFlightTrail } from "../../map/webglTelemetry";
 import { useProjectStore } from "../../state/projectStore";
 import {
   useTelemetryStore,
@@ -578,7 +580,21 @@ export function LiveFeedsSection() {
                 </div>
               )}
 
-              <div className="flex justify-end pt-0.5">
+              <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const trail = await fetchFlightTrail(selectedTarget.data.icao24);
+                    if (trail) {
+                      displayFlightTrail(trail);
+                    }
+                  }}
+                  className={cx(SECONDARY_BUTTON, "h-[22px] px-2 text-[9.5px]")}
+                  title="Render historical 15-minute breadcrumb flight path"
+                >
+                  <Activity size={10} strokeWidth={2} className="text-sky-400" />
+                  <span>Show Trail</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleFlyToTarget(selectedTarget)}

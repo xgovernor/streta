@@ -421,6 +421,9 @@ pub async fn fetch_live_flights(
                     if let Some(states) = states_val.as_array() {
                         let targets = parse_opensky_states(states);
 
+                        // Persist into in-memory SQLite spatial database
+                        let _ = super::TelemetryDb::global().upsert_flights(&targets);
+
                         // Update serve-stale cache with successful response
                         {
                             let mut cache = response_cache().write().await;
@@ -429,6 +432,14 @@ pub async fn fetch_live_flights(
                                 cached_at: std::time::Instant::now(),
                                 credits_remaining,
                             });
+                        }
+
+                        if let Some((min_lon, min_lat, max_lon, max_lat)) = bbox {
+                            if let Ok(filtered) = super::TelemetryDb::global().query_bbox(min_lon, min_lat, max_lon, max_lat) {
+                                if !filtered.is_empty() {
+                                    return Ok(filtered);
+                                }
+                            }
                         }
 
                         return Ok(targets);
@@ -447,12 +458,22 @@ pub async fn fetch_live_flights(
             // Serve stale cache on network timeout / connection failure
             let cache = response_cache().read().await;
             if let Some(ref snap) = *cache {
+                let _ = super::TelemetryDb::global().upsert_flights(&snap.flights);
+                if let Some((min_lon, min_lat, max_lon, max_lat)) = bbox {
+                    if let Ok(filtered) = super::TelemetryDb::global().query_bbox(min_lon, min_lat, max_lon, max_lat) {
+                        if !filtered.is_empty() {
+                            return Ok(filtered);
+                        }
+                    }
+                }
                 return Ok(snap.flights.clone());
             }
         }
     }
 
-    Ok(generate_corridor_flights(bbox))
+    let corridor = generate_corridor_flights(bbox);
+    let _ = super::TelemetryDb::global().upsert_flights(&corridor);
+    Ok(corridor)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -486,7 +507,7 @@ fn parse_opensky_states(states: &[Value]) -> Vec<FlightTarget> {
         }
 
         let callsign = arr[1].as_str().unwrap_or("").trim();
-        let country = arr[2].as_str().unwrap_or("").to_string();
+        let country = super::resolve_country(&icao, arr[2].as_str());
         let position_time = arr[3].as_i64();
         let last_contact = arr[4].as_i64().unwrap_or(0);
 

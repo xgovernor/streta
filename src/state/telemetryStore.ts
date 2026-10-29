@@ -52,6 +52,8 @@ interface TelemetryState {
   fireMinConfidence: number;
   vesselSearch: string;
 
+  currentBbox: [number, number, number, number] | null;
+
   // Actions
   toggleFeed: (feed: TelemetryFeedType) => void;
   setFeedEnabled: (feed: TelemetryFeedType, enabled: boolean) => void;
@@ -62,7 +64,8 @@ interface TelemetryState {
   setFireMinConfidence: (confidence: number) => void;
   setVesselSearch: (search: string) => void;
   setSelectedTarget: (target: SelectedTelemetryTarget | null) => void;
-  refreshFeeds: () => Promise<void>;
+  setViewportBbox: (bbox: [number, number, number, number] | null) => void;
+  refreshFeeds: (bbox?: [number, number, number, number]) => Promise<void>;
 }
 
 export const useTelemetryStore = create<TelemetryState>((set, get) => ({
@@ -87,6 +90,7 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
   satelliteSearch: "",
   fireMinConfidence: 50,
   vesselSearch: "",
+  currentBbox: null,
 
   toggleFeed: (feed) => {
     if (feed === "flights") {
@@ -142,8 +146,12 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
   },
   setVesselSearch: (vesselSearch) => set({ vesselSearch }),
   setSelectedTarget: (selectedTarget) => set({ selectedTarget }),
+  setViewportBbox: (currentBbox) => set({ currentBbox }),
 
-  refreshFeeds: async () => {
+  refreshFeeds: async (bbox) => {
+    if (bbox !== undefined) {
+      set({ currentBbox: bbox });
+    }
     const {
       flightsEnabled,
       earthquakesEnabled,
@@ -151,7 +159,9 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
       firesEnabled,
       vesselsEnabled,
       earthquakeMinMag,
+      currentBbox,
     } = get();
+    const effectiveBbox = bbox !== undefined ? bbox : currentBbox;
     set({ loading: true });
 
     try {
@@ -159,7 +169,7 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
 
       if (flightsEnabled) {
         promises.push(
-          fetchLiveFlights().then((flights) => {
+          fetchLiveFlights(effectiveBbox ?? undefined).then((flights) => {
             set({ flights });
           })
         );

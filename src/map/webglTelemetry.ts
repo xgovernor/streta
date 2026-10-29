@@ -127,13 +127,57 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
   };
 }
 
+interface FlightKinematicState {
+  feature: Feature;
+  lon: number;
+  lat: number;
+  speedMps: number;
+  headingDeg: number;
+  lastUpdated: number;
+}
+
+const activeFlightKinematics = new Map<string, FlightKinematicState>();
+let deadReckoningFrameId: number | null = null;
+
+function ensureDeadReckoningLoop() {
+  if (deadReckoningFrameId !== null || typeof requestAnimationFrame === "undefined") return;
+
+  const loop = () => {
+    const now = Date.now() / 1000;
+    for (const state of activeFlightKinematics.values()) {
+      if (state.speedMps <= 0) continue;
+      // Clamp forward extrapolation to 12s to avoid unbounded drift if offline
+      const dt = Math.min(Math.max(now - state.lastUpdated, 0), 12);
+      if (dt < 0.05) continue;
+
+      const headingRad = (state.headingDeg * Math.PI) / 180;
+      const dLat = (state.speedMps * Math.cos(headingRad) * dt) / 110574;
+      const latRad = (state.lat * Math.PI) / 180;
+      const dLon =
+        (state.speedMps * Math.sin(headingRad) * dt) /
+        (111320 * Math.max(Math.cos(latRad), 0.05));
+
+      const geom = state.feature.getGeometry();
+      if (geom instanceof Point) {
+        geom.setCoordinates(fromLonLat([state.lon + dLon, state.lat + dLat]));
+      }
+    }
+    deadReckoningFrameId = requestAnimationFrame(loop);
+  };
+  deadReckoningFrameId = requestAnimationFrame(loop);
+}
+
 /**
- * Updates active flight vector features on the telemetry layer.
+ * Updates active flight vector features on the telemetry layer and starts
+ * the 60 FPS kinematic dead-reckoning loop for smooth aircraft gliding.
  */
 export function updateFlightFeatures(flights: FlightTarget[]) {
   if (!flightsSource) return;
 
+  const nowSec = Date.now() / 1000;
   const features: Feature[] = [];
+  activeFlightKinematics.clear();
+
   for (const flight of flights) {
     if (
       flight.longitude == null ||
@@ -161,10 +205,68 @@ export function updateFlightFeatures(flights: FlightTarget[]) {
       raw: flight,
     });
     features.push(feature);
+
+    if (!flight.onGround && (flight.velocityMps || 0) > 0) {
+      activeFlightKinematics.set(flight.icao24, {
+        feature,
+        lon: flight.longitude,
+        lat: flight.latitude,
+        speedMps: flight.velocityMps || 0,
+        headingDeg: flight.headingDeg || 0,
+        lastUpdated: nowSec,
+      });
+    }
   }
 
   flightsSource.clear();
   flightsSource.addFeatures(features);
+  ensureDeadReckoningLoop();
+}
+
+/**
+ * Renders an aircraft historical flight trail on the tracks layer.
+ */
+export function displayFlightTrail(trailGeojson: any) {
+  if (!tracksSource || !trailGeojson?.geometry?.coordinates) return;
+
+  const coords = trailGeojson.geometry.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return;
+
+  clearFlightTrails();
+
+  const projectedCoords = coords.map(([lon, lat]: [number, number]) => fromLonLat([lon, lat]));
+
+  const trailFeature = new Feature({
+    geometry: new LineString(projectedCoords),
+    telemetryType: "flight_trail",
+    icao24: trailGeojson.properties?.icao24 || "",
+  });
+
+  trailFeature.setStyle(
+    new Style({
+      stroke: new Stroke({
+        color: "#38bdf8",
+        width: 3,
+        lineCap: "round",
+        lineJoin: "round",
+      }),
+    })
+  );
+
+  tracksSource.addFeature(trailFeature);
+}
+
+/**
+ * Removes any active flight breadcrumb trails from the tracks layer.
+ */
+export function clearFlightTrails() {
+  if (!tracksSource) return;
+  const existing = tracksSource.getFeatures();
+  for (const f of existing) {
+    if (f.get("telemetryType") === "flight_trail") {
+      tracksSource.removeFeature(f);
+    }
+  }
 }
 
 /**
@@ -272,7 +374,10 @@ export function updateSatelliteFeatures(satellites: SatelliteTarget[]) {
   satellitesSource.clear();
   satellitesSource.addFeatures(pointFeatures);
 
-  tracksSource.clear();
+  const oldSatTracks = tracksSource.getFeatures().filter((f) => f.get("telemetryType") === "satellite_track");
+  for (const f of oldSatTracks) {
+    tracksSource.removeFeature(f);
+  }
   tracksSource.addFeatures(trackFeatures);
 }
 

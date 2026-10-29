@@ -117,7 +117,92 @@ pub async fn handle_strata_protocol_async(
         return handle_vector_tile_request(store, dataset_id, z, x, y);
     }
 
+    // 3. Check if this is a Telemetry request: strata://telemetry/...
+    let is_telemetry = host == "telemetry" || segments.first().map_or(false, |&s| s == "telemetry");
+    if is_telemetry {
+        return handle_telemetry_request(request);
+    }
+
     not_found("Unrecognized strata URI path")
+}
+
+fn handle_telemetry_request(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let uri = request.uri();
+    let path = uri.path();
+    let query = uri.query().unwrap_or("");
+
+    // Parse bbox query param: bbox=minLon,minLat,maxLon,maxLat
+    let mut bbox: Option<(f64, f64, f64, f64)> = None;
+    for param in query.split('&') {
+        let mut parts = param.split('=');
+        if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
+            if key == "bbox" {
+                let coords: Vec<f64> = val.split(',').filter_map(|s| s.parse::<f64>().ok()).collect();
+                if coords.len() == 4 {
+                    bbox = Some((coords[0], coords[1], coords[2], coords[3]));
+                }
+            }
+        }
+    }
+
+    if path.ends_with("/live.bin") || path.contains("/flights/live.bin") {
+        let (min_lon, min_lat, max_lon, max_lat) = bbox.unwrap_or((-180.0, -90.0, 180.0, 90.0));
+        match crate::telemetry::TelemetryDb::global().query_binary_bbox(min_lon, min_lat, max_lon, max_lat) {
+            Ok(bytes) => Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/octet-stream")
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Access-Control-Allow-Methods", "GET, OPTIONS")
+                .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                .body(bytes)
+                .unwrap_or_else(|_| empty_response(StatusCode::INTERNAL_SERVER_ERROR)),
+            Err(e) => internal_error(&e),
+        }
+    } else if path.ends_with("/live.json") || path.contains("/flights/live.json") {
+        let (min_lon, min_lat, max_lon, max_lat) = bbox.unwrap_or((-180.0, -90.0, 180.0, 90.0));
+        match crate::telemetry::TelemetryDb::global().query_bbox(min_lon, min_lat, max_lon, max_lat) {
+            Ok(flights) => {
+                let json_bytes = serde_json::to_vec(&flights).unwrap_or_default();
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "application/json")
+                    .header("Access-Control-Allow-Origin", "*")
+                    .header("Access-Control-Allow-Methods", "GET, OPTIONS")
+                    .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    .body(json_bytes)
+                    .unwrap_or_else(|_| empty_response(StatusCode::INTERNAL_SERVER_ERROR))
+            }
+            Err(e) => internal_error(&e),
+        }
+    } else if path.contains("/trail.json") || path.contains("/trail") {
+        let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
+        let icao = if let Some(idx) = parts.iter().position(|&s| s == "trail" || s == "trail.json") {
+            if idx > 0 { parts[idx - 1] } else { "" }
+        } else {
+            ""
+        };
+
+        if icao.is_empty() {
+            return bad_request("Missing icao24 in trail path");
+        }
+
+        match crate::telemetry::TelemetryDb::global().get_flight_trail(icao) {
+            Ok(geojson) => {
+                let json_bytes = serde_json::to_vec(&geojson).unwrap_or_default();
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "application/json")
+                    .header("Access-Control-Allow-Origin", "*")
+                    .header("Access-Control-Allow-Methods", "GET, OPTIONS")
+                    .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    .body(json_bytes)
+                    .unwrap_or_else(|_| empty_response(StatusCode::INTERNAL_SERVER_ERROR))
+            }
+            Err(e) => internal_error(&e),
+        }
+    } else {
+        not_found("Unrecognized telemetry endpoint")
+    }
 }
 
 pub fn handle_strata_protocol(

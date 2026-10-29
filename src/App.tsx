@@ -6,7 +6,6 @@ import { MapAttribution } from "./components/MapAttribution";
 import { RightRibbon } from "./components/RightRibbon";
 import { FeaturePopup } from "./components/FeaturePopup";
 import { PanelHost } from "./components/PanelHost";
-import { ProjectPlaque } from "./components/ProjectPlaque";
 import { StatusBar } from "./components/StatusBar";
 import { Toast } from "./components/Toast";
 import { useProjectStore } from "./state/projectStore";
@@ -39,7 +38,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {      const ui = useUiStore.getState();
+    const onKeyDown = (event: KeyboardEvent) => {
+      const ui = useUiStore.getState();
       if (event.key === "Escape") {
         if (ui.activePanel) {
           ui.closePanel();
@@ -115,7 +115,6 @@ function App() {
     <main className="fixed inset-0 isolate overflow-hidden bg-shell">
       <MapCanvas />
       <div className="pointer-events-none absolute inset-0 z-10 [contain:layout_paint_style]">
-        <ProjectPlaque />
         <LeftRibbon />
         <RightRibbon />
         <FeaturePopup />
