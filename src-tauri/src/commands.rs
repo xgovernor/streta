@@ -118,6 +118,59 @@ pub async fn elevation_profile(
 }
 
 #[tauri::command]
+pub fn compute_h3_aggregation(
+    points: Vec<crate::analysis::H3AggregationInput>,
+    resolution: u8,
+) -> Result<crate::analysis::H3AggregationResult, String> {
+    crate::analysis::aggregate_to_h3(&points, resolution)
+}
+
+#[tauri::command]
+pub fn polygon_boolean_operation(
+    operation: String,
+    geom_a: serde_json::Value,
+    geom_b: serde_json::Value,
+) -> Result<crate::analysis::BooleanOpSummary, String> {
+    crate::analysis::execute_polygon_boolean_op(&operation, &geom_a, &geom_b)
+}
+
+#[tauri::command]
+pub fn generate_contours(
+    params: crate::analysis::ContourParams,
+) -> Result<crate::analysis::ContourResult, String> {
+    crate::analysis::generate_contours(&params)
+}
+
+#[tauri::command]
+pub fn spatial_knn_query(
+    points: Vec<crate::analysis::SpatialPointInput>,
+    query_lon: f64,
+    query_lat: f64,
+    query_elevation_m: Option<f64>,
+    k: usize,
+) -> Result<crate::analysis::KnnQueryResult, String> {
+    crate::analysis::query_spatial_knn(&points, query_lon, query_lat, query_elevation_m, k)
+}
+
+#[tauri::command]
+pub fn inspect_geoparquet(
+    path: String,
+) -> Result<crate::analysis::GeoParquetMetadataSummary, String> {
+    crate::analysis::inspect_geoparquet_metadata(&path)
+}
+
+#[tauri::command]
+pub fn load_geoparquet_layer(
+    path: String,
+    max_features: Option<usize>,
+) -> Result<crate::analysis::GeoParquetLayerLoadResult, String> {
+    crate::analysis::load_geoparquet_as_geojson(&path, max_features)
+}
+
+
+
+
+#[tauri::command]
 pub async fn fetch_live_flights(
     bbox: Option<(f64, f64, f64, f64)>,
 ) -> Result<Vec<crate::telemetry::FlightTarget>, String> {
