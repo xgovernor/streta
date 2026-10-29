@@ -25,10 +25,11 @@ impl ByteRangeCache {
         let inner = Cache::builder()
             .max_capacity(max_bytes)
             .weigher(|_key, chunk: &CachedChunk| -> u32 {
-                chunk.data.len().try_into().unwrap_or(u32::MAX)
+                (chunk.data.len() as u32).clamp(1, u32::MAX)
             })
             .initial_capacity((max_entries / 4).max(1) as usize)
             .time_to_idle(Duration::from_secs(7200))
+            .support_invalidation_closures()
             .build();
 
         Self { inner }
@@ -79,6 +80,47 @@ impl ByteRangeCache {
                 },
             )
             .await;
+    }
+
+    /// Fetches an entry with automatic in-flight request coalescing (singleflight).
+    /// If multiple concurrent calls request the same key, only one fetcher future runs.
+    pub async fn get_or_fetch<Fut>(
+        &self,
+        layer_id: &str,
+        band_id: &str,
+        start: u64,
+        end: u64,
+        fetcher: Fut,
+    ) -> Result<(Vec<u8>, u64), String>
+    where
+        Fut: std::future::Future<Output = Result<(Vec<u8>, u64), String>>,
+    {
+        let key = CacheKey {
+            layer_id: layer_id.to_string(),
+            band_id: band_id.to_string(),
+            start,
+            end,
+        };
+
+        let chunk = self
+            .inner
+            .try_get_with(key, async move {
+                let (bytes, total) = fetcher.await?;
+                Ok(CachedChunk {
+                    data: Arc::new(bytes),
+                    total_length: total,
+                })
+            })
+            .await
+            .map_err(|arc_err: Arc<String>| (*arc_err).clone())?;
+
+        Ok(((*chunk.data).clone(), chunk.total_length))
+    }
+
+    /// Selectively purges all cached chunks belonging to a single layer.
+    pub fn invalidate_layer(&self, layer_id: &str) {
+        let id = layer_id.to_string();
+        let _ = self.inner.invalidate_entries_if(move |k, _| k.layer_id == id);
     }
 
     pub async fn run_pending_tasks(&self) {
@@ -145,5 +187,58 @@ mod tests {
         // Weighted capacity limit must be respected
         assert!(cache.current_bytes() <= 100);
         assert!(cache.len() <= 10);
+    }
+
+    #[tokio::test]
+    async fn test_byte_range_cache_invalidate_layer() {
+        let cache = ByteRangeCache::new(1024 * 1024, 100);
+        cache
+            .put("layer_a".into(), "b1".into(), 0, 10, vec![1; 10], 100)
+            .await;
+        cache
+            .put("layer_b".into(), "b1".into(), 0, 10, vec![2; 10], 100)
+            .await;
+
+        assert!(cache.get("layer_a", "b1", 0, 10).await.is_some());
+        assert!(cache.get("layer_b", "b1", 0, 10).await.is_some());
+
+        cache.invalidate_layer("layer_a");
+        cache.run_pending_tasks().await;
+
+        assert!(cache.get("layer_a", "b1", 0, 10).await.is_none());
+        assert!(cache.get("layer_b", "b1", 0, 10).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_byte_range_cache_get_or_fetch() {
+        let cache = ByteRangeCache::new(1024 * 1024, 100);
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let calls_clone = calls.clone();
+        let (data1, total1) = cache
+            .get_or_fetch("l", "b", 0, 100, async move {
+                calls_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok((vec![42u8; 10], 500u64))
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(data1, vec![42u8; 10]);
+        assert_eq!(total1, 500);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Second call hits cache; fetcher future is not polled
+        let calls_clone2 = calls.clone();
+        let (data2, total2) = cache
+            .get_or_fetch("l", "b", 0, 100, async move {
+                calls_clone2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok((vec![99u8; 10], 500u64))
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(data2, vec![42u8; 10]);
+        assert_eq!(total2, 500);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

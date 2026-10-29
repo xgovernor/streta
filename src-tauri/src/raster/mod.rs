@@ -110,6 +110,7 @@ impl RasterRegistry {
         name: String,
         bands: HashMap<String, CogSource>,
     ) {
+        self.cache.invalidate_layer(&id);
         if let Ok(mut lock) = self.layers.write() {
             lock.insert(
                 id.clone(),
@@ -220,15 +221,24 @@ impl RasterRegistry {
         start: u64,
         end: u64,
     ) -> Result<(Vec<u8>, u64), String> {
-        // 1. Check Moka Cache
-        if let Some((cached_data, total_len)) = self.cache.get(layer_id, band_id, start, end).await {
-            return Ok((cached_data, total_len));
-        }
+        let client = self.client.clone();
+        let url_owned = url.to_string();
 
-        // 2. Fetch via reqwest with Range header
+        self.cache
+            .get_or_fetch(layer_id, band_id, start, end, async move {
+                Self::fetch_remote_http(&client, &url_owned, start, end).await
+            })
+            .await
+    }
+
+    async fn fetch_remote_http(
+        client: &reqwest::Client,
+        url: &str,
+        start: u64,
+        end: u64,
+    ) -> Result<(Vec<u8>, u64), String> {
         let range_header = format!("bytes={}-{}", start, end);
-        let resp = self
-            .client
+        let resp = client
             .get(url)
             .header("Range", &range_header)
             .send()
@@ -283,18 +293,6 @@ impl RasterRegistry {
             }
             body_bytes
         };
-
-        // Cache the chunk in our Moka cache
-        self.cache
-            .put(
-                layer_id.to_string(),
-                band_id.to_string(),
-                start,
-                end,
-                chunk.clone(),
-                total_len,
-            )
-            .await;
 
         Ok((chunk, total_len))
     }
