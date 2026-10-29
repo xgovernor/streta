@@ -34,6 +34,13 @@ import {
 } from "../../lib/gis/tiledBackend";
 import { flyTo } from "../../map/mapController";
 import { displayFlightTrail } from "../../map/webglTelemetry";
+import {
+  fetchAircraftExtendedDetails,
+  fetchSatelliteExtendedDetails,
+  resolveVesselFlag,
+  type AircraftExtendedDetails,
+  type SatelliteExtendedDetails,
+} from "../../lib/gis/telemetryExtendedDb";
 import { useProjectStore } from "../../state/projectStore";
 import {
   useTelemetryStore,
@@ -117,10 +124,35 @@ export function LiveFeedsSection() {
   const refreshFeeds = useTelemetryStore((state) => state.refreshFeeds);
 
   const [adsbStatus, setAdsbStatus] = useState<AdsbTelemetryStatus | null>(null);
+  const [extendedAircraft, setExtendedAircraft] = useState<AircraftExtendedDetails | null>(null);
+  const [extendedSatellite, setExtendedSatellite] = useState<SatelliteExtendedDetails | null>(null);
+  const [extendedLoading, setExtendedLoading] = useState(false);
 
   useEffect(() => {
     fetchAdsbTelemetryStatus().then(setAdsbStatus);
   }, [flights.length]);
+
+  useEffect(() => {
+    setExtendedAircraft(null);
+    setExtendedSatellite(null);
+    if (!selectedTarget) return;
+
+    if (selectedTarget.type === "flight") {
+      setExtendedLoading(true);
+      fetchAircraftExtendedDetails(selectedTarget.data.icao24, selectedTarget.data.callsign)
+        .then((details) => {
+          setExtendedAircraft(details);
+        })
+        .finally(() => setExtendedLoading(false));
+    } else if (selectedTarget.type === "satellite") {
+      setExtendedLoading(true);
+      fetchSatelliteExtendedDetails(selectedTarget.data.noradId)
+        .then((details) => {
+          setExtendedSatellite(details);
+        })
+        .finally(() => setExtendedLoading(false));
+    }
+  }, [selectedTarget]);
 
   // Filtered target lists
   const filteredFlights = useMemo(() => {
@@ -580,6 +612,82 @@ export function LiveFeedsSection() {
                 </div>
               )}
 
+              {/* Extended Aircraft Particulars & Route (Online Registry) */}
+              {extendedLoading && !extendedAircraft && (
+                <div className="flex items-center justify-center gap-1.5 rounded-md bg-surface/50 py-2 text-[9px] font-mono text-ink-subtle">
+                  <RefreshCw size={11} className="animate-spin text-sky-400" />
+                  <span>Querying HexDB online aircraft registry...</span>
+                </div>
+              )}
+
+              {extendedAircraft && (
+                <div className="flex flex-col gap-1.5 pt-0.5">
+                  {/* Real Aircraft Photograph */}
+                  {extendedAircraft.imageThumbnailUrl && (
+                    <div className="relative overflow-hidden rounded-md border border-line bg-surface/40 h-24 w-full group">
+                      <img
+                        src={extendedAircraft.imageThumbnailUrl}
+                        alt={extendedAircraft.type || "Aircraft photo"}
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                      <div className="absolute bottom-1 right-1.5 rounded bg-black/70 px-1 py-0.5 text-[8px] font-mono text-slate-200 backdrop-blur-sm">
+                        {extendedAircraft.registration || selectedTarget.data.icao24}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Flight Route Banner */}
+                  {extendedAircraft.route && (
+                    <div className="flex items-center justify-between rounded-md bg-surface/80 p-2 border border-line/60">
+                      <div className="flex flex-col">
+                        <span className="font-mono text-xs font-bold text-sky-400">
+                          {extendedAircraft.route.originAirport?.iata || extendedAircraft.route.originAirport?.icao || "ORIGIN"}
+                        </span>
+                        <span className="text-[8px] text-ink-muted truncate max-w-[90px]" title={extendedAircraft.route.originAirport?.name}>
+                          {extendedAircraft.route.originAirport?.name || "Departure"}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-center px-1 text-sky-400">
+                        <Plane size={12} className="rotate-90" />
+                        <span className="text-[7.5px] font-mono text-ink-subtle">SCHEDULED ROUTE</span>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="font-mono text-xs font-bold text-sky-400">
+                          {extendedAircraft.route.destinationAirport?.iata || extendedAircraft.route.destinationAirport?.icao || "DEST"}
+                        </span>
+                        <span className="text-[8px] text-ink-muted truncate max-w-[90px] text-right" title={extendedAircraft.route.destinationAirport?.name}>
+                          {extendedAircraft.route.destinationAirport?.name || "Arrival"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Aircraft Specs Grid */}
+                  <div className="rounded-md bg-surface/70 p-2 border border-line/60 space-y-1 text-[9px] font-mono">
+                    <div className="flex justify-between">
+                      <span className="text-ink-subtle">AIRFRAME:</span>
+                      <span className="font-semibold text-ink truncate max-w-[170px]">
+                        {extendedAircraft.manufacturer ? `${extendedAircraft.manufacturer} ` : ""}
+                        {extendedAircraft.type || extendedAircraft.icaoTypeCode || "Commercial Airliner"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-ink-subtle">TAIL REG:</span>
+                      <span className="font-semibold text-sky-400">
+                        {extendedAircraft.registration || "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-ink-subtle">AIRLINE / OWNER:</span>
+                      <span className="font-semibold text-ink truncate max-w-[170px]">
+                        {extendedAircraft.registeredOwner || selectedTarget.data.originCountry || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-1.5 pt-0.5">
                 <button
                   type="button"
@@ -697,6 +805,40 @@ export function LiveFeedsSection() {
                   </span>
                 </div>
               </div>
+
+              {/* Extended Satellite CelesTrak Orbital Parameters */}
+              {extendedLoading && !extendedSatellite && (
+                <div className="flex items-center justify-center gap-1.5 rounded-md bg-purple-950/20 py-2 text-[9px] font-mono text-purple-300">
+                  <RefreshCw size={11} className="animate-spin text-purple-400" />
+                  <span>Querying CelesTrak orbital database...</span>
+                </div>
+              )}
+
+              {extendedSatellite && (
+                <div className="rounded-md bg-purple-950/30 border border-purple-500/25 p-2 space-y-1 text-[9px] font-mono text-purple-200">
+                  <div className="flex justify-between">
+                    <span className="text-purple-400">COSPAR ID:</span>
+                    <span className="font-bold">{extendedSatellite.objectId || "—"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-purple-400">APOGEE / PERIGEE:</span>
+                    <span>{extendedSatellite.apogeeKm} km / {extendedSatellite.perigeeKm} km</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-purple-400">INCLINATION:</span>
+                    <span>{extendedSatellite.inclinationDeg.toFixed(2)}°</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-purple-400">ORBITAL PERIOD:</span>
+                    <span>{extendedSatellite.periodMinutes} min</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-purple-400">TOTAL REVOLUTIONS:</span>
+                    <span>{extendedSatellite.revolutions.toLocaleString()} revs</span>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end pt-0.5">
                 <button
                   type="button"
@@ -786,9 +928,17 @@ export function LiveFeedsSection() {
                   </span>
                 </div>
               </div>
+
+              <div className="flex items-center justify-between text-[9.5px] font-mono rounded bg-surface/60 px-2 py-1 border border-line/50">
+                <span className="text-ink-subtle">FLAG STATE:</span>
+                <span className="font-semibold text-teal-400">
+                  {resolveVesselFlag(selectedTarget.data.mmsi)}
+                </span>
+              </div>
+
               <div className="flex items-center justify-between pt-0.5">
                 <span className="truncate font-mono text-[9px] text-ink-muted">
-                  MMSI: {selectedTarget.data.mmsi} · Dest: {selectedTarget.data.destination}
+                  MMSI: {selectedTarget.data.mmsi} · Dest: {selectedTarget.data.destination || "Open Sea"}
                 </span>
                 <button
                   type="button"

@@ -5,6 +5,7 @@ import { LeftRibbon } from "./components/LeftRibbon";
 import { MapAttribution } from "./components/MapAttribution";
 import { RightRibbon } from "./components/RightRibbon";
 import { FeaturePopup } from "./components/FeaturePopup";
+import { TelemetryHoverPopup } from "./components/TelemetryHoverPopup";
 import { PanelHost } from "./components/PanelHost";
 import { StatusBar } from "./components/StatusBar";
 import { Toast } from "./components/Toast";
@@ -118,6 +119,7 @@ function App() {
         <LeftRibbon />
         <RightRibbon />
         <FeaturePopup />
+        <TelemetryHoverPopup />
         <PanelHost />
         <MapAttribution />
         <StatusBar />

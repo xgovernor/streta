@@ -570,6 +570,8 @@ export function mountMap(target: HTMLElement): () => void {
       : `${layer.name} · ${value}`;
   };
 
+  let currentlyHoveredTelemFeature: any = null;
+
   const pointerKey = map.on("pointermove", (event) => {
     const [lon, lat] = transform(event.coordinate, VIEW_CRS, GEOGRAPHIC_CRS);
     const hit = topFeatureAt(event.pixel);
@@ -595,11 +597,94 @@ export function mountMap(target: HTMLElement): () => void {
       }
     }
 
+    // Telemetry moving target detection
+    let hitTelemetry: {
+      type: "flight" | "earthquake" | "satellite" | "vessel" | "fire";
+      data: any;
+      feature: any;
+    } | null = null;
+
+    map.forEachFeatureAtPixel(
+      event.pixel,
+      (feature) => {
+        const t = feature.get("telemetryType");
+        if (t === "flight" || t === "earthquake" || t === "satellite" || t === "vessel" || t === "fire") {
+          hitTelemetry = { type: t, data: feature.get("raw"), feature };
+          return true;
+        }
+        return false;
+      },
+      { hitTolerance: 10 }
+    );
+
+    const telem = hitTelemetry as {
+      type: "flight" | "earthquake" | "satellite" | "vessel" | "fire";
+      data: any;
+      feature: any;
+    } | null;
+
+    if (telem) {
+      if (currentlyHoveredTelemFeature !== telem.feature) {
+        if (currentlyHoveredTelemFeature) {
+          currentlyHoveredTelemFeature.set("isHovered", 0);
+        }
+        currentlyHoveredTelemFeature = telem.feature;
+        currentlyHoveredTelemFeature.set("isHovered", 1);
+      }
+
+      // Feature-anchoring: anchor directly to the physical vector feature's center pixel, not mouse pointer
+      const geom = telem.feature.getGeometry();
+      let screenPos = { x: Math.round(event.pixel[0]), y: Math.round(event.pixel[1]) };
+      let mapCoord: [number, number] | null = null;
+
+      if (geom && typeof geom.getCoordinates === "function") {
+        const coords = geom.getCoordinates();
+        if (Array.isArray(coords) && typeof coords[0] === "number") {
+          mapCoord = coords as [number, number];
+          const px = map.getPixelFromCoordinate(coords);
+          if (px) {
+            screenPos = { x: Math.round(px[0]), y: Math.round(px[1]) };
+          }
+        }
+      }
+
+      useTelemetryStore.getState().setHoveredTarget(
+        { type: telem.type, data: telem.data },
+        screenPos,
+        mapCoord
+      );
+    } else {
+      if (currentlyHoveredTelemFeature) {
+        currentlyHoveredTelemFeature.set("isHovered", 0);
+        currentlyHoveredTelemFeature = null;
+      }
+      if (useTelemetryStore.getState().hoveredTarget) {
+        useTelemetryStore.getState().setHoveredTarget(null, null, null);
+      }
+    }
+
     store.setPointer(
       { lon, lat },
       { x: event.coordinate[0], y: event.coordinate[1] },
     );
-    store.setHoverLabel(hover ? hoverLabelFor(hit!.feature, hit!.layerId) : null);
+
+    if (telem) {
+      let label = "";
+      if (telem.type === "flight") {
+        label = `✈ ${telem.data.callsign || telem.data.icao24} · ${Math.round(telem.data.altitudeMeters || 0)}m · ${Math.round((telem.data.velocityMps || 0) * 1.94)}kts`;
+      } else if (telem.type === "satellite") {
+        label = `🛰 ${telem.data.name} · ${Math.round(telem.data.altitudeKm || 0)}km`;
+      } else if (telem.type === "vessel") {
+        label = `🚢 ${telem.data.name || `MMSI ${telem.data.mmsi}`} · ${(telem.data.speedKnots || 0).toFixed(1)}kts`;
+      } else if (telem.type === "earthquake") {
+        label = `⚡ M${telem.data.magnitude.toFixed(1)} · ${telem.data.place}`;
+      } else if (telem.type === "fire") {
+        label = `🔥 Active Fire · FRP ${telem.data.frpMw || 0}MW`;
+      }
+      store.setHoverLabel(label);
+    } else {
+      store.setHoverLabel(hover ? hoverLabelFor(hit!.feature, hit!.layerId) : null);
+    }
 
     // Synchronous client-side pixel probe from GPU tile texture (< 0.1ms)
     if (activeRasterBinding && rasterProbeCallback) {
@@ -617,7 +702,7 @@ export function mountMap(target: HTMLElement): () => void {
     if (element) {
       element.style.cursor =
         useProjectStore.getState().measureMode !== "off" ? "crosshair"
-        : hover ? "pointer"
+        : (hover || telem) ? "pointer"
         : "";
     }
 
@@ -677,6 +762,11 @@ export function mountMap(target: HTMLElement): () => void {
     const store = useMapStore.getState();
     store.setPointer(null, null);
     store.setHoverLabel(null);
+    if (currentlyHoveredTelemFeature) {
+      currentlyHoveredTelemFeature.set("isHovered", 0);
+      currentlyHoveredTelemFeature = null;
+    }
+    useTelemetryStore.getState().setHoveredTarget(null, null, null);
 
     if (!isOverPopup && store.activeFeature) {
       if (leaveTimer) clearTimeout(leaveTimer);
@@ -1016,6 +1106,22 @@ export function mountMap(target: HTMLElement): () => void {
   };
   const moveEndKey = map.on("moveend", handleMoveEnd);
 
+  const postRenderKey = map.on("postrender", () => {
+    const telemStore = useTelemetryStore.getState();
+    if (telemStore.hoveredTarget && currentlyHoveredTelemFeature) {
+      const geom = currentlyHoveredTelemFeature.getGeometry();
+      if (geom && typeof geom.getCoordinates === "function") {
+        const coords = geom.getCoordinates();
+        if (Array.isArray(coords) && typeof coords[0] === "number") {
+          const px = map.getPixelFromCoordinate(coords);
+          if (px) {
+            telemStore.updateHoverPosition({ x: Math.round(px[0]), y: Math.round(px[1]) });
+          }
+        }
+      }
+    }
+  });
+
   const teardown = () => {
     if (moveEndTimer) {
       clearTimeout(moveEndTimer);
@@ -1045,6 +1151,7 @@ export function mountMap(target: HTMLElement): () => void {
     unByKey(clickKey);
     unByKey(readyKey);
     unByKey(moveEndKey);
+    unByKey(postRenderKey);
 
     if (sketchKey) {
       unByKey(sketchKey);

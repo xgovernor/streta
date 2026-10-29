@@ -1,6 +1,9 @@
 import type { FeatureLike } from "ol/Feature";
 import Icon from "ol/style/Icon";
 import Style from "ol/style/Style";
+import Fill from "ol/style/Fill";
+import Stroke from "ol/style/Stroke";
+import Text from "ol/style/Text";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Aviation & Maritime Telemetry SVG Icon Registry
@@ -211,6 +214,18 @@ function buildTugFishingSvg(color = "#14b8a6"): string {
   );
 }
 
+// 10b. Moored / Anchored Vessel (Stable circular harbor mooring buoy glyph)
+function buildMooredVesselSvg(color = "#06b6d4"): string {
+  return encodeSvg(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="${color}" stroke-width="1.4" stroke-dasharray="2.5 2" opacity="0.85"/>
+      <circle cx="12" cy="12" r="5" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
+      <circle cx="12" cy="12" r="2" fill="#ffffff"/>
+      <path d="M7 13.5 C7 16.5 17 16.5 17 13.5" fill="none" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/>
+    </svg>`
+  );
+}
+
 // 11. NASA FIRMS Thermal Fire (Flickering flame with hot core)
 function buildFireSvg(color = "#f97316"): string {
   return encodeSvg(
@@ -241,6 +256,7 @@ function buildEarthquakeSvg(color: string, mag: number): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const styleCache = new Map<string, Style>();
+const labelStyleCache = new Map<string, Style>();
 
 function getCachedStyle(key: string, factory: () => Style): Style {
   let s = styleCache.get(key);
@@ -249,6 +265,38 @@ function getCachedStyle(key: string, factory: () => Style): Style {
     styleCache.set(key, s);
   }
   return s;
+}
+
+/**
+ * Produces a cached, high-contrast monospace HUD text tag for moving objects.
+ */
+export function getCachedLabelStyle(
+  text: string,
+  accentColor = "rgba(56, 189, 248, 0.4)",
+  offsetY = 19
+): Style {
+  const key = `${text}:${accentColor}:${offsetY}`;
+  const existing = labelStyleCache.get(key);
+  if (existing) return existing;
+
+  const style = new Style({
+    text: new Text({
+      text,
+      font: '600 9px "IBM Plex Mono", "SF Mono", monospace',
+      fill: new Fill({ color: "#f8fafc" }),
+      backgroundFill: new Fill({ color: "rgba(15, 23, 42, 0.88)" }),
+      backgroundStroke: new Stroke({ color: accentColor, width: 1 }),
+      padding: [1.5, 4, 1.5, 4],
+      offsetY,
+      overflow: true,
+    }),
+  });
+
+  if (labelStyleCache.size > 1500) {
+    labelStyleCache.clear();
+  }
+  labelStyleCache.set(key, style);
+  return style;
 }
 
 /**
@@ -264,7 +312,7 @@ export function getAircraftAltitudeColor(altMeters: number): string {
 /**
  * Produces category-specific, rotation-aware vector style for an ADS-B flight target.
  */
-export function getFlightStyle(feature: FeatureLike): Style {
+export function getFlightStyle(feature: FeatureLike, resolution?: number): Style | Style[] {
   const heading = (feature.get("heading") as number) || 0;
   const headingRad = (heading * Math.PI) / 180;
   const headingDegQuant = Math.round(heading / 2) * 2; // Quantize to 2° increments for cache efficiency
@@ -276,7 +324,7 @@ export function getFlightStyle(feature: FeatureLike): Style {
   const color = isEmergency ? "#ef4444" : getAircraftAltitudeColor(alt);
   const cacheKey = `flight:${category}:${color}:${isEmergency ? 1 : 0}:${headingDegQuant}`;
 
-  return getCachedStyle(cacheKey, () => {
+  const iconStyle = getCachedStyle(cacheKey, () => {
     let iconSrc: string;
 
     if (category === 8) {
@@ -306,15 +354,42 @@ export function getFlightStyle(feature: FeatureLike): Style {
       }),
     });
   });
+
+  // Small tactical tag on moving aircraft (callsign or hex code)
+  // LOD De-Cluttering & Overlap Suppression:
+  // 1. Emergency flights ALWAYS display their tag (critical flight safety).
+  // 2. Currently hovered or selected aircraft ALWAYS display their tag.
+  // 3. General traffic displays tags only at terminal zoom levels (< 1500 m/px ~ zoom >= 8),
+  //    preventing dense airport hub label collisions when zoomed out.
+  const callsign = String(feature.get("callsign") || feature.get("id") || "").trim();
+  const isHovered = Boolean(feature.get("isHovered"));
+  const isSelected = Boolean(feature.get("isSelected"));
+  const shouldShowFlightTag =
+    Boolean(callsign) &&
+    (isEmergency || isHovered || isSelected || (resolution != null && resolution < 1500));
+
+  if (shouldShowFlightTag) {
+    const accent = isEmergency
+      ? "rgba(239, 68, 68, 0.95)"
+      : isSelected
+      ? "rgba(56, 189, 248, 0.95)"
+      : isHovered
+      ? "rgba(245, 158, 11, 0.95)"
+      : "rgba(56, 189, 248, 0.45)";
+    const tagStyle = getCachedLabelStyle(callsign, accent, 19);
+    return [iconStyle, tagStyle];
+  }
+
+  return iconStyle;
 }
 
 /**
  * Produces rotation-aware vector style for an orbital satellite target.
  */
-export function getSatelliteStyle(_feature: FeatureLike): Style {
+export function getSatelliteStyle(feature: FeatureLike, resolution?: number): Style | Style[] {
   const cacheKey = "satellite:standard";
 
-  return getCachedStyle(cacheKey, () => {
+  const iconStyle = getCachedStyle(cacheKey, () => {
     return new Style({
       image: new Icon({
         src: buildSatelliteSvg(),
@@ -323,23 +398,39 @@ export function getSatelliteStyle(_feature: FeatureLike): Style {
       }),
     });
   });
+
+  const satName = String(feature.get("satelliteName") || feature.get("name") || "").trim();
+  const isHovered = Boolean(feature.get("isHovered"));
+  const isSelected = Boolean(feature.get("isSelected"));
+  const shouldShowSatTag = Boolean(satName) && (isHovered || isSelected || (resolution != null && resolution < 3500));
+
+  if (shouldShowSatTag) {
+    const accent = isHovered || isSelected ? "rgba(192, 132, 252, 0.95)" : "rgba(192, 132, 252, 0.5)";
+    const tagStyle = getCachedLabelStyle(satName, accent, 18);
+    return [iconStyle, tagStyle];
+  }
+
+  return iconStyle;
 }
 
 /**
  * Produces category-specific, course-rotated vector style for a maritime AIS vessel target.
  */
-export function getVesselStyle(feature: FeatureLike): Style {
+export function getVesselStyle(feature: FeatureLike, resolution?: number): Style | Style[] {
+  const isMoored = Boolean(feature.get("isMoored"));
   const course = (feature.get("course") as number) || 0;
-  const courseRad = (course * Math.PI) / 180;
-  const courseDegQuant = Math.round(course / 2) * 2;
+  const courseRad = isMoored ? 0 : (course * Math.PI) / 180;
+  const courseDegQuant = isMoored ? 0 : Math.round(course / 2) * 2;
 
   const shipType = String(feature.get("shipType") || "").toLowerCase();
-  const cacheKey = `vessel:${shipType}:${courseDegQuant}`;
+  const cacheKey = `vessel:${isMoored ? "moored" : shipType}:${courseDegQuant}`;
 
-  return getCachedStyle(cacheKey, () => {
+  const iconStyle = getCachedStyle(cacheKey, () => {
     let iconSrc: string;
 
-    if (shipType.includes("tanker")) {
+    if (isMoored) {
+      iconSrc = buildMooredVesselSvg("#06b6d4");
+    } else if (shipType.includes("tanker")) {
       iconSrc = buildTankerShipSvg("#0284c7");
     } else if (shipType.includes("passenger") || shipType.includes("cruise")) {
       iconSrc = buildCruiseShipSvg();
@@ -354,12 +445,25 @@ export function getVesselStyle(feature: FeatureLike): Style {
       image: new Icon({
         src: iconSrc,
         rotation: courseRad,
-        rotateWithView: true,
+        rotateWithView: !isMoored,
         anchor: [0.5, 0.5],
         scale: 1.0,
       }),
     });
   });
+
+  const vesselName = String(feature.get("name") || (feature.get("id") ? `MMSI ${feature.get("id")}` : "")).trim();
+  const isHovered = Boolean(feature.get("isHovered"));
+  const isSelected = Boolean(feature.get("isSelected"));
+  const shouldShowVesselTag = Boolean(vesselName) && (isHovered || isSelected || (resolution != null && resolution < 1500));
+
+  if (shouldShowVesselTag) {
+    const accent = isHovered || isSelected ? "rgba(20, 184, 166, 0.95)" : "rgba(20, 184, 166, 0.45)";
+    const tagStyle = getCachedLabelStyle(vesselName, accent, 18);
+    return [iconStyle, tagStyle];
+  }
+
+  return iconStyle;
 }
 
 /**

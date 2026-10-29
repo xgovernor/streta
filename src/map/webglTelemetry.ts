@@ -3,10 +3,11 @@ import LineString from "ol/geom/LineString";
 import Point from "ol/geom/Point";
 import VectorLayer from "ol/layer/Vector";
 import type OlMap from "ol/Map";
-import { fromLonLat } from "ol/proj";
+import { fromLonLat, toLonLat } from "ol/proj";
 import VectorSource from "ol/source/Vector";
 import { Stroke, Style } from "ol/style";
 import type { EarthquakeTarget, FireTarget, FlightTarget, SatelliteTarget, VesselTarget } from "../lib/gis/types";
+import { useTelemetryStore } from "../state/telemetryStore";
 import {
   getEarthquakeStyle,
   getFireStyle,
@@ -27,6 +28,7 @@ export interface TelemetryLayers {
 const TELEMETRY_TRACKS_Z = 790;
 const TELEMETRY_POINTS_Z = 800;
 
+let activeMap: OlMap | null = null;
 let flightsSource: VectorSource | null = null;
 let earthquakesSource: VectorSource | null = null;
 let satellitesSource: VectorSource | null = null;
@@ -42,11 +44,19 @@ let vesselsLayer: VectorLayer<VectorSource> | null = null;
 let tracksLayer: VectorLayer<VectorSource> | null = null;
 
 /**
+ * Returns the currently active OpenLayers map instance used by telemetry layers.
+ */
+export function getActiveTelemetryMap(): OlMap | null {
+  return activeMap;
+}
+
+/**
  * Creates and attaches high-fidelity telemetry layers with category-specific
  * vector icons (airliners, helicopters, drones, satellites, container ships, tankers,
  * cruise ships, flames, and seismic epicenter rings) to the OpenLayers map.
  */
 export function createTelemetryLayers(map: OlMap): TelemetryLayers {
+  activeMap = map;
   // Clean up any existing instances first
   if (flightsLayer) map.removeLayer(flightsLayer);
   if (earthquakesLayer) map.removeLayer(earthquakesLayer);
@@ -127,56 +137,189 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
   };
 }
 
-interface FlightKinematicState {
+interface MovingKinematicState {
   feature: Feature;
   lon: number;
   lat: number;
+  renderedLon: number;
+  renderedLat: number;
   speedMps: number;
   headingDeg: number;
+  targetHeadingDeg: number;
   lastUpdated: number;
+  kind: "flight" | "vessel" | "satellite";
 }
 
-const activeFlightKinematics = new Map<string, FlightKinematicState>();
+const activeFlightFeatures = new Map<string, Feature>();
+const activeVesselFeatures = new Map<string, Feature>();
+const activeKinematics = new Map<string, MovingKinematicState>();
 let deadReckoningFrameId: number | null = null;
+let lastFrameTime = 0;
+
+function getTargetKey(target: any): string | null {
+  if (!target) return null;
+  if (target.type === "flight") return target.data?.icao24 || null;
+  if (target.type === "vessel") return target.data?.mmsi ? String(target.data.mmsi) : null;
+  if (target.type === "satellite") return target.data?.noradId ? String(target.data.noradId) : null;
+  return null;
+}
+
+/**
+ * Returns shortest signed angle difference between two degree headings (-180° to +180°).
+ * Prevents 360° spinning / flipping glitch when crossing North (359° <-> 001°).
+ */
+export function shortestAngleDelta(fromDeg: number, toDeg: number): number {
+  return ((toDeg - fromDeg + 540) % 360) - 180;
+}
+
+/**
+ * Retrieves a live vector feature by its telemetry type and primary identifier.
+ */
+export function getTelemetryFeatureById(type: string, id: string): Feature | undefined {
+  if (type === "flight") return activeFlightFeatures.get(id);
+  if (type === "vessel") return activeVesselFeatures.get(id);
+  if (type === "satellite") {
+    return satellitesSource?.getFeatures().find((f) => String(f.get("id")) === String(id));
+  }
+  if (type === "earthquake") {
+    return earthquakesSource?.getFeatures().find((f) => String(f.get("id")) === String(id));
+  }
+  if (type === "fire") {
+    return firesSource?.getFeatures().find((f) => String(f.get("id")) === String(id));
+  }
+  return undefined;
+}
 
 function ensureDeadReckoningLoop() {
   if (deadReckoningFrameId !== null || typeof requestAnimationFrame === "undefined") return;
 
-  const loop = () => {
-    const now = Date.now() / 1000;
-    for (const state of activeFlightKinematics.values()) {
-      if (state.speedMps <= 0) continue;
-      // Clamp forward extrapolation to 12s to avoid unbounded drift if offline
-      const dt = Math.min(Math.max(now - state.lastUpdated, 0), 12);
-      if (dt < 0.05) continue;
+  const loop = (timestamp: number) => {
+    if (!lastFrameTime) lastFrameTime = timestamp;
+    const frameDt = Math.min((timestamp - lastFrameTime) / 1000, 0.1);
+    lastFrameTime = timestamp;
 
+    const nowSec = Date.now() / 1000;
+    const view = activeMap?.getView();
+    const zoom = view?.getZoom() ?? 10;
+
+    // 1. Level of Detail (LOD) Zoom Gating:
+    // At zoom < 6 (resolution > 2445 m/px), physical motion is < 0.1 px/sec (imperceptible).
+    // Suspend 60 FPS bulk kinematic recalculations to save up to 90% CPU/battery overhead.
+    const isGlobalZoom = zoom < 6;
+
+    // Priority targets that MUST always animate regardless of zoom or bounds
+    const telemStore = useTelemetryStore.getState();
+    const priorityId1 = getTargetKey(telemStore.selectedTarget);
+    const priorityId2 = getTargetKey(telemStore.hoveredTarget);
+
+    // 2. Viewport Culling:
+    // Calculate visible geographic bounds (+15% padding) so off-screen targets consume 0 CPU.
+    let minLon = -180, maxLon = 180, minLat = -85, maxLat = 85;
+    if (!isGlobalZoom && view) {
+      const extent = view.calculateExtent();
+      const padX = (extent[2] - extent[0]) * 0.15;
+      const padY = (extent[3] - extent[1]) * 0.15;
+      const sw = toLonLat([extent[0] - padX, extent[1] - padY]);
+      const ne = toLonLat([extent[2] + padX, extent[3] + padY]);
+      minLon = Math.min(sw[0], ne[0]);
+      maxLon = Math.max(sw[0], ne[0]);
+      minLat = Math.min(sw[1], ne[1]);
+      maxLat = Math.max(sw[1], ne[1]);
+    }
+
+    for (const [id, state] of activeKinematics.entries()) {
+      if (state.speedMps <= 0) continue;
+
+      const dt = nowSec - state.lastUpdated;
+      if (dt > 45) {
+        // Expired target
+        continue;
+      }
+
+      const isPriority = id === priorityId1 || id === priorityId2;
+
+      // LOD and Viewport Culling check
+      if (!isPriority) {
+        if (isGlobalZoom) continue;
+        if (
+          state.renderedLon < minLon ||
+          state.renderedLon > maxLon ||
+          state.renderedLat < minLat ||
+          state.renderedLat > maxLat
+        ) {
+          continue;
+        }
+      }
+
+      // Extrapolation damping: 100% speed for first 4s, exponential decay afterwards to prevent runaway
+      const decay = dt > 4 ? Math.exp(-(dt - 4) * 0.12) : 1.0;
+      const effectiveSpeed = state.speedMps * decay;
+
+      // Shortest-path angular heading interpolation (prevents 360° flip / spin glitch)
+      const dHeading = shortestAngleDelta(state.headingDeg, state.targetHeadingDeg);
+      if (Math.abs(dHeading) > 0.05) {
+        state.headingDeg = (state.headingDeg + dHeading * Math.min(1.0, frameDt * 3.5) + 360) % 360;
+        state.feature.set("heading", state.headingDeg);
+        if (state.kind === "vessel") {
+          state.feature.set("course", state.headingDeg);
+        }
+      }
+
+      // Spherical kinematic forward step
       const headingRad = (state.headingDeg * Math.PI) / 180;
-      const dLat = (state.speedMps * Math.cos(headingRad) * dt) / 110574;
-      const latRad = (state.lat * Math.PI) / 180;
-      const dLon =
-        (state.speedMps * Math.sin(headingRad) * dt) /
-        (111320 * Math.max(Math.cos(latRad), 0.05));
+      const dLat = (effectiveSpeed * Math.cos(headingRad) * frameDt) / 110574;
+      const latRad = (state.renderedLat * Math.PI) / 180;
+      const cosLat = Math.max(Math.cos(latRad), 0.05);
+      const dLon = (effectiveSpeed * Math.sin(headingRad) * frameDt) / (111320 * cosLat);
+
+      let nextLon = state.renderedLon + dLon;
+      let nextLat = Math.max(-85, Math.min(85, state.renderedLat + dLat));
+
+      // Antimeridian wrapping safety (±180°)
+      if (nextLon > 180) nextLon -= 360;
+      else if (nextLon < -180) nextLon += 360;
+
+      state.renderedLon = nextLon;
+      state.renderedLat = nextLat;
 
       const geom = state.feature.getGeometry();
       if (geom instanceof Point) {
-        geom.setCoordinates(fromLonLat([state.lon + dLon, state.lat + dLat]));
+        geom.setCoordinates(fromLonLat([nextLon, nextLat]));
       }
     }
+
+    // 3. Feature-anchored hover popup synchronization:
+    // If a moving object is hovered, update its screen pixel coordinates at 60 FPS
+    if (priorityId2 && activeMap) {
+      const hoveredKin = activeKinematics.get(priorityId2);
+      if (hoveredKin) {
+        const screenPx = activeMap.getPixelFromCoordinate(
+          fromLonLat([hoveredKin.renderedLon, hoveredKin.renderedLat])
+        );
+        if (screenPx) {
+          telemStore.updateHoverPosition({
+            x: Math.round(screenPx[0]),
+            y: Math.round(screenPx[1]),
+          });
+        }
+      }
+    }
+
     deadReckoningFrameId = requestAnimationFrame(loop);
   };
+
   deadReckoningFrameId = requestAnimationFrame(loop);
 }
 
 /**
- * Updates active flight vector features on the telemetry layer and starts
- * the 60 FPS kinematic dead-reckoning loop for smooth aircraft gliding.
+ * Updates active flight vector features with persistent feature caching
+ * and 60 FPS kinematic dead-reckoning (zero reallocation at steady state).
  */
 export function updateFlightFeatures(flights: FlightTarget[]) {
   if (!flightsSource) return;
 
   const nowSec = Date.now() / 1000;
-  const features: Feature[] = [];
-  activeFlightKinematics.clear();
+  const currentIds = new Set<string>();
 
   for (const flight of flights) {
     if (
@@ -188,38 +331,90 @@ export function updateFlightFeatures(flights: FlightTarget[]) {
       continue;
     }
 
+    currentIds.add(flight.icao24);
     const isEmergency = Boolean(flight.emergency);
-    const feature = new Feature({
-      geometry: new Point(fromLonLat([flight.longitude, flight.latitude])),
-      telemetryType: "flight",
-      id: flight.icao24,
-      callsign: flight.callsign || flight.icao24,
-      heading: flight.headingDeg || 0,
-      altitude: flight.altitudeMeters || 0,
-      velocity: flight.velocityMps || 0,
-      country: flight.originCountry,
-      isEmergency: isEmergency ? 1 : 0,
-      squawk: flight.squawk || "",
-      category: flight.category || 0,
-      categoryLabel: flight.categoryLabel || "",
-      raw: flight,
-    });
-    features.push(feature);
+    let feature = activeFlightFeatures.get(flight.icao24);
 
-    if (!flight.onGround && (flight.velocityMps || 0) > 0) {
-      activeFlightKinematics.set(flight.icao24, {
-        feature,
-        lon: flight.longitude,
-        lat: flight.latitude,
-        speedMps: flight.velocityMps || 0,
-        headingDeg: flight.headingDeg || 0,
-        lastUpdated: nowSec,
+    if (feature) {
+      // In-place property update (0 allocation, no GC pause!)
+      feature.set("callsign", flight.callsign || flight.icao24);
+      feature.set("heading", flight.headingDeg || 0);
+      feature.set("altitude", flight.altitudeMeters || 0);
+      feature.set("velocity", flight.velocityMps || 0);
+      feature.set("country", flight.originCountry);
+      feature.set("isEmergency", isEmergency ? 1 : 0);
+      feature.set("squawk", flight.squawk || "");
+      feature.set("category", flight.category || 0);
+      feature.set("categoryLabel", flight.categoryLabel || "");
+      feature.set("raw", flight);
+
+      // Smooth position convergence towards new telemetry coordinate
+      const kin = activeKinematics.get(flight.icao24);
+      if (kin) {
+        const distDeg = Math.hypot(flight.longitude - kin.renderedLon, flight.latitude - kin.renderedLat);
+        if (distDeg > 0.5) {
+          // Large reposition / teleport
+          kin.renderedLon = flight.longitude;
+          kin.renderedLat = flight.latitude;
+          (feature.getGeometry() as Point).setCoordinates(fromLonLat([flight.longitude, flight.latitude]));
+        } else {
+          // Smooth 40% exponential convergence
+          kin.renderedLon = kin.renderedLon + (flight.longitude - kin.renderedLon) * 0.4;
+          kin.renderedLat = kin.renderedLat + (flight.latitude - kin.renderedLat) * 0.4;
+        }
+        kin.lon = flight.longitude;
+        kin.lat = flight.latitude;
+        kin.speedMps = flight.velocityMps || 0;
+        kin.targetHeadingDeg = flight.headingDeg || 0;
+        kin.lastUpdated = nowSec;
+      }
+    } else {
+      // New aircraft appearing
+      feature = new Feature({
+        geometry: new Point(fromLonLat([flight.longitude, flight.latitude])),
+        telemetryType: "flight",
+        id: flight.icao24,
+        callsign: flight.callsign || flight.icao24,
+        heading: flight.headingDeg || 0,
+        altitude: flight.altitudeMeters || 0,
+        velocity: flight.velocityMps || 0,
+        country: flight.originCountry,
+        isEmergency: isEmergency ? 1 : 0,
+        squawk: flight.squawk || "",
+        category: flight.category || 0,
+        categoryLabel: flight.categoryLabel || "",
+        raw: flight,
       });
+
+      activeFlightFeatures.set(flight.icao24, feature);
+      flightsSource.addFeature(feature);
+
+      if (!flight.onGround && (flight.velocityMps || 0) > 0) {
+        activeKinematics.set(flight.icao24, {
+          feature,
+          lon: flight.longitude,
+          lat: flight.latitude,
+          renderedLon: flight.longitude,
+          renderedLat: flight.latitude,
+          speedMps: flight.velocityMps || 0,
+          headingDeg: flight.headingDeg || 0,
+          targetHeadingDeg: flight.headingDeg || 0,
+          lastUpdated: nowSec,
+          kind: "flight",
+        });
+      }
     }
   }
 
-  flightsSource.clear();
-  flightsSource.addFeatures(features);
+  // Remove vanished aircraft
+  for (const [id, feature] of activeFlightFeatures.entries()) {
+    if (!currentIds.has(id)) {
+      flightsSource.removeFeature(feature);
+      activeFlightFeatures.delete(id);
+      activeKinematics.delete(id);
+    }
+  }
+
   ensureDeadReckoningLoop();
 }
 
@@ -421,10 +616,16 @@ export function updateFireFeatures(fires: FireTarget[]) {
 /**
  * Updates active maritime vessel vector features on the telemetry layer.
  */
+/**
+ * Updates active maritime vessel vector features on the telemetry layer
+ * with kinematic interpolation and in-place reuse.
+ */
 export function updateVesselFeatures(vessels: VesselTarget[]) {
   if (!vesselsSource) return;
 
-  const features: Feature[] = [];
+  const nowSec = Date.now() / 1000;
+  const currentIds = new Set<string>();
+
   for (const vessel of vessels) {
     if (
       vessel.lon == null ||
@@ -435,25 +636,91 @@ export function updateVesselFeatures(vessels: VesselTarget[]) {
       continue;
     }
 
-    const feature = new Feature({
-      geometry: new Point(fromLonLat([vessel.lon, vessel.lat])),
-      telemetryType: "vessel",
-      id: String(vessel.mmsi),
-      name: vessel.name || `MMSI ${vessel.mmsi}`,
-      callsign: vessel.callsign || "",
-      shipType: vessel.shipType || "Cargo",
-      speed: vessel.speedKnots || 0,
-      course: vessel.courseDeg || 0,
-      heading: vessel.headingDeg ?? vessel.courseDeg ?? 0,
-      destination: vessel.destination || "",
-      status: vessel.status || "Under way",
-      raw: vessel,
-    });
-    features.push(feature);
+    const id = String(vessel.mmsi);
+    currentIds.add(id);
+
+    // Moored / Drifting Ship Deadband:
+    // If speed is < 0.5 knots or status indicates anchored/moored, freeze heading and set velocity to 0.
+    // Prevents erratic GPS noise jitter and unwanted kinematic crawl across piers.
+    const rawKnots = vessel.speedKnots || 0;
+    const statusStr = (vessel.status || "").toLowerCase();
+    const isMoored = rawKnots < 0.5 || statusStr.includes("moored") || statusStr.includes("anchor");
+    const speedMps = isMoored ? 0 : rawKnots * 0.514444; // 1 knot = 0.514444 m/s
+
+    let feature = activeVesselFeatures.get(id);
+    const course = isMoored
+      ? ((feature?.get("course") as number) ?? vessel.courseDeg ?? 0)
+      : (vessel.courseDeg || 0);
+
+    if (feature) {
+      feature.set("name", vessel.name || `MMSI ${vessel.mmsi}`);
+      feature.set("callsign", vessel.callsign || "");
+      feature.set("shipType", vessel.shipType || "Cargo");
+      feature.set("speed", isMoored ? 0 : rawKnots);
+      feature.set("course", course);
+      feature.set("heading", vessel.headingDeg ?? course);
+      feature.set("destination", vessel.destination || "");
+      feature.set("status", vessel.status || "Under way");
+      feature.set("isMoored", isMoored ? 1 : 0);
+      feature.set("raw", vessel);
+
+      const kin = activeKinematics.get(id);
+      if (kin) {
+        kin.lon = vessel.lon;
+        kin.lat = vessel.lat;
+        kin.speedMps = speedMps;
+        kin.targetHeadingDeg = course;
+        kin.lastUpdated = nowSec;
+        kin.renderedLon = kin.renderedLon + (vessel.lon - kin.renderedLon) * 0.35;
+        kin.renderedLat = kin.renderedLat + (vessel.lat - kin.renderedLat) * 0.35;
+      }
+    } else {
+      feature = new Feature({
+        geometry: new Point(fromLonLat([vessel.lon, vessel.lat])),
+        telemetryType: "vessel",
+        id,
+        name: vessel.name || `MMSI ${vessel.mmsi}`,
+        callsign: vessel.callsign || "",
+        shipType: vessel.shipType || "Cargo",
+        speed: isMoored ? 0 : rawKnots,
+        course,
+        heading: vessel.headingDeg ?? course,
+        destination: vessel.destination || "",
+        status: vessel.status || "Under way",
+        isMoored: isMoored ? 1 : 0,
+        raw: vessel,
+      });
+
+      activeVesselFeatures.set(id, feature);
+      vesselsSource.addFeature(feature);
+
+      if (speedMps > 0.1) {
+        activeKinematics.set(id, {
+          feature,
+          lon: vessel.lon,
+          lat: vessel.lat,
+          renderedLon: vessel.lon,
+          renderedLat: vessel.lat,
+          speedMps,
+          headingDeg: course,
+          targetHeadingDeg: course,
+          lastUpdated: nowSec,
+          kind: "vessel",
+        });
+      }
+    }
   }
 
-  vesselsSource.clear();
-  vesselsSource.addFeatures(features);
+  // Remove vanished vessels
+  for (const [id, feature] of activeVesselFeatures.entries()) {
+    if (!currentIds.has(id)) {
+      vesselsSource.removeFeature(feature);
+      activeVesselFeatures.delete(id);
+      activeKinematics.delete(id);
+    }
+  }
+
+  ensureDeadReckoningLoop();
 }
 
 /**
@@ -481,6 +748,9 @@ export function setTelemetryLayerVisibility(
  * Clears all telemetry features.
  */
 export function clearTelemetryLayers() {
+  activeFlightFeatures.clear();
+  activeVesselFeatures.clear();
+  activeKinematics.clear();
   flightsSource?.clear();
   earthquakesSource?.clear();
   satellitesSource?.clear();

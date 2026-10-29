@@ -38,6 +38,9 @@ interface TelemetryState {
   loading: boolean;
   lastUpdated: Date | null;
   selectedTarget: SelectedTelemetryTarget | null;
+  hoveredTarget: SelectedTelemetryTarget | null;
+  hoverPosition: { x: number; y: number } | null;
+  hoverCoordinate: [number, number] | null;
 
   flights: FlightTarget[];
   earthquakes: EarthquakeTarget[];
@@ -64,6 +67,12 @@ interface TelemetryState {
   setFireMinConfidence: (confidence: number) => void;
   setVesselSearch: (search: string) => void;
   setSelectedTarget: (target: SelectedTelemetryTarget | null) => void;
+  setHoveredTarget: (
+    target: SelectedTelemetryTarget | null,
+    pos?: { x: number; y: number } | null,
+    coordinate?: [number, number] | null
+  ) => void;
+  updateHoverPosition: (pos: { x: number; y: number } | null) => void;
   setViewportBbox: (bbox: [number, number, number, number] | null) => void;
   refreshFeeds: (bbox?: [number, number, number, number]) => Promise<void>;
 }
@@ -78,6 +87,9 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
   loading: false,
   lastUpdated: null,
   selectedTarget: null,
+  hoveredTarget: null,
+  hoverPosition: null,
+  hoverCoordinate: null,
 
   flights: [],
   earthquakes: [],
@@ -146,6 +158,9 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
   },
   setVesselSearch: (vesselSearch) => set({ vesselSearch }),
   setSelectedTarget: (selectedTarget) => set({ selectedTarget }),
+  setHoveredTarget: (hoveredTarget, pos = null, coordinate = null) =>
+    set({ hoveredTarget, hoverPosition: pos, hoverCoordinate: coordinate }),
+  updateHoverPosition: (pos) => set({ hoverPosition: pos }),
   setViewportBbox: (currentBbox) => set({ currentBbox }),
 
   refreshFeeds: async (bbox) => {
