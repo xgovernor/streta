@@ -1,35 +1,51 @@
 import { useState } from "react";
 import {
+  Check,
+  CheckCircle2,
   Compass,
   Copy,
   Crosshair,
   Eraser,
   Hexagon,
+  Layers,
   Loader2,
   MapPin,
   Mountain,
   Radar,
   Ruler,
   TrendingUp,
+  Zap,
 } from "lucide-react";
 import {
   clearBufferOverlay,
   clearMeasureSketch,
   flyToCoordinate,
   measureCoordinates,
+  renderBooleanOverlay,
   renderBufferOverlay,
+  renderKnnOverlay,
   setBufferPicker,
 } from "../../map/mapController";
 import { cx } from "../../lib/cx";
 import { formatArea, formatDistance } from "../../lib/format";
 import {
   computeElevationProfile,
+  polygonBooleanOperation,
   spatialBufferQuery,
+  spatialKnnQuery,
+  type BooleanOpSummary,
   type ElevationProfileResult,
+  type KnnQueryResult,
+  type SpatialPointInput,
   type SpatialQueryResult,
 } from "../../lib/gis/tiledBackend";
 import { useProjectStore } from "../../state/projectStore";
+import { useTelemetryStore } from "../../state/telemetryStore";
 import { useUiStore, type AnalysisTab } from "../../state/uiStore";
+import { createDataset, uniqueDatasetName } from "../../lib/gis/datasets";
+import { createLayer, uniqueLayerName } from "../../lib/gis/layers";
+import { GEOGRAPHIC_CRS } from "../../lib/gis/crs";
+import type { FeatureRecord } from "../../lib/gis/types";
 import { PanelShell } from "../PanelShell";
 import {
   FIELD_INPUT,
@@ -42,11 +58,14 @@ import {
 import { ElevationChart } from "../analysis/ElevationChart";
 
 const MODES = [
-  { id: "distance" as const, label: "Distance", icon: Ruler },
+  { id: "distance" as const, label: "Dist", icon: Ruler },
   { id: "area" as const, label: "Area", icon: Hexagon },
-  { id: "elevation" as const, label: "Elevation", icon: Mountain },
+  { id: "elevation" as const, label: "Elev", icon: Mountain },
   { id: "buffer" as const, label: "Buffer", icon: Radar },
+  { id: "knn" as const, label: "k-NN", icon: Crosshair },
+  { id: "boolean" as const, label: "CAG", icon: Layers },
 ];
+
 
 
 
@@ -83,6 +102,21 @@ export function MeasurePanel() {
   const [bufferLoading, setBufferLoading] = useState(false);
   const [bufferResult, setBufferResult] = useState<SpatialQueryResult | null>(null);
   const [selectedLayerId, setSelectedLayerId] = useState<string>("all");
+
+  // k-NN Spatial Query state
+  const [knnCenter, setKnnCenter] = useState<[number, number] | null>(null);
+  const [knnK, setKnnK] = useState<number>(5);
+  const [isPickingKnnCenter, setIsPickingKnnCenter] = useState(false);
+  const [knnLoading, setKnnLoading] = useState(false);
+  const [knnResult, setKnnResult] = useState<KnnQueryResult | null>(null);
+  const [selectedKnnLayerId, setSelectedKnnLayerId] = useState<string>("all");
+
+  // Boolean CAG state
+  const [booleanOp, setBooleanOp] = useState<"intersection" | "union" | "difference" | "xor">("intersection");
+  const [booleanLayerA, setBooleanLayerA] = useState<string>("");
+  const [booleanLayerB, setBooleanLayerB] = useState<string>("");
+  const [booleanLoading, setBooleanLoading] = useState(false);
+  const [booleanResult, setBooleanResult] = useState<BooleanOpSummary | null>(null);
 
   const copyVertices = async () => {
     const coordinates = measureCoordinates();
@@ -178,6 +212,189 @@ export function MeasurePanel() {
     notify("Buffer query cleared");
   };
 
+  // k-NN Handlers
+  const toggleKnnPicker = () => {
+    if (isPickingKnnCenter) {
+      setBufferPicker(null);
+      setIsPickingKnnCenter(false);
+    } else {
+      setIsPickingKnnCenter(true);
+      notify("Click anywhere on the map to probe k-NN nearest neighbors");
+      setBufferPicker((coord) => {
+        setKnnCenter(coord);
+        setIsPickingKnnCenter(false);
+        setBufferPicker(null);
+        executeKnnQuery(coord, knnK, selectedKnnLayerId);
+      });
+    }
+  };
+
+  const executeKnnQuery = async (
+    center: [number, number],
+    kVal: number,
+    targetLayer: string,
+  ) => {
+    setKnnLoading(true);
+    try {
+      const candidates: SpatialPointInput[] = [];
+
+      layers.forEach((l) => {
+        if (targetLayer !== "all" && l.id !== targetLayer) return;
+        l.features.forEach((f) => {
+          if (f.geometry.type === "Point") {
+            const coords = f.geometry.coordinates as [number, number];
+            const name = (f.properties?.name as string) || (f.properties?.title as string) || f.id;
+            candidates.push({ id: name, lon: coords[0], lat: coords[1] });
+          }
+        });
+      });
+
+      if (targetLayer === "all" || targetLayer === "flights") {
+        const flights = useTelemetryStore.getState().flights;
+        flights.forEach((f) => {
+          candidates.push({ id: `Flight ${f.callsign || f.icao24}`, lon: f.longitude, lat: f.latitude });
+        });
+      }
+
+      if (targetLayer === "all" || targetLayer === "earthquakes") {
+        const quakes = useTelemetryStore.getState().earthquakes;
+        quakes.forEach((q) => {
+          candidates.push({ id: `M${q.magnitude.toFixed(1)} ${q.place}`, lon: q.longitude, lat: q.latitude });
+        });
+      }
+
+      if (targetLayer === "all" || targetLayer === "satellites") {
+        const sats = useTelemetryStore.getState().satellites;
+        sats.forEach((s) => {
+          candidates.push({ id: s.name, lon: s.longitude, lat: s.latitude });
+        });
+      }
+
+      if (candidates.length === 0) {
+        notify("No point features or telemetry targets available to query");
+        return;
+      }
+
+      const res = await spatialKnnQuery(candidates, center[0], center[1], undefined, kVal);
+      if (res && res.neighbors.length > 0) {
+        setKnnResult(res);
+        renderKnnOverlay(center, res.neighbors);
+        notify(`k-NN: found ${res.neighbors.length} neighbors in ${res.execution_micros.toFixed(1)} µs`);
+      } else {
+        notify("k-NN query returned no neighbors");
+      }
+    } catch (err) {
+      notify(`k-NN query error: ${err}`);
+    } finally {
+      setKnnLoading(false);
+    }
+  };
+
+  const clearKnn = () => {
+    clearBufferOverlay();
+    setKnnResult(null);
+    setKnnCenter(null);
+    if (isPickingKnnCenter) {
+      setBufferPicker(null);
+      setIsPickingKnnCenter(false);
+    }
+    notify("k-NN query cleared");
+  };
+
+  // Boolean CAG Handlers
+  const executeBooleanOp = async () => {
+    if (!booleanLayerA || !booleanLayerB) {
+      notify("Select two layers for Boolean operation");
+      return;
+    }
+    if (booleanLayerA === booleanLayerB) {
+      notify("Select two different layers");
+      return;
+    }
+
+    const layerA = layers.find((l) => l.id === booleanLayerA);
+    const layerB = layers.find((l) => l.id === booleanLayerB);
+    if (!layerA || !layerB) {
+      notify("Layer not found");
+      return;
+    }
+
+    const polyA = layerA.features.filter((f) => f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon");
+    const polyB = layerB.features.filter((f) => f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon");
+
+    if (polyA.length === 0 || polyB.length === 0) {
+      notify("Both layers must contain at least one Polygon or MultiPolygon");
+      return;
+    }
+
+    setBooleanLoading(true);
+    try {
+      const geomA = polyA[0].geometry;
+      const geomB = polyB[0].geometry;
+
+      const res = await polygonBooleanOperation(booleanOp, geomA, geomB);
+      if (res) {
+        setBooleanResult(res);
+        renderBooleanOverlay(res.geojson);
+        notify(`Boolean ${booleanOp}: ${res.polygon_count} polygon(s) (${(res.total_area_sq_m / 1e6).toFixed(2)} km²)`);
+      } else {
+        notify("Boolean operation returned no result");
+      }
+    } catch (err) {
+      notify(`Boolean operation error: ${err}`);
+    } finally {
+      setBooleanLoading(false);
+    }
+  };
+
+  const saveBooleanResultAsLayer = () => {
+    if (!booleanResult || !booleanResult.geojson) {
+      notify("No Boolean result to save");
+      return;
+    }
+
+    const projectStore = useProjectStore.getState();
+    const existingDatasetNames = projectStore.datasets.map((d) => d.name);
+    const datasetName = uniqueDatasetName(existingDatasetNames, `Boolean ${booleanOp.toUpperCase()}`);
+    const dataset = createDataset({
+      name: datasetName,
+      kind: "file",
+      order: projectStore.datasets.length,
+    });
+
+    const features: FeatureRecord[] = (booleanResult.geojson.features || []).map((f: any, idx: number) => ({
+      id: f.id || `bool_${idx}`,
+      geometry: f.geometry,
+      properties: f.properties || {},
+    }));
+
+    const existingLayerNames = projectStore.layers.map((l) => l.name);
+    const layerName = uniqueLayerName(existingLayerNames, `${booleanOp.toUpperCase()} result`);
+    const newLayer = createLayer({
+      datasetId: dataset.id,
+      name: layerName,
+      features,
+      crs: GEOGRAPHIC_CRS,
+      format: "geojson",
+      source: "derived",
+      order: 0,
+      style: {
+        color: "#10b981",
+        strokeWidth: 2,
+        fillOpacity: 0.25,
+      },
+    });
+
+    projectStore.addDataset(dataset, [newLayer]);
+    notify(`Saved new layer: "${layerName}" (${features.length} polygons)`);
+  };
+
+  const clearBoolean = () => {
+    clearBufferOverlay();
+    setBooleanResult(null);
+    notify("Boolean operation overlay cleared");
+  };
+
   const handleTabChange = (tab: AnalysisTab) => {
     setActiveTab(tab);
     if (tab === "distance") {
@@ -201,6 +418,10 @@ export function MeasurePanel() {
           setBufferPicker(null);
           setIsPickingCenter(false);
         }
+        if (isPickingKnnCenter) {
+          setBufferPicker(null);
+          setIsPickingKnnCenter(false);
+        }
         closePanel();
       }}
       footer={
@@ -215,10 +436,11 @@ export function MeasurePanel() {
     >
       {/* Tab Switcher */}
       <SectionLabel>Analytical Tool</SectionLabel>
-      <div className="grid grid-cols-4 gap-0.5 rounded-lg border border-line bg-tint p-0.5">
+      <div className="grid grid-cols-6 gap-0.5 rounded-lg border border-line bg-tint p-0.5">
         {MODES.map((mode) => {
           const Icon = mode.icon;
           const active = activeTab === mode.id;
+
 
           return (
             <button
@@ -732,8 +954,319 @@ export function MeasurePanel() {
           </InfoNote>
         </div>
       )}
+
+      {/* ==================================================================== */}
+      {/* 5. k-NN NEAREST NEIGHBORS TAB */}
+      {/* ==================================================================== */}
+      {activeTab === "knn" && (
+        <div className="flex flex-col gap-3">
+          <SectionLabel>SIMD Nearest-Neighbor Engine</SectionLabel>
+
+          <div className="flex flex-col gap-2 rounded-lg border border-line bg-tint/40 p-2.5">
+            <div className="flex items-center justify-between text-[11px] font-medium text-ink">
+              <span className="flex items-center gap-1.5">
+                <Crosshair size={13} className="text-fuchsia-400" />
+                Query Probe Origin
+              </span>
+              <button
+                type="button"
+                className={cx(
+                  "flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-semibold transition-colors",
+                  isPickingKnnCenter
+                    ? "bg-fuchsia-500 text-white animate-pulse"
+                    : "bg-solid text-fuchsia-400 hover:text-fuchsia-300 border border-line",
+                )}
+                onClick={toggleKnnPicker}
+              >
+                <MapPin size={10} />
+                {isPickingKnnCenter ? "Click Map..." : knnCenter ? "Repick Point" : "Pick on Map"}
+              </button>
+            </div>
+
+            {knnCenter ? (
+              <div className="flex items-center justify-between rounded bg-solid/60 px-2 py-1 font-mono text-[10px] text-ink-muted">
+                <span>{knnCenter[1].toFixed(5)}°N, {knnCenter[0].toFixed(5)}°E</span>
+                <span className="text-[9px] text-fuchsia-400 font-semibold">Origin Active</span>
+              </div>
+            ) : (
+              <p className="text-[10px] text-ink-muted">
+                Click anywhere on the globe to calculate sub-microsecond nearest neighbors in 3D ECEF space.
+              </p>
+            )}
+
+            {/* Target Source Dropdown */}
+            <div className="flex flex-col gap-1 pt-1">
+              <label className="text-[10px] font-medium text-ink-muted">Target Layer / Source</label>
+              <select
+                value={selectedKnnLayerId}
+                onChange={(e) => setSelectedKnnLayerId(e.target.value)}
+                className={FIELD_INPUT}
+              >
+                <option value="all">All Points & Live Telemetry</option>
+                <option value="flights">Live Flights (ADS-B)</option>
+                <option value="earthquakes">Live Earthquakes (USGS)</option>
+                <option value="satellites">Live Satellites (SGP4)</option>
+                {layers
+                  .filter((l) => l.geometryKind === "point" || l.geometryKind === "mixed")
+                  .map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* K Neighbors Count Selector */}
+            <div className="flex items-center justify-between pt-1">
+              <label className="text-[10px] font-medium text-ink-muted">Neighbors Count (K)</label>
+              <div className="flex items-center gap-1">
+                {[1, 3, 5, 10, 20].map((kVal) => (
+                  <button
+                    key={kVal}
+                    type="button"
+                    className={cx(
+                      "h-5 min-w-[22px] rounded text-[10px] font-semibold transition-colors",
+                      knnK === kVal
+                        ? "bg-fuchsia-600 text-white"
+                        : "bg-solid text-ink-muted hover:text-ink border border-line",
+                    )}
+                    onClick={() => {
+                      setKnnK(kVal);
+                      if (knnCenter) executeKnnQuery(knnCenter, kVal, selectedKnnLayerId);
+                    }}
+                  >
+                    {kVal}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-1.5 pt-1">
+              <button
+                type="button"
+                disabled={!knnCenter || knnLoading}
+                className={cx(PRIMARY_BUTTON, "flex-1 !bg-fuchsia-600 hover:!bg-fuchsia-500 text-white")}
+                onClick={() => knnCenter && executeKnnQuery(knnCenter, knnK, selectedKnnLayerId)}
+              >
+                {knnLoading ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" />
+                    Querying SIMD...
+                  </>
+                ) : (
+                  <>
+                    <Zap size={12} />
+                    Find {knnK} Nearest
+                  </>
+                )}
+              </button>
+              {knnResult && (
+                <button type="button" className={SECONDARY_BUTTON} onClick={clearKnn} title="Clear results">
+                  <Eraser size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Results List */}
+          {knnResult && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between text-[11px] font-medium text-ink">
+                <span>Nearest {knnResult.neighbors.length} Neighbors</span>
+                <span className="flex items-center gap-1 text-[9.5px] font-mono text-fuchsia-400">
+                  <Zap size={10} />
+                  {knnResult.execution_micros.toFixed(1)} µs
+                </span>
+              </div>
+
+              <div className="max-h-[240px] overflow-y-auto rounded-lg border border-line bg-tint/30 p-1 flex flex-col gap-1">
+                {knnResult.neighbors.map((n, idx) => (
+                  <div
+                    key={idx}
+                    className="group flex flex-col gap-1 rounded-md bg-solid/80 p-2 text-[10.5px] hover:border-fuchsia-500/50 border border-transparent transition-colors cursor-pointer"
+                    onClick={() => {
+                      flyToCoordinate(n.lon, n.lat, 15);
+                      notify(`Focused on #${idx + 1}: ${n.id}`);
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-ink truncate max-w-[170px]" title={n.id}>
+                        <span className="mr-1.5 font-mono text-[9.5px] text-fuchsia-400 font-bold">
+                          #{idx + 1}
+                        </span>
+                        {n.id}
+                      </span>
+                      <span className="font-mono text-fuchsia-400 font-semibold">
+                        {n.surface_distance_m >= 1000
+                          ? `${(n.surface_distance_m / 1000).toFixed(2)} km`
+                          : `${Math.round(n.surface_distance_m)} m`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[9px] text-ink-muted">
+                      <span className="font-mono">
+                        {n.lat.toFixed(4)}°N, {n.lon.toFixed(4)}°E
+                      </span>
+                      <span className="font-mono text-[8.5px]">
+                        3D chord: {(n.euclidean_distance_3d_m >= 1000 ? `${(n.euclidean_distance_3d_m / 1000).toFixed(1)}km` : `${Math.round(n.euclidean_distance_3d_m)}m`)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <InfoNote>
+            Transforms coordinates to 3D Earth-Centered Earth-Fixed (ECEF) Cartesian space, querying an immutable k-d tree via AVX2/NEON SIMD vector instructions with sub-microsecond latency. Avoids polar distortion and antimeridian wraparound discontinuities.
+          </InfoNote>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* 6. CONSTRUCTIVE AREA GEOMETRY (CAG) BOOLEAN OPS TAB */}
+      {/* ==================================================================== */}
+      {activeTab === "boolean" && (
+        <div className="flex flex-col gap-3">
+          <SectionLabel>Polygon Boolean Operations</SectionLabel>
+
+          <div className="flex flex-col gap-2 rounded-lg border border-line bg-tint/40 p-2.5">
+            {/* Operation Type Buttons */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-medium text-ink-muted">Operation Type</label>
+              <div className="grid grid-cols-4 gap-1">
+                {(
+                  [
+                    { id: "intersection", label: "Intersect" },
+                    { id: "union", label: "Union" },
+                    { id: "difference", label: "Diff (A-B)" },
+                    { id: "xor", label: "XOR" },
+                  ] as const
+                ).map((op) => (
+                  <button
+                    key={op.id}
+                    type="button"
+                    className={cx(
+                      "h-6 rounded text-[10px] font-semibold transition-colors",
+                      booleanOp === op.id
+                        ? "bg-emerald-600 text-white"
+                        : "bg-solid text-ink-muted hover:text-ink border border-line",
+                    )}
+                    onClick={() => setBooleanOp(op.id)}
+                  >
+                    {op.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Layer A Select */}
+            <div className="flex flex-col gap-1 pt-1">
+              <label className="text-[10px] font-medium text-ink-muted">Layer A (Base Polygon)</label>
+              <select
+                value={booleanLayerA}
+                onChange={(e) => setBooleanLayerA(e.target.value)}
+                className={FIELD_INPUT}
+              >
+                <option value="">Select Polygon Layer A...</option>
+                {layers
+                  .filter((l) => l.geometryKind === "polygon" || l.geometryKind === "mixed")
+                  .map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* Layer B Select */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-medium text-ink-muted">Layer B (Clipping Polygon)</label>
+              <select
+                value={booleanLayerB}
+                onChange={(e) => setBooleanLayerB(e.target.value)}
+                className={FIELD_INPUT}
+              >
+                <option value="">Select Polygon Layer B...</option>
+                {layers
+                  .filter((l) => l.geometryKind === "polygon" || l.geometryKind === "mixed")
+                  .map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-1.5 pt-1">
+              <button
+                type="button"
+                disabled={!booleanLayerA || !booleanLayerB || booleanLoading}
+                className={cx(PRIMARY_BUTTON, "flex-1 !bg-emerald-600 hover:!bg-emerald-500 text-white")}
+                onClick={executeBooleanOp}
+              >
+                {booleanLoading ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" />
+                    Computing Topology...
+                  </>
+                ) : (
+                  <>
+                    <Layers size={12} />
+                    Execute {booleanOp.toUpperCase()}
+                  </>
+                )}
+              </button>
+              {booleanResult && (
+                <button type="button" className={SECONDARY_BUTTON} onClick={clearBoolean} title="Clear overlay">
+                  <Eraser size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Results Summary Card */}
+          {booleanResult && (
+            <div className="flex flex-col gap-2 rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-2.5">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-400">
+                <span className="capitalize">{booleanResult.operation} Result</span>
+                <span className="font-mono text-[10px] text-ink-muted">
+                  {booleanResult.polygon_count} Polygon(s)
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <KeyValue
+                  label="Area (km²)"
+                  value={`${(booleanResult.total_area_sq_m / 1_000_000).toFixed(3)} km²`}
+                />
+                <KeyValue
+                  label="Area (m²)"
+                  value={`${booleanResult.total_area_sq_m.toLocaleString()} m²`}
+                />
+              </div>
+
+              <button
+                type="button"
+                className={cx(PRIMARY_BUTTON, "mt-2 !bg-emerald-700 hover:!bg-emerald-600 text-white font-semibold")}
+                onClick={saveBooleanResultAsLayer}
+              >
+                <Check size={12} />
+                Save as New Workspace Layer
+              </button>
+            </div>
+          )}
+
+          <InfoNote>
+            Executes native constructive area geometry Boolean operations via exact topological polygon clipping. Calculates unsigned ellipsoidal geodesic area and produces WGS 84 GeoJSON MultiPolygons.
+          </InfoNote>
+        </div>
+      )}
     </PanelShell>
   );
 }
+
 
 

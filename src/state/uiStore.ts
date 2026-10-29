@@ -8,7 +8,7 @@ import type {
   ThemeMode,
 } from "../lib/gis/types";
 
-export type AnalysisTab = "distance" | "area" | "elevation" | "buffer";
+export type AnalysisTab = "distance" | "area" | "elevation" | "buffer" | "knn" | "boolean";
 
 interface UiState {
   activePanel: PanelId | null;

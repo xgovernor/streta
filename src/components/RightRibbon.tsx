@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import {
+  Crosshair,
   Frame,
   Hexagon,
+  Layers,
   LocateFixed,
   Maximize2,
   Minimize2,
@@ -183,7 +185,22 @@ export function RightRibbon() {
           active={activePanel === "measure" && analysisTab === "buffer"}
           onClick={() => toggleTool("buffer")}
         />
+        <ToolButton
+          label="k-Nearest neighbors (k-NN)"
+          icon={Crosshair}
+          side="right"
+          active={activePanel === "measure" && analysisTab === "knn"}
+          onClick={() => toggleTool("knn")}
+        />
+        <ToolButton
+          label="Polygon Boolean (CAG)"
+          icon={Layers}
+          side="right"
+          active={activePanel === "measure" && analysisTab === "boolean"}
+          onClick={() => toggleTool("boolean")}
+        />
       </div>
+
 
 
       <div className="flex-1" />

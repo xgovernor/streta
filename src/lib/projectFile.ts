@@ -29,6 +29,8 @@ import {
   readShapefileSet,
   type ShapefileSet,
 } from "./gis/shapefile";
+import { loadGeoParquetLayer } from "./gis/tiledBackend";
+
 
 import type {
   BasemapId,
@@ -77,6 +79,8 @@ const DATASET_FILTERS: FileFilter[] = [
       "prj",
       "cpg",
       "gpkg",
+      "parquet",
+      "geoparquet",
     ],
   },
 ];
@@ -459,7 +463,8 @@ type ImportJob =
   | { kind: "text"; name: string; source: string | null; text: string }
   | { kind: "shapefile"; set: ShapefileSet; source: string | null }
   | { kind: "archive"; name: string; source: string | null; bytes: Uint8Array }
-  | { kind: "gpkg"; name: string; source: string | null; bytes: Uint8Array };
+  | { kind: "gpkg"; name: string; source: string | null; bytes: Uint8Array }
+  | { kind: "parquet"; name: string; source: string | null; path: string | null };
 
 function decode(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes);
@@ -507,6 +512,16 @@ function planImports(files: OpenedFile[]): {
 
     if (extension === "shx") {
       // The spatial index is not needed to read the geometries.
+      continue;
+    }
+
+    if (extension === "parquet" || extension === "geoparquet") {
+      jobs.push({
+        kind: "parquet",
+        name: baseNameOf(file.name),
+        source,
+        path: file.path,
+      });
       continue;
     }
 
@@ -595,6 +610,24 @@ export async function importDatasetFiles(): Promise<DatasetImportSummary | null>
       if (job.kind === "gpkg") {
         const result = await parseGeoPackage(job.bytes);
         outcomes.push(registerImport(result, job.name, job.source));
+        continue;
+      }
+
+      if (job.kind === "parquet") {
+        if (!job.path) {
+          throw new DataError(
+            "GeoParquet files must be read from the local file system inside the desktop application.",
+          );
+        }
+        const res = await loadGeoParquetLayer(job.path);
+        if (!res || !res.feature_collection) {
+          throw new DataError(`Failed to decode GeoParquet file "${job.name}"`);
+        }
+        const parsed = parseGeoJson(
+          JSON.stringify(res.feature_collection),
+          job.name,
+        );
+        outcomes.push(registerImport(parsed, job.name, job.source));
         continue;
       }
 

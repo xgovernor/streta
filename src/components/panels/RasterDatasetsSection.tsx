@@ -7,14 +7,17 @@ import {
   Cpu,
   FolderOpen,
   Layers,
+  Loader2,
   MapPin,
   Mountain,
 } from "lucide-react";
 import {
   flyToCoordinate,
   getActiveRasterBinding,
+  getViewportBbox,
   mountRasterLayer,
   onRasterProbe,
+  sampleDemGrid,
   setRasterContrast,
   setRasterFormula,
   setRasterOpacity,
@@ -26,13 +29,20 @@ import {
   type RasterLayerConfig,
 } from "../../map/rasterLayer";
 import {
+  generateContours,
   getCogPresetsFromRust,
   registerCogLayerWithRust,
   type CogPresetInfo,
 } from "../../lib/gis/tiledBackend";
+import { createDataset, uniqueDatasetName } from "../../lib/gis/datasets";
+import { createLayer, uniqueLayerName } from "../../lib/gis/layers";
+import { GEOGRAPHIC_CRS } from "../../lib/gis/crs";
+import type { FeatureRecord } from "../../lib/gis/types";
+import { useProjectStore } from "../../state/projectStore";
 import { cx } from "../../lib/cx";
 import { useUiStore } from "../../state/uiStore";
 import {
+  PRIMARY_BUTTON,
   SECONDARY_BUTTON,
   SectionLabel,
   Switch,
@@ -285,6 +295,96 @@ export function RasterDatasetsSection() {
     }
   };
 
+  const [contourInterval, setContourInterval] = useState<number>(100);
+  const [isGeneratingContours, setIsGeneratingContours] = useState<boolean>(false);
+
+  const handleGenerateContours = async (preset: CogPresetInfo) => {
+    setIsGeneratingContours(true);
+    try {
+      const viewBbox = getViewportBbox();
+      const bbox: [number, number, number, number] =
+        viewBbox &&
+        preset.center[0] >= viewBbox[0] &&
+        preset.center[0] <= viewBbox[2] &&
+        preset.center[1] >= viewBbox[1] &&
+        preset.center[1] <= viewBbox[3]
+          ? viewBbox
+          : [
+              preset.center[0] - 0.15,
+              preset.center[1] - 0.12,
+              preset.center[0] + 0.15,
+              preset.center[1] + 0.12,
+            ];
+
+      const width = 36;
+      const height = 36;
+      const values = sampleDemGrid(bbox, width, height);
+
+      const result = await generateContours({
+        values,
+        width,
+        height,
+        bbox,
+        interval: contourInterval,
+        smooth: true,
+      });
+
+      if (result && result.geojson?.features?.length > 0) {
+        const projectStore = useProjectStore.getState();
+        const existingDatasetNames = projectStore.datasets.map((d) => d.name);
+        const datasetName = uniqueDatasetName(
+          existingDatasetNames,
+          `${preset.name} Contours (${contourInterval}m)`,
+        );
+        const dataset = createDataset({
+          name: datasetName,
+          kind: "file",
+          order: projectStore.datasets.length,
+        });
+
+        const features: FeatureRecord[] = result.geojson.features.map(
+          (f: any, idx: number) => ({
+            id: f.id || `contour_${idx}`,
+            geometry: f.geometry,
+            properties: f.properties || {},
+          }),
+        );
+
+        const existingLayerNames = projectStore.layers.map((l) => l.name);
+        const layerName = uniqueLayerName(
+          existingLayerNames,
+          `Contours ${contourInterval}m`,
+        );
+        const newLayer = createLayer({
+          datasetId: dataset.id,
+          name: layerName,
+          features,
+          crs: GEOGRAPHIC_CRS,
+          format: "geojson",
+          source: "derived",
+          order: 0,
+          style: {
+            color: "#f59e0b",
+            strokeWidth: 1.5,
+            fillOpacity: 0.1,
+            labelField: "elevation",
+          },
+        });
+
+        projectStore.addDataset(dataset, [newLayer]);
+        notify(
+          `Generated ${result.feature_count} contour isolines at ${contourInterval}m intervals`,
+        );
+      } else {
+        notify("Contour generation returned no isolines for this area");
+      }
+    } catch (err: any) {
+      notify(`Contour generation error: ${err.message || err}`);
+    } finally {
+      setIsGeneratingContours(false);
+    }
+  };
+
   const activeMeta = FORMULAS.find((f) => f.id === activeFormula) || FORMULAS[0];
 
   return (
@@ -436,6 +536,59 @@ export function RasterDatasetsSection() {
                           ))}
                         </div>
                       </div>
+
+                      {/* Elevation Contour Isolines Action */}
+                      {!isMulti && (
+                        <div className="flex flex-col gap-2 rounded border border-line bg-solid/80 p-2 text-[10px]">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-ink flex items-center gap-1.5">
+                              <Mountain size={12} className="text-amber-500" />
+                              Contour Isolines (Marching Squares)
+                            </span>
+                            <span className="font-mono text-[8.5px] text-ink-muted">Vector Derivation</span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[9.5px]">
+                            <span className="text-ink-muted">Isoline Interval</span>
+                            <div className="flex items-center gap-1">
+                              {[25, 50, 100, 200, 500].map((step) => (
+                                <button
+                                  key={step}
+                                  type="button"
+                                  className={cx(
+                                    "rounded px-1.5 py-0.5 font-mono text-[9px] border transition-all",
+                                    contourInterval === step
+                                      ? "border-amber-500 bg-amber-500/20 text-amber-300 font-bold"
+                                      : "border-line bg-tint/60 text-ink-muted hover:text-ink",
+                                  )}
+                                  onClick={() => setContourInterval(step)}
+                                >
+                                  {step}m
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            className={cx(PRIMARY_BUTTON, "h-7 text-[10.5px] justify-center w-full mt-0.5")}
+                            disabled={isGeneratingContours}
+                            onClick={() => handleGenerateContours(preset)}
+                          >
+                            {isGeneratingContours ? (
+                              <>
+                                <Loader2 size={12} className="animate-spin" />
+                                Computing {contourInterval}m contours...
+                              </>
+                            ) : (
+                              <>
+                                <Mountain size={12} />
+                                Generate {contourInterval}m Contours
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
 
                       {/* Live Pixel Probe HUD */}
                       <div className="flex flex-col gap-1 rounded border border-line bg-solid/80 p-2">

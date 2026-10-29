@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Crosshair,
   Download,
+  Hexagon,
+  Loader2,
   Palette,
   RotateCcw,
   Trash2,
   X,
 } from "lucide-react";
-import { crsInfo, listCrs } from "../../lib/gis/crs";
+import { GEOGRAPHIC_CRS, crsInfo, listCrs, transformPosition } from "../../lib/gis/crs";
 import {
   addFilter,
   facetValues,
@@ -16,8 +18,22 @@ import {
   removeFilter,
   visibleFeatures,
 } from "../../lib/gis/filter";
-import { PALETTE, measureLayer } from "../../lib/gis/layers";
-import type { DatasetLayer } from "../../lib/gis/types";
+import { PALETTE, createLayer, measureLayer, uniqueLayerName } from "../../lib/gis/layers";
+import { createDataset, uniqueDatasetName } from "../../lib/gis/datasets";
+import { computeH3Aggregation } from "../../lib/gis/tiledBackend";
+import type { DatasetLayer, FeatureRecord } from "../../lib/gis/types";
+
+const H3_RES_DESCRIPTIONS: Record<number, string> = {
+  2: "~180 km",
+  3: "~68 km",
+  4: "~26 km",
+  5: "~9.8 km",
+  6: "~3.7 km",
+  7: "~1.4 km",
+  8: "~530 m",
+  9: "~200 m",
+  10: "~76 m",
+};
 import { zoomToLayer } from "../../map/mapController";
 import {
   formatArea,
@@ -323,6 +339,107 @@ export function LayerPanel() {
     [layer],
   );
 
+  const [h3Resolution, setH3Resolution] = useState<number>(7);
+  const [h3Loading, setH3Loading] = useState(false);
+
+  const isPointLayer =
+    layer?.geometryKind === "point" ||
+    Boolean(
+      layer?.features.some(
+        (f) => f.geometry.type === "Point" || f.geometry.type === "MultiPoint",
+      ),
+    );
+
+  const handleH3Aggregation = async () => {
+    if (!layer) return;
+    setH3Loading(true);
+    try {
+      const isGeo = layer.crs === GEOGRAPHIC_CRS;
+      const points: { lon: number; lat: number }[] = [];
+
+      shown.forEach((f) => {
+        if (f.geometry.type === "Point") {
+          const [x, y] = f.geometry.coordinates as [number, number];
+          if (isGeo) {
+            points.push({ lon: x, lat: y });
+          } else {
+            const [lon, lat] = transformPosition([x, y], layer.crs, GEOGRAPHIC_CRS);
+            points.push({ lon, lat });
+          }
+        } else if (f.geometry.type === "MultiPoint") {
+          (f.geometry.coordinates as [number, number][]).forEach(([x, y]) => {
+            if (isGeo) {
+              points.push({ lon: x, lat: y });
+            } else {
+              const [lon, lat] = transformPosition([x, y], layer.crs, GEOGRAPHIC_CRS);
+              points.push({ lon, lat });
+            }
+          });
+        }
+      });
+
+      if (points.length === 0) {
+        notify("No point coordinates available to aggregate");
+        return;
+      }
+
+      const res = await computeH3Aggregation(points, h3Resolution);
+      if (res && res.geojson?.features?.length > 0) {
+        const projectStore = useProjectStore.getState();
+        const existingDatasetNames = projectStore.datasets.map((d) => d.name);
+        const datasetName = uniqueDatasetName(
+          existingDatasetNames,
+          `${layer.name} H3 (Res ${h3Resolution})`,
+        );
+        const dataset = createDataset({
+          name: datasetName,
+          kind: "file",
+          order: projectStore.datasets.length,
+        });
+
+        const features: FeatureRecord[] = res.geojson.features.map(
+          (f: any, idx: number) => ({
+            id: f.id || `h3_${idx}`,
+            geometry: f.geometry,
+            properties: f.properties || {},
+          }),
+        );
+
+        const existingLayerNames = projectStore.layers.map((l) => l.name);
+        const layerName = uniqueLayerName(
+          existingLayerNames,
+          `${layer.name} H3 r${h3Resolution}`,
+        );
+        const newLayer = createLayer({
+          datasetId: dataset.id,
+          name: layerName,
+          features,
+          crs: GEOGRAPHIC_CRS,
+          format: "geojson",
+          source: "derived",
+          order: 0,
+          style: {
+            color: "#8b5cf6",
+            strokeWidth: 1.5,
+            fillOpacity: 0.35,
+            labelField: "count",
+          },
+        });
+
+        projectStore.addDataset(dataset, [newLayer]);
+        notify(
+          `H3 Binning: aggregated ${res.total_points} points into ${res.cell_count} hexagons (Res ${h3Resolution})`,
+        );
+      } else {
+        notify("H3 aggregation produced no hexagonal cells");
+      }
+    } catch (err) {
+      notify(`H3 aggregation error: ${err}`);
+    } finally {
+      setH3Loading(false);
+    }
+  };
+
   if (!layer) {
     return (
       <PanelShell
@@ -510,6 +627,52 @@ export function LayerPanel() {
           ))}
         </select>
       </label>
+
+      {isPointLayer && (
+        <div className="mt-3.5 flex flex-col gap-2 rounded-lg border border-line bg-tint/40 p-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] font-semibold text-ink">
+              H3 Hexagonal Binning
+            </span>
+            <span className="font-mono text-[9px] text-accent font-semibold">
+              Res {h3Resolution} ({H3_RES_DESCRIPTIONS[h3Resolution] ?? ""})
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min={2}
+              max={10}
+              step={1}
+              value={h3Resolution}
+              onChange={(e) => setH3Resolution(parseInt(e.target.value, 10))}
+              className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-line accent-accent"
+              aria-label="H3 resolution"
+            />
+            <span className="font-mono text-[10px] text-ink font-semibold w-5 text-right">
+              {h3Resolution}
+            </span>
+          </div>
+          <button
+            type="button"
+            className={cx(PRIMARY_BUTTON, "h-7 text-[10.5px] justify-center")}
+            disabled={h3Loading}
+            onClick={handleH3Aggregation}
+          >
+            {h3Loading ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                Binning points...
+              </>
+            ) : (
+              <>
+                <Hexagon size={13} strokeWidth={1.9} />
+                Aggregate into H3 Hexagons
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       <div className="mt-3.5 grid grid-cols-[1fr_auto] gap-1.5">
         <button
