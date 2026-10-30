@@ -1103,7 +1103,8 @@ export function mountMap(target: HTMLElement): () => void {
 
       let featureId = hit.getId() as string | undefined;
       if (!featureId) {
-        featureId = `measure-line-${Date.now()}`;
+        const prefix = geomType === "Polygon" ? "measure-polygon" : "measure-line";
+        featureId = `${prefix}-${Date.now()}`;
         if (typeof (hit as Feature).setId === "function") {
           (hit as Feature).setId(featureId);
         }
@@ -1111,13 +1112,22 @@ export function mountMap(target: HTMLElement): () => void {
       const allFeatures = measureSource.getFeatures();
       const lineIndex = allFeatures.findIndex((f) => f.getId() === featureId);
 
-      // Compute individual metrics for the right-clicked measurement line
+      // Compute individual metrics for the right-clicked measurement line or polygon
       const geographic = toGeographic(geom);
+      const isPolygon = geomType === "Polygon";
+      const isClosedRing =
+        isPolygon &&
+        coords.length > 2 &&
+        coords[0][0] === coords[coords.length - 1][0] &&
+        coords[0][1] === coords[coords.length - 1][1];
+      const displayVertexCount = isClosedRing ? coords.length - 1 : coords.length;
       const distMeters = geographic ? geometryLength(geographic) : 0;
       const areaSqMeters =
-        geographic && geomType === "Polygon" ? geometryArea(geographic) : 0;
+        geographic && isPolygon ? geometryArea(geographic) : 0;
       const nmi = distMeters / 1852;
       const mi = distMeters / 1609.344;
+      const hectares = areaSqMeters > 0 ? `${(areaSqMeters / 10_000).toFixed(2)} ha` : undefined;
+      const acres = areaSqMeters > 0 ? `${(areaSqMeters / 4046.8564224).toFixed(2)} ac` : undefined;
 
       useMapStore.getState().setMeasureContextMenu({
         x: event.clientX,
@@ -1126,27 +1136,35 @@ export function mountMap(target: HTMLElement): () => void {
         lineIndex: lineIndex >= 0 ? lineIndex + 1 : 1,
         totalLinesCount: allFeatures.length,
         coords,
-        geomType: geomType === "Polygon" ? "Polygon" : "LineString",
+        geomType: isPolygon ? "Polygon" : "LineString",
         distanceMeters: distMeters,
         formattedDistance: formatDistance(distMeters),
         formattedNauticalMiles: `${nmi.toFixed(2)} NM`,
         formattedMiles: `${mi.toFixed(2)} mi`,
-        formattedArea: areaSqMeters ? formatArea(areaSqMeters) : undefined,
-        vertexCount: coords.length,
+        areaSqMeters: areaSqMeters > 0 ? areaSqMeters : undefined,
+        formattedArea: areaSqMeters > 0 ? formatArea(areaSqMeters) : undefined,
+        formattedHectares: hectares,
+        formattedAcres: acres,
+        vertexCount: displayVertexCount,
       });
 
       if (coords.length >= 2) {
-        measureGeodesic(coords, geomType === "Polygon").then((res) => {
+        measureGeodesic(coords, isPolygon).then((res) => {
           if (!res) return;
           const current = useMapStore.getState().measureContextMenu;
           if (current && current.featureId === featureId) {
+            const perimeter = isPolygon ? (res.perimeter_m ?? res.total_distance_m) : res.total_distance_m;
             useMapStore.getState().setMeasureContextMenu({
               ...current,
-              distanceMeters: res.total_distance_m,
-              formattedDistance: formatDistance(res.total_distance_m),
-              formattedNauticalMiles: `${res.total_distance_nmi.toFixed(2)} NM`,
+              distanceMeters: perimeter,
+              formattedDistance: formatDistance(perimeter),
+              formattedNauticalMiles: `${(perimeter / 1852).toFixed(2)} NM`,
               formattedMiles: `${res.total_distance_miles.toFixed(2)} mi`,
+              areaSqMeters: res.area_sq_m ?? current.areaSqMeters,
               formattedArea: res.area_sq_m ? formatArea(res.area_sq_m) : current.formattedArea,
+              formattedHectares: res.area_hectares != null ? `${res.area_hectares.toFixed(2)} ha` : current.formattedHectares,
+              formattedAcres: res.area_acres != null ? `${res.area_acres.toFixed(2)} ac` : current.formattedAcres,
+              centroid: res.centroid,
             });
           }
         });
@@ -1260,6 +1278,10 @@ export function mountMap(target: HTMLElement): () => void {
     if (draw) {
       draw.setActive(true);
     }
+    if (modify) {
+      map.removeInteraction(modify);
+      modify = null;
+    }
   };
 
   const applyMeasureMode = (mode: MeasureMode) => {
@@ -1273,11 +1295,6 @@ export function mountMap(target: HTMLElement): () => void {
       draw = null;
     }
 
-    if (modify) {
-      map.removeInteraction(modify);
-      modify = null;
-    }
-
     if (sketchKey) {
       unByKey(sketchKey);
       sketchKey = null;
@@ -1288,13 +1305,53 @@ export function mountMap(target: HTMLElement): () => void {
       featureChangeKey = null;
     }
 
+    const ensureModify = () => {
+      if (!modify) {
+        modify = new Modify({
+          source: measureSource,
+          condition: primaryAction,
+          style: new Style({
+            image: new CircleStyle({
+              radius: 6,
+              fill: new Fill({ color: "#ffffff" }),
+              stroke: new Stroke({ color: "#00e5ff", width: 2.5 }),
+            }),
+          }),
+        });
+        modify.on("modifyend", () => {
+          const hasPoly = measureSource.getFeatures().some((f) => {
+            const g = f.getGeometry();
+            return g && g.getType() === "Polygon";
+          });
+          useProjectStore
+            .getState()
+            .setMeasureSummary(
+              summarizeAllMeasurements(measureSource, hasPoly ? "area" : "distance"),
+            );
+        });
+        map.addInteraction(modify);
+      }
+    };
+
     if (mode !== "distance" && mode !== "area") {
       activeDrawInteraction = null;
+      if (measureSource.getFeatures().length > 0) {
+        ensureModify();
+      } else if (modify) {
+        map.removeInteraction(modify);
+        modify = null;
+      }
+      const hasPolygon = measureSource.getFeatures().some((f) => {
+        const g = f.getGeometry();
+        return g && g.getType() === "Polygon";
+      });
       useProjectStore
         .getState()
-        .setMeasureSummary(summarizeAllMeasurements(measureSource, "distance"));
+        .setMeasureSummary(summarizeAllMeasurements(measureSource, hasPolygon ? "area" : "distance"));
       return;
     }
+
+    ensureModify();
 
     let lineCounter = 1;
 
@@ -1306,29 +1363,11 @@ export function mountMap(target: HTMLElement): () => void {
       condition: primaryAction,
     });
 
-    const modifyInteraction = new Modify({
-      source: measureSource,
-      // Left click ONLY: allows inserting midpoints and moving vertices
-      condition: primaryAction,
-      style: new Style({
-        image: new CircleStyle({
-          radius: 6,
-          fill: new Fill({ color: "#ffffff" }),
-          stroke: new Stroke({ color: "#00e5ff", width: 2.5 }),
-        }),
-      }),
-    });
-
-    modifyInteraction.on("modifyend", () => {
-      useProjectStore
-        .getState()
-        .setMeasureSummary(summarizeAllMeasurements(measureSource, mode));
-    });
-
     drawInteraction.on("drawstart", (event) => {
-      // Allow multiple lines: do NOT clear measureSource!
+      // Allow multiple lines / polygons: do NOT clear measureSource!
       const feature = event.feature;
-      const featureId = `measure-line-${Date.now()}-${lineCounter++}`;
+      const prefix = mode === "area" ? "measure-polygon" : "measure-line";
+      const featureId = `${prefix}-${Date.now()}-${lineCounter++}`;
       feature.setId(featureId);
 
       if (sketchKey) {
@@ -1363,9 +1402,13 @@ export function mountMap(target: HTMLElement): () => void {
 
       if (geometry) {
         geometry.on("change", () => {
+          const hasPolygon = measureSource.getFeatures().some((f) => {
+            const g = f.getGeometry();
+            return g && g.getType() === "Polygon";
+          });
           useProjectStore
             .getState()
-            .setMeasureSummary(summarizeAllMeasurements(measureSource, "distance"));
+            .setMeasureSummary(summarizeAllMeasurements(measureSource, hasPolygon ? "area" : "distance"));
         });
       }
 
@@ -1383,9 +1426,7 @@ export function mountMap(target: HTMLElement): () => void {
     });
 
     map.addInteraction(drawInteraction);
-    map.addInteraction(modifyInteraction);
     draw = drawInteraction;
-    modify = modifyInteraction;
     activeDrawInteraction = drawInteraction;
   };
 
@@ -1692,7 +1733,7 @@ function toGeographic(geometry: OlGeometry): Geometry | null {
   return null;
 }
 
-/** Summarizes all measurement lines in the source (plus any actively sketching feature). */
+/** Summarizes all measurement lines or polygons in the source (plus any actively sketching feature). */
 function summarizeAllMeasurements(
   source: VectorSource,
   mode: "distance" | "area",
@@ -1709,6 +1750,7 @@ function summarizeAllMeasurements(
   let totalDistance = 0;
   let totalArea = 0;
   let totalVertices = 0;
+  let hasPolygon = false;
 
   for (const feature of features) {
     const geom = feature.getGeometry();
@@ -1721,41 +1763,48 @@ function summarizeAllMeasurements(
     });
 
     totalDistance += geometryLength(geographic);
-    if (mode === "area") {
+    if (geographic.type === "Polygon") {
+      hasPolygon = true;
       totalArea += geometryArea(geographic);
     }
   }
 
+  const effectiveMode: "distance" | "area" =
+    mode === "area" || hasPolygon ? "area" : "distance";
+
   const summary: MeasureSummary = {
-    mode,
+    mode: effectiveMode,
     distance: totalDistance,
     area: totalArea,
     vertices: totalVertices,
     lineCount: features.length,
   };
 
-  // If there is only 1 line, fetch high-precision geodesic details
+  // If there is only 1 feature, fetch high-precision geodesic details
   if (features.length === 1) {
     const geom = features[0].getGeometry();
     if (geom) {
       const geographic = toGeographic(geom);
       if (geographic) {
+        const isPoly = geographic.type === "Polygon";
         const coords: [number, number][] =
-          geographic.type === "LineString"
+          !isPoly
             ? (geographic.coordinates as [number, number][])
             : ((geographic.coordinates as [number, number][][])[0] ?? []);
         if (coords && coords.length >= 2) {
-          measureGeodesic(coords, mode === "area").then((details) => {
+          measureGeodesic(coords, isPoly).then((details) => {
             if (details) {
               const current = useProjectStore.getState().measureSummary;
               if (
                 current &&
-                current.mode === mode &&
+                current.mode === effectiveMode &&
                 (current.lineCount ?? 1) === 1
               ) {
                 useProjectStore.getState().setMeasureSummary({
                   ...current,
-                  distance: details.total_distance_m,
+                  distance: isPoly
+                    ? (details.perimeter_m ?? details.total_distance_m)
+                    : details.total_distance_m,
                   area: details.area_sq_m ?? current.area,
                   geodesicDetails: details,
                 });
@@ -1841,9 +1890,10 @@ function measureSketchStyle(feature: FeatureLike, resolution: number): Style[] {
   if (shape.getType() === "Polygon") {
     const rings = (shape as Polygon).getCoordinates();
     if (rings.length > 0) {
+      const ring = rings[0];
       styles.push(
         new Style({
-          geometry: new MultiPoint(rings[0]),
+          geometry: new MultiPoint(ring),
           image: new CircleStyle({
             radius: 4.5,
             fill: new Fill({ color: "#00e5ff" }),
@@ -1852,6 +1902,34 @@ function measureSketchStyle(feature: FeatureLike, resolution: number): Style[] {
           zIndex: 25,
         }),
       );
+
+      // Render edge segment labels along each side of the polygon boundary
+      for (let index = 1; index < ring.length; index += 1) {
+        const from = ring[index - 1];
+        const to = ring[index];
+        const start = transform(from, VIEW_CRS, GEOGRAPHIC_CRS);
+        const end = transform(to, VIEW_CRS, GEOGRAPHIC_CRS);
+        const meters = haversineMeters(start, end);
+
+        if (!Number.isFinite(meters) || meters <= 0) {
+          continue;
+        }
+
+        styles.push(
+          new Style({
+            geometry: new Point([(from[0] + to[0]) / 2, (from[1] + to[1]) / 2]),
+            text: new Text({
+              text: formatDistance(meters),
+              font: SEGMENT_LABEL.getFont(),
+              fill: SEGMENT_LABEL.getFill() ?? undefined,
+              stroke: SEGMENT_LABEL.getStroke() ?? undefined,
+              offsetY: -10,
+              overflow: true,
+            }),
+            zIndex: 20,
+          }),
+        );
+      }
     }
 
     const geographic = toGeographic(shape);
@@ -1868,12 +1946,12 @@ function measureSketchStyle(feature: FeatureLike, resolution: number): Style[] {
         geometry: new Point(interior),
         text: new Text({
           text: formatArea(area),
-          font: SEGMENT_LABEL.getFont(),
-          fill: SEGMENT_LABEL.getFill() ?? undefined,
-          stroke: SEGMENT_LABEL.getStroke() ?? undefined,
+          font: '700 12px "IBM Plex Mono", monospace',
+          fill: new Fill({ color: "#00e5ff" }),
+          stroke: new Stroke({ color: "#090d16", width: 3.5 }),
           overflow: true,
         }),
-        zIndex: 20,
+        zIndex: 22,
       }),
     );
   }
@@ -2137,12 +2215,24 @@ export function reverseMeasurement(featureId?: string): boolean {
     : features[0];
 
   const geom = target.getGeometry();
-  if (!geom || geom.getType() !== "LineString") return false;
+  if (!geom) return false;
 
-  const line = geom as LineString;
-  const coords = line.getCoordinates();
-  coords.reverse();
-  line.setCoordinates(coords);
+  const type = geom.getType();
+  if (type === "LineString") {
+    const line = geom as LineString;
+    const coords = line.getCoordinates();
+    coords.reverse();
+    line.setCoordinates(coords);
+  } else if (type === "Polygon") {
+    const poly = geom as Polygon;
+    const rings = poly.getCoordinates();
+    if (rings.length > 0) {
+      rings[0].reverse();
+      poly.setCoordinates(rings);
+    }
+  } else {
+    return false;
+  }
 
   const mode = useProjectStore.getState().measureMode;
   useProjectStore
@@ -2230,9 +2320,9 @@ export function clearMeasurement(): void {
   useMapStore.getState().setMeasureContextMenu(null);
 }
 
-/** Resumes or ensures drawing tool is active to draw additional measurement lines. */
-export function resumeMeasurement(): void {
-  useProjectStore.getState().setMeasureMode("distance");
+/** Resumes or ensures drawing tool is active to draw additional measurement lines or polygons. */
+export function resumeMeasurement(mode?: "distance" | "area"): void {
+  useProjectStore.getState().setMeasureMode(mode ?? "distance");
   if (activeDrawInteraction) {
     activeDrawInteraction.setActive(true);
   }

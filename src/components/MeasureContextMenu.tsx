@@ -82,6 +82,10 @@ export function MeasureContextMenu() {
     }
   };
 
+  const isPolygon = menu.geomType === "Polygon";
+  const Icon = isPolygon ? Hexagon : Ruler;
+  const isMulti = menu.totalLinesCount && menu.totalLinesCount > 1;
+
   const handleCopyDistance = () => {
     let text = menu.formattedDistance;
     if (menu.formattedNauticalMiles) {
@@ -90,14 +94,25 @@ export function MeasureContextMenu() {
     if (menu.formattedMiles) {
       text += ` · ${menu.formattedMiles}`;
     }
-    copyToClipboard(text, "distance", "distance");
+    copyToClipboard(text, isPolygon ? "perimeter" : "distance", "distance");
+  };
+
+  const handleCopyArea = () => {
+    let text = menu.formattedArea ?? "";
+    if (menu.formattedHectares) {
+      text += ` (${menu.formattedHectares})`;
+    }
+    if (menu.formattedAcres) {
+      text += ` · ${menu.formattedAcres}`;
+    }
+    copyToClipboard(text, "area", "area");
   };
 
   const handleCopyCoordinates = () => {
     const text = menu.coords
       .map(([lon, lat]) => `${lat.toFixed(6)}, ${lon.toFixed(6)}`)
       .join("\n");
-    copyToClipboard(text, `${menu.vertexCount} coordinate pairs`, "coords");
+    copyToClipboard(text, `${menu.vertexCount} coordinates`, "coords");
   };
 
   const handleCopyGeoJson = () => {
@@ -105,14 +120,26 @@ export function MeasureContextMenu() {
       type: "Feature",
       geometry: {
         type: menu.geomType,
-        coordinates: menu.coords,
+        coordinates: isPolygon ? [menu.coords] : menu.coords,
       },
       properties: {
         feature_id: menu.featureId,
-        line_index: menu.lineIndex,
-        total_lines: menu.totalLinesCount,
-        distance_meters: menu.distanceMeters,
-        formatted_distance: menu.formattedDistance,
+        index: menu.lineIndex,
+        total_features: menu.totalLinesCount,
+        ...(isPolygon
+          ? {
+              area_sq_meters: menu.areaSqMeters,
+              formatted_area: menu.formattedArea,
+              formatted_hectares: menu.formattedHectares,
+              formatted_acres: menu.formattedAcres,
+              perimeter_meters: menu.distanceMeters,
+              formatted_perimeter: menu.formattedDistance,
+              centroid: menu.centroid,
+            }
+          : {
+              distance_meters: menu.distanceMeters,
+              formatted_distance: menu.formattedDistance,
+            }),
         vertices: menu.vertexCount,
       },
     };
@@ -121,7 +148,7 @@ export function MeasureContextMenu() {
 
   const handleCopyWkt = () => {
     let wkt: string;
-    if (menu.geomType === "Polygon") {
+    if (isPolygon) {
       const ring = [...menu.coords];
       if (
         ring.length > 0 &&
@@ -140,7 +167,7 @@ export function MeasureContextMenu() {
   const handleReverse = () => {
     const success = reverseMeasurement(menu.featureId);
     if (success) {
-      notify("Reversed line direction");
+      notify(isPolygon ? "Reversed polygon ring vertices" : "Reversed line direction");
     }
     setMenu(null);
   };
@@ -151,14 +178,18 @@ export function MeasureContextMenu() {
   };
 
   const handleInsertAnother = () => {
-    resumeMeasurement();
-    notify("Ready: click map to draw another measurement line");
+    resumeMeasurement(isPolygon ? "area" : "distance");
+    notify(
+      isPolygon
+        ? "Ready: click map to plot another polygon"
+        : "Ready: click map to draw another measurement line",
+    );
     setMenu(null);
   };
 
   const handleDeleteThisLine = () => {
     deleteMeasurementFeature(menu.featureId);
-    notify("Measurement line deleted");
+    notify(isPolygon ? "Polygon deleted" : "Measurement line deleted");
     setMenu(null);
   };
 
@@ -167,9 +198,6 @@ export function MeasureContextMenu() {
     notify("All measurements cleared");
     setMenu(null);
   };
-
-  const Icon = menu.geomType === "Polygon" ? Hexagon : Ruler;
-  const isMulti = menu.totalLinesCount && menu.totalLinesCount > 1;
 
   return (
     <div
@@ -185,30 +213,60 @@ export function MeasureContextMenu() {
         <div className="flex flex-col min-w-0 flex-1">
           <div className="flex items-center gap-1.5 truncate">
             <span className="font-semibold text-ink truncate text-[11.5px]">
-              {menu.formattedDistance}
+              {isPolygon ? (menu.formattedArea ?? menu.formattedDistance) : menu.formattedDistance}
             </span>
-            {menu.formattedArea && (
+            {isPolygon && menu.formattedHectares && (
+              <span className="text-[10px] text-accent/90">· {menu.formattedHectares}</span>
+            )}
+            {!isPolygon && menu.formattedArea && (
               <span className="text-[10px] text-ink-muted">· {menu.formattedArea}</span>
             )}
             {isMulti && (
               <span className="ml-auto rounded-[2px] bg-accent/15 px-1 py-0.5 text-[9px] font-semibold text-accent">
-                Line #{menu.lineIndex ?? 1}
+                {isPolygon ? "Polygon" : "Line"} #{menu.lineIndex ?? 1}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1 text-[9px] text-ink-muted">
-            {menu.formattedNauticalMiles && (
-              <span>{menu.formattedNauticalMiles}</span>
+          <div className="flex items-center gap-1 text-[9px] text-ink-muted truncate">
+            {isPolygon ? (
+              <>
+                {menu.formattedAcres && <span>{menu.formattedAcres}</span>}
+                <span>· Perim: {menu.formattedDistance}</span>
+                <span>· {menu.vertexCount} pts</span>
+              </>
+            ) : (
+              <>
+                {menu.formattedNauticalMiles && (
+                  <span>{menu.formattedNauticalMiles}</span>
+                )}
+                {menu.formattedMiles && <span>· {menu.formattedMiles}</span>}
+                <span>· {menu.vertexCount} pts</span>
+                {isMulti && <span>· of {menu.totalLinesCount} total</span>}
+              </>
             )}
-            {menu.formattedMiles && <span>· {menu.formattedMiles}</span>}
-            <span>· {menu.vertexCount} pts</span>
-            {isMulti && <span>· of {menu.totalLinesCount} total</span>}
           </div>
         </div>
       </div>
 
       {/* Menu options */}
       <div className="flex flex-col py-0.5">
+        {isPolygon && menu.formattedArea && (
+          <button
+            type="button"
+            role="menuitem"
+            className="flex items-center gap-2 rounded-[2px] px-2 py-1.5 text-left text-[10.5px] hover:bg-[#1e2330] hover:text-accent transition-colors"
+            onClick={handleCopyArea}
+          >
+            {copiedKey === "area" ? (
+              <Check size={12} className="text-ok flex-none" />
+            ) : (
+              <Copy size={12} className="text-ink-muted flex-none" />
+            )}
+            <span className="flex-1">Copy Area</span>
+            <span className="text-[9px] text-accent font-semibold">Area</span>
+          </button>
+        )}
+
         <button
           type="button"
           role="menuitem"
@@ -220,8 +278,8 @@ export function MeasureContextMenu() {
           ) : (
             <Copy size={12} className="text-ink-muted flex-none" />
           )}
-          <span className="flex-1">Copy Distance</span>
-          <span className="text-[9px] text-ink-muted">Value</span>
+          <span className="flex-1">{isPolygon ? "Copy Perimeter" : "Copy Distance"}</span>
+          <span className="text-[9px] text-ink-muted">{isPolygon ? "Perim" : "Value"}</span>
         </button>
 
         <button
@@ -235,7 +293,7 @@ export function MeasureContextMenu() {
           ) : (
             <List size={12} className="text-ink-muted flex-none" />
           )}
-          <span className="flex-1">Copy Lat/Lon Pairs</span>
+          <span className="flex-1">{isPolygon ? "Copy Ring Vertices" : "Copy Lat/Lon Pairs"}</span>
           <span className="text-[9px] text-ink-muted">Text</span>
         </button>
 
@@ -271,7 +329,7 @@ export function MeasureContextMenu() {
 
         <div className="my-1 border-t border-[#232733]" />
 
-        {/* Option to insert multiple measurement lines */}
+        {/* Option to insert multiple measurement shapes */}
         <button
           type="button"
           role="menuitem"
@@ -279,7 +337,9 @@ export function MeasureContextMenu() {
           onClick={handleInsertAnother}
         >
           <PlusCircle size={12} className="text-accent flex-none" />
-          <span className="flex-1 font-semibold text-accent">Insert Another Line</span>
+          <span className="flex-1 font-semibold text-accent">
+            {isPolygon ? "Insert Another Polygon" : "Insert Another Line"}
+          </span>
           <span className="text-[9px] text-accent/80 font-mono">+New</span>
         </button>
 
@@ -313,7 +373,11 @@ export function MeasureContextMenu() {
         >
           <Trash2 size={12} className="text-critical flex-none" />
           <span className="flex-1">
-            {isMulti ? `Delete Line #${menu.lineIndex ?? 1}` : "Delete Measurement"}
+            {isMulti
+              ? `Delete ${isPolygon ? "Polygon" : "Line"} #${menu.lineIndex ?? 1}`
+              : isPolygon
+                ? "Delete Polygon"
+                : "Delete Measurement"}
           </span>
           <span className="text-[9px] opacity-75">Del</span>
         </button>
@@ -326,7 +390,9 @@ export function MeasureContextMenu() {
             onClick={handleClearAll}
           >
             <Trash2 size={12} className="text-critical/80 flex-none" />
-            <span className="flex-1">Clear All Lines ({menu.totalLinesCount})</span>
+            <span className="flex-1">
+              Clear All {isPolygon ? "Polygons" : "Lines"} ({menu.totalLinesCount})
+            </span>
           </button>
         )}
       </div>

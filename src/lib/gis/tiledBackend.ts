@@ -377,7 +377,13 @@ function computeClientGeodesicFallback(
 
   if (isPolygon && coords.length >= 3) {
     perimeterM = totalDist;
-    // Simple polygon area on sphere
+    const R = 6371008.8; // WGS 84 mean radius
+    const isClosed =
+      coords.length > 2 &&
+      coords[0][0] === coords[coords.length - 1][0] &&
+      coords[0][1] === coords[coords.length - 1][1];
+    const pts = isClosed ? coords.slice(0, -1) : coords;
+
     let sumLon = 0;
     let sumLat = 0;
     for (const c of coords) {
@@ -385,7 +391,20 @@ function computeClientGeodesicFallback(
       sumLat += c[1];
     }
     centroid = [sumLon / coords.length, sumLat / coords.length];
-    areaSqM = 0; // rough placeholder for web fallback
+
+    if (pts.length >= 3) {
+      let totalAngle = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const p1 = pts[i];
+        const p2 = pts[(i + 1) % pts.length];
+        const p1Lon = toRad(p1[0]);
+        const p1Lat = toRad(p1[1]);
+        const p2Lon = toRad(p2[0]);
+        const p2Lat = toRad(p2[1]);
+        totalAngle += (p2Lon - p1Lon) * (2 + Math.sin(p1Lat) + Math.sin(p2Lat));
+      }
+      areaSqM = Math.abs((totalAngle * R * R) / 2.0);
+    }
   }
 
   return {

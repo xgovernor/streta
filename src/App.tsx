@@ -22,7 +22,6 @@ const PANEL_KEYS: Record<string, PanelId> = {
   d: "data",
   l: "data",
   t: "table",
-  a: "measure",
   b: "bookmarks",
 };
 
@@ -134,6 +133,22 @@ function App() {
           nextMode === "distance"
             ? "Measurement tool active: click map to measure"
             : "Measurement tool paused",
+        );
+        return;
+      }
+
+      if (event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        const currentMode = useProjectStore.getState().measureMode;
+        const nextMode = currentMode === "area" ? "off" : "area";
+        useProjectStore.getState().setMeasureMode(nextMode);
+        if (ui.rightPanel === "measure") {
+          ui.closePanel();
+        }
+        ui.notify(
+          nextMode === "area"
+            ? "Area tool active: click map to plot polygon ring"
+            : "Area measurement tool paused",
         );
         return;
       }

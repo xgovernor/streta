@@ -26,7 +26,11 @@ export interface MeasureContextMenuState {
   formattedDistance: string;
   formattedNauticalMiles?: string;
   formattedMiles?: string;
+  areaSqMeters?: number;
   formattedArea?: string;
+  formattedHectares?: string;
+  formattedAcres?: string;
+  centroid?: [number, number];
   vertexCount: number;
 }
 

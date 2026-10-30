@@ -4,7 +4,6 @@ import {
   Copy,
   Crosshair,
   Eraser,
-  Hexagon,
   Layers,
   Loader2,
   MapPin,
@@ -15,7 +14,6 @@ import {
 } from "lucide-react";
 import {
   clearBufferOverlay,
-  clearMeasureSketch,
   flyToCoordinate,
   measureCoordinates,
   renderBooleanOverlay,
@@ -24,7 +22,7 @@ import {
   setBufferPicker,
 } from "../../map/mapController";
 import { cx } from "../../lib/cx";
-import { formatArea, formatDistance } from "../../lib/format";
+import { formatDistance } from "../../lib/format";
 import {
   computeElevationProfile,
   polygonBooleanOperation,
@@ -55,7 +53,6 @@ import {
 import { ElevationChart } from "../analysis/ElevationChart";
 
 const MODES = [
-  { id: "area" as const, label: "Area", icon: Hexagon },
   { id: "elevation" as const, label: "Elev", icon: Mountain },
   { id: "buffer" as const, label: "Buffer", icon: Radar },
   { id: "knn" as const, label: "k-NN", icon: Crosshair },
@@ -80,15 +77,14 @@ export function MeasurePanel() {
   const notify = useUiStore((state) => state.notify);
   const measureMode = useProjectStore((state) => state.measureMode);
   const setMeasureMode = useProjectStore((state) => state.setMeasureMode);
-  const summary = useProjectStore((state) => state.measureSummary);
   const layers = useProjectStore((state) => state.layers);
 
   const activeTab = useUiStore((state) => state.analysisTab);
   const setActiveTab = useUiStore((state) => state.setAnalysisTab);
 
   useEffect(() => {
-    if (activeTab === "distance") {
-      setActiveTab("area");
+    if (activeTab === "distance" || activeTab === "area") {
+      setActiveTab("elevation");
     }
   }, [activeTab, setActiveTab]);
 
@@ -120,25 +116,6 @@ export function MeasurePanel() {
   const [booleanLoading, setBooleanLoading] = useState(false);
   const [booleanResult, setBooleanResult] = useState<BooleanOpSummary | null>(null);
 
-  const copyVertices = async () => {
-    const coordinates = measureCoordinates();
-
-    if (!coordinates.length) {
-      notify("Nothing measured yet");
-      return;
-    }
-
-    const text = coordinates
-      .map(([lon, lat]) => `${lat.toFixed(5)}, ${lon.toFixed(5)}`)
-      .join("\n");
-
-    try {
-      await navigator.clipboard.writeText(text);
-      notify(`${coordinates.length} vertices copied`);
-    } catch {
-      notify("Clipboard is not available in this window.");
-    }
-  };
 
   const handleSliceElevation = async () => {
     const coords = measureCoordinates();
@@ -393,16 +370,8 @@ export function MeasurePanel() {
 
   const handleTabChange = (tab: AnalysisTab) => {
     setActiveTab(tab);
-    if (tab === "distance") {
-      setMeasureMode("distance");
-    } else if (tab === "area") {
-      setMeasureMode("area");
-    } else {
-      setMeasureMode("off");
-    }
+    setMeasureMode("off");
   };
-
-  const details = summary?.geodesicDetails;
 
   return (
     <PanelShell
@@ -432,127 +401,28 @@ export function MeasurePanel() {
     >
       {/* Tab Switcher */}
       <SectionLabel>Analytical Tool</SectionLabel>
-      <div className="grid grid-cols-5 gap-0.5 rounded-[2px] border border-line bg-tint p-0.5">
+      <div className="grid grid-cols-4 gap-0.5 rounded-[2px] border border-line bg-tint p-0.5">
         {MODES.map((mode) => {
           const Icon = mode.icon;
           const active = activeTab === mode.id;
-
           return (
             <button
               key={mode.id}
               type="button"
               className={cx(
-                "flex h-[26px] items-center justify-center gap-[4px] rounded-[2px] text-[10px] font-semibold transition-colors",
+                "flex items-center justify-center gap-1 rounded-[2px] py-1.5 text-[11px] font-semibold transition-colors",
                 active
-                  ? "bg-solid text-ink shadow-sm"
-                  : "text-ink-muted hover:text-ink",
+                  ? "bg-solid text-ink border border-line shadow-sm"
+                  : "text-ink-muted hover:text-ink hover:bg-solid/40",
               )}
-              aria-pressed={active}
               onClick={() => handleTabChange(mode.id)}
             >
-              <Icon size={12} strokeWidth={2} aria-hidden="true" />
-              {mode.label}
+              <Icon size={12} strokeWidth={2} />
+              <span>{mode.label}</span>
             </button>
           );
         })}
       </div>
-
-      {/* ==================================================================== */}
-      {/* 2. AREA TAB */}
-      {/* ==================================================================== */}
-      {activeTab === "area" && (
-        <div className="flex flex-col gap-3">
-          <SectionLabel>Geodesic Polygon Metrics</SectionLabel>
-          <div className="flex flex-col gap-[6px] rounded-[2px] border border-line bg-tint p-2.5">
-            <KeyValue
-              label="Area (sq km)"
-              value={
-                details?.area_sq_km != null ? (
-                  <span className="font-mono font-semibold text-ink">
-                    {details.area_sq_km.toFixed(3)} km²
-                  </span>
-                ) : summary ? (
-                  formatArea(summary.area)
-                ) : (
-                  "—"
-                )
-              }
-            />
-            {details?.area_hectares != null && (
-              <KeyValue
-                label="Hectares"
-                value={
-                  <span className="font-mono text-ink">
-                    {details.area_hectares.toFixed(2)} ha
-                  </span>
-                }
-              />
-            )}
-            {details?.area_acres != null && (
-              <KeyValue
-                label="Acres"
-                value={
-                  <span className="font-mono text-ink">
-                    {details.area_acres.toFixed(2)} ac
-                  </span>
-                }
-              />
-            )}
-            <KeyValue
-              label="Perimeter"
-              value={
-                details?.perimeter_m != null ? (
-                  formatDistance(details.perimeter_m)
-                ) : summary ? (
-                  formatDistance(summary.distance)
-                ) : (
-                  "—"
-                )
-              }
-            />
-            {details?.centroid && (
-              <KeyValue
-                label="Centroid"
-                value={
-                  <span className="font-mono text-[9.5px] text-ink-soft">
-                    {details.centroid[1].toFixed(4)}°N, {details.centroid[0].toFixed(4)}°E
-                  </span>
-                }
-              />
-            )}
-            <KeyValue
-              label="Vertices"
-              value={summary ? `${summary.vertices}` : "—"}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              onClick={() => void copyVertices()}
-            >
-              <Copy size={13} strokeWidth={1.9} aria-hidden="true" />
-              Copy polygon
-            </button>
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              onClick={() => {
-                clearMeasureSketch();
-                notify("Measurement cleared");
-              }}
-            >
-              <Eraser size={13} strokeWidth={1.9} aria-hidden="true" />
-              Clear
-            </button>
-          </div>
-
-          <InfoNote>
-            Click to plot polygon vertices, double-click to close ring. Spherical ellipsoidal area accounts for Earth's curvature across arbitrary latitudes without planar distortion.
-          </InfoNote>
-        </div>
-      )}
 
       {/* ==================================================================== */}
       {/* 3. ELEVATION TAB */}

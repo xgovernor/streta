@@ -30,15 +30,14 @@ export function RightRibbon() {
   const measureMode = useProjectStore((state) => state.measureMode);
   const setMeasureModeDispatch = useProjectStore((state) => state.setMeasureMode);
 
-  const handleTool = (tab: AnalysisTab, measure?: "distance" | "area") => {
+  const handleTool = (tab: AnalysisTab) => {
     if (rightPanel === "measure" && analysisTab === tab) {
       togglePanel("measure");
       setMeasureModeDispatch("off");
       return;
     }
     openAnalysisTab(tab);
-    if (measure) setMeasureModeDispatch(measure);
-    else setMeasureModeDispatch("off");
+    setMeasureModeDispatch("off");
   };
 
   const handleDistanceTool = () => {
@@ -46,6 +45,17 @@ export function RightRibbon() {
       setMeasureModeDispatch("off");
     } else {
       setMeasureModeDispatch("distance");
+      if (rightPanel === "measure") {
+        closePanel();
+      }
+    }
+  };
+
+  const handleAreaTool = () => {
+    if (measureMode === "area") {
+      setMeasureModeDispatch("off");
+    } else {
+      setMeasureModeDispatch("area");
       if (rightPanel === "measure") {
         closePanel();
       }
@@ -66,8 +76,8 @@ export function RightRibbon() {
       label: "Polygon Area & Perimeter",
       icon: Hexagon,
       shortcut: "A",
-      isActive: rightPanel === "measure" && analysisTab === "area",
-      action: () => handleTool("area", "area"),
+      isActive: measureMode === "area",
+      action: handleAreaTool,
     },
     {
       id: "elevation",

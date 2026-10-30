@@ -138,7 +138,7 @@ export const useUiStore = create<UiState>()(
       rightPanel: null,
       lastDock: null,
       alertsOpen: false,
-      analysisTab: "area",
+      analysisTab: "elevation",
       ...DEFAULT_PREFERENCES,
       toast: null,
       snipMode: false,

@@ -153,26 +153,34 @@ export function StatusBar() {
           )}
           title={
             measureMode !== "off"
-              ? "Measurement tool active — click map to measure, right-click line for options"
-              : "Measurements on map — click M to add more, right-click line for options"
+              ? measureMode === "area"
+                ? "Polygon area tool active — click map to plot ring, double-click to close"
+                : "Distance tool active — click map to measure, right-click line for options"
+              : "Measurements on map — click M / A to add more, right-click shape for options"
           }
         >
           <span className={LABEL}>
-            Measure
+            {measureSummary?.mode === "area" || measureMode === "area" ? "Area" : "Measure"}
             {measureSummary?.lineCount && measureSummary.lineCount > 1
-              ? ` (${measureSummary.lineCount} lines)`
+              ? ` (${measureSummary.lineCount} ${measureSummary.mode === "area" ? "polygons" : "lines"})`
               : ""}
           </span>
           {measureSummary ? (
             <>
-              {measureSummary.mode === "area" && (
+              {measureSummary.mode === "area" ? (
+                <>
+                  <span className="[font-variant-numeric:tabular-nums] font-semibold">
+                    {formatArea(measureSummary.area)}
+                  </span>
+                  <span className="text-ink-muted text-[10px]">
+                    (Perim: {formatDistance(measureSummary.distance)})
+                  </span>
+                </>
+              ) : (
                 <span className="[font-variant-numeric:tabular-nums]">
-                  {formatArea(measureSummary.area)}
+                  {formatDistance(measureSummary.distance)}
                 </span>
               )}
-              <span className="[font-variant-numeric:tabular-nums]">
-                {formatDistance(measureSummary.distance)}
-              </span>
               <button
                 type="button"
                 className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded-[2px] text-ink-muted hover:bg-tint hover:text-ink transition-colors cursor-pointer"
@@ -187,7 +195,9 @@ export function StatusBar() {
             </>
           ) : (
             <span className="text-accent/80 animate-pulse text-[10.5px]">
-              Click map to measure
+              {measureMode === "area"
+                ? "Click map to plot polygon (double-click to close)"
+                : "Click map to measure"}
             </span>
           )}
         </span>
