@@ -1,7 +1,5 @@
 use tauri::State;
 use serde_json::Value;
-use std::fs::File;
-use std::io::Read;
 use super::tiles::SharedDatasetStore;
 
 #[tauri::command]
@@ -27,22 +25,29 @@ pub fn load_file_layer(
     dataset_id: String,
     file_path: String,
 ) -> Result<serde_json::Value, String> {
-    let mut file = File::open(&file_path)
-        .map_err(|e| format!("Could not open file '{file_path}': {e}"))?;
-
-    let mut content = String::new();
-    file.read_to_string(&mut content)
-        .map_err(|e| format!("Could not read file '{file_path}': {e}"))?;
-
     let mut guard = store.write().map_err(|e| e.to_string())?;
-    let count = guard.insert_geojson(&dataset_id, &content)?;
+    let count = guard.insert_spatial_file(&dataset_id, &file_path)?;
+    let bounds = guard.get_dataset_bounds_4326(&dataset_id);
+
+    let fc = guard.get_dataset_feature_collection(&dataset_id);
 
     Ok(serde_json::json!({
         "success": true,
         "dataset_id": dataset_id,
         "feature_count": count,
-        "tile_url": format!("strata://tiles/{dataset_id}/{{z}}/{{x}}/{{y}}.pbf")
+        "bounds": bounds,
+        "tile_url": format!("strata://tiles/{dataset_id}/{{z}}/{{x}}/{{y}}.pbf"),
+        "feature_collection": fc
     }))
+}
+
+#[tauri::command]
+pub fn load_spatial_dataset_native(
+    store: State<'_, SharedDatasetStore>,
+    dataset_id: String,
+    file_path: String,
+) -> Result<serde_json::Value, String> {
+    load_file_layer(store, dataset_id, file_path)
 }
 
 #[tauri::command]

@@ -73,6 +73,7 @@ import {
   clearTelemetryLayers,
   displayFlightTrail,
   clearFlightTrails,
+  isTelemetryLayer,
 } from "./webglTelemetry";
 import { useTelemetryStore } from "../state/telemetryStore";
 
@@ -387,12 +388,14 @@ function createBasemapLayer(
   if (basemap.kind === "raster") {
     return new TileLayer({
       visible: active,
+      preload: 2,
       source: new XYZ({
         urls: basemap.urls,
         attributions: basemap.attribution.map((item) => item.label),
         // Past this zoom the service has no new tiles, so OpenLayers scales
         // the deepest ones instead of requesting pages that do not exist.
         maxZoom: basemap.maxZoom,
+        cacheSize: 4096,
       }),
       zIndex: BASEMAP_Z,
       properties,
@@ -544,10 +547,13 @@ export function mountMap(target: HTMLElement): () => void {
       if (!binding) {
         if (isMvt) {
           const vtLayer = new VectorTileLayer({
+            preload: 2,
+            renderBuffer: 256,
             source: new VectorTileSource({
               format: new MVT({ idProperty: "id" }),
               url: tileUrl,
               maxZoom: 22,
+              cacheSize: 4096,
             }),
             style: createDatasetStyle(layer, isSelectedIn(layer.id)),
             declutter: true,
@@ -586,10 +592,13 @@ export function mountMap(target: HTMLElement): () => void {
           map.removeLayer(binding.layer);
           if (isMvt) {
             const vtLayer = new VectorTileLayer({
+              preload: 2,
+              renderBuffer: 256,
               source: new VectorTileSource({
                 format: new MVT({ idProperty: "id" }),
                 url: tileUrl,
                 maxZoom: 22,
+                cacheSize: 4096,
               }),
               style: createDatasetStyle(layer, isSelectedIn(layer.id)),
               declutter: true,
@@ -692,8 +701,76 @@ export function mountMap(target: HTMLElement): () => void {
     });
   };
 
+  let lastCenter: [number, number] | null = null;
+  let lastCenterTime = 0;
+  let prefetchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  const trackMomentumAndPrefetch = () => {
+    emitCamera();
+    const currentCenter = view.getCenter();
+    const now = performance.now();
+    if (!currentCenter) return;
+
+    if (lastCenter && now - lastCenterTime > 16 && now - lastCenterTime < 300) {
+      const dt = (now - lastCenterTime) / 1000;
+      const vx = (currentCenter[0] - lastCenter[0]) / dt;
+      const vy = (currentCenter[1] - lastCenter[1]) / dt;
+      const speed = Math.hypot(vx, vy);
+
+      // If camera is actively panning (> 250 meters/sec in EPSG:3857)
+      if (speed > 250) {
+        if (prefetchDebounce) clearTimeout(prefetchDebounce);
+        prefetchDebounce = setTimeout(() => {
+          // Look ahead 0.7s along velocity vector
+          const futureCenter: [number, number] = [
+            currentCenter[0] + vx * 0.7,
+            currentCenter[1] + vy * 0.7,
+          ];
+          const res = view.getResolution();
+          const size = map.getSize();
+          if (!res || !size) return;
+
+          const halfW = (size[0] * res) / 2;
+          const halfH = (size[1] * res) / 2;
+          const futureExtent = [
+            futureCenter[0] - halfW,
+            futureCenter[1] - halfH,
+            futureCenter[0] + halfW,
+            futureCenter[1] + halfH,
+          ];
+
+          try {
+            for (const binding of bindings.values()) {
+              if (binding.layer instanceof VectorTileLayer) {
+                const src = binding.layer.getSource();
+                if (src) {
+                  const tileGrid = src.getTileGrid();
+                  const proj = view.getProjection();
+                  const z = tileGrid?.getZForResolution(res) ?? Math.round(view.getZoom() ?? 0);
+                  if (tileGrid && proj) {
+                    tileGrid.forEachTileCoord(futureExtent, z, (tileCoord) => {
+                      const tile = src.getTile(tileCoord[0], tileCoord[1], tileCoord[2], 1, proj);
+                      if (tile && typeof (tile as { load?: () => void }).load === "function") {
+                        (tile as { load: () => void }).load();
+                      }
+                    });
+                  }
+                }
+              }
+            }
+          } catch {
+            // Proactive predictive prefetching is best-effort
+          }
+        }, 40);
+      }
+    }
+
+    lastCenter = [currentCenter[0], currentCenter[1]];
+    lastCenterTime = now;
+  };
+
   const cameraKeys: EventsKey[] = [
-    view.on("change:center", emitCamera),
+    view.on("change:center", trackMomentumAndPrefetch),
     view.on("change:resolution", emitCamera),
     view.on("change:rotation", emitCamera),
   ];
@@ -781,7 +858,7 @@ export function mountMap(target: HTMLElement): () => void {
         }
         return false;
       },
-      { hitTolerance: 10 }
+      { hitTolerance: 10, layerFilter: isTelemetryLayer }
     );
 
     const telem = hitTelemetry as {
@@ -1021,7 +1098,7 @@ export function mountMap(target: HTMLElement): () => void {
         }
         return false;
       },
-      { hitTolerance: 8 }
+      { hitTolerance: 8, layerFilter: isTelemetryLayer }
     );
 
     if (hitTelemetry) {
@@ -1338,6 +1415,10 @@ export function mountMap(target: HTMLElement): () => void {
       clearTimeout(moveEndTimer);
       moveEndTimer = null;
     }
+    if (prefetchDebounce) {
+      clearTimeout(prefetchDebounce);
+      prefetchDebounce = null;
+    }
     if (autoRefreshTimer) {
       clearInterval(autoRefreshTimer);
       autoRefreshTimer = null;
@@ -1352,6 +1433,10 @@ export function mountMap(target: HTMLElement): () => void {
     if (leaveTimer) {
       clearTimeout(leaveTimer);
       leaveTimer = null;
+    }
+    if (prefetchDebounce) {
+      clearTimeout(prefetchDebounce);
+      prefetchDebounce = null;
     }
     hoveredTarget = null;
     isOverPopup = false;

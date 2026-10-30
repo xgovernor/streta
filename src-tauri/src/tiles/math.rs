@@ -46,6 +46,9 @@ impl BBox3857 {
 /// Convert longitude & latitude (EPSG:4326) to Web Mercator (EPSG:3857) meters
 pub fn lon_lat_to_epsg3857(lon: f64, lat: f64) -> (f64, f64) {
     let x = lon * HALF_CIRCUMFERENCE / 180.0;
+    if lat == 0.0 {
+        return (x, 0.0);
+    }
     let clamped_lat = lat.clamp(-85.0511287798066, 85.0511287798066);
     let rad = clamped_lat * PI / 180.0;
     let y = ((rad / 2.0 + PI / 4.0).tan()).ln() * (HALF_CIRCUMFERENCE / PI);
@@ -55,6 +58,9 @@ pub fn lon_lat_to_epsg3857(lon: f64, lat: f64) -> (f64, f64) {
 /// Convert Web Mercator (EPSG:3857) meters to longitude & latitude (EPSG:4326)
 pub fn epsg3857_to_lon_lat(x: f64, y: f64) -> (f64, f64) {
     let lon = (x / HALF_CIRCUMFERENCE) * 180.0;
+    if y == 0.0 {
+        return (lon, 0.0);
+    }
     let lat = ((y / (HALF_CIRCUMFERENCE / PI)).exp().atan() - PI / 4.0) * 2.0 * 180.0 / PI;
     (lon, lat)
 }

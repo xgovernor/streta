@@ -49,6 +49,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::register_geojson_layer,
             commands::load_file_layer,
+            commands::load_spatial_dataset_native,
             commands::get_layer_records,
             commands::remove_layer,
             commands::has_layer,

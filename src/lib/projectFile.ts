@@ -10,6 +10,7 @@ import { eachPosition } from "./gis/geometry";
 import {
   DataError,
   guessFormat,
+  importGeoJsonValue,
   layerNameFromFile,
   parseGeoJson,
   toGeoJson,
@@ -29,7 +30,11 @@ import {
   readShapefileSet,
   type ShapefileSet,
 } from "./gis/shapefile";
-import { loadGeoParquetLayer } from "./gis/tiledBackend";
+import {
+  isTauriEnvironment,
+  loadGeoParquetLayer,
+  loadSpatialDatasetNative,
+} from "./gis/tiledBackend";
 
 
 import type {
@@ -399,6 +404,7 @@ function registerImports(
       features: result.features,
       crs,
       format: result.format,
+      tileUrl: result.tileUrl,
       source: source ?? fileName,
       color: paletteColor(0),
     })),
@@ -498,6 +504,7 @@ function planImports(files: OpenedFile[]): {
 
       if (extension === "shp") {
         set.parts.shp = file.bytes;
+        set.path = file.path;
       } else if (
         extension === "dbf" ||
         extension === "cpg" ||
@@ -560,7 +567,7 @@ function planImports(files: OpenedFile[]): {
       continue;
     }
 
-    jobs.push({ kind: "shapefile", set, source: set.name });
+    jobs.push({ kind: "shapefile", set, source: set.path ?? set.name });
   }
 
   for (const name of skipped) {
@@ -601,6 +608,19 @@ export async function importDatasetFiles(): Promise<DatasetImportSummary | null>
       }
 
       if (job.kind === "shapefile") {
+        if (
+          isTauriEnvironment() &&
+          job.source &&
+          (job.source.endsWith(".shp") || job.source.endsWith(".SHP"))
+        ) {
+          const res = await loadSpatialDatasetNative(job.source, job.set.name);
+          if (res?.feature_collection) {
+            const parsed = importGeoJsonValue(res.feature_collection);
+            parsed.tileUrl = res.tile_url;
+            outcomes.push(registerImport(parsed, job.set.name, job.source));
+            continue;
+          }
+        }
         outcomes.push(
           registerImport(readShapefileSet(job.set), job.set.name, job.source),
         );
@@ -608,6 +628,15 @@ export async function importDatasetFiles(): Promise<DatasetImportSummary | null>
       }
 
       if (job.kind === "gpkg") {
+        if (isTauriEnvironment() && job.source && !job.source.startsWith("data:")) {
+          const res = await loadSpatialDatasetNative(job.source, job.name);
+          if (res?.feature_collection) {
+            const parsed = importGeoJsonValue(res.feature_collection);
+            parsed.tileUrl = res.tile_url;
+            outcomes.push(registerImport(parsed, job.name, job.source));
+            continue;
+          }
+        }
         const result = await parseGeoPackage(job.bytes);
         outcomes.push(registerImport(result, job.name, job.source));
         continue;
@@ -619,13 +648,18 @@ export async function importDatasetFiles(): Promise<DatasetImportSummary | null>
             "GeoParquet files must be read from the local file system inside the desktop application.",
           );
         }
-        const res = await loadGeoParquetLayer(job.path);
-        if (!res || !res.feature_collection) {
+        const res = await loadSpatialDatasetNative(job.path, job.name);
+        if (res?.feature_collection) {
+          const parsed = importGeoJsonValue(res.feature_collection);
+          parsed.tileUrl = res.tile_url;
+          outcomes.push(registerImport(parsed, job.name, job.source));
+          continue;
+        }
+        const parquetRes = await loadGeoParquetLayer(job.path);
+        if (!parquetRes || !parquetRes.feature_collection) {
           throw new DataError(`Failed to decode GeoParquet file "${job.name}"`);
         }
-        const parsed = parseGeoJson(
-          JSON.stringify(res.feature_collection),
-        );
+        const parsed = importGeoJsonValue(parquetRes.feature_collection);
         outcomes.push(registerImport(parsed, job.name, job.source));
         continue;
       }

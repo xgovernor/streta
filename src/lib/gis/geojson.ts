@@ -17,6 +17,7 @@ export interface ImportResult {
   /** Suggested layer name, from the file's `name` member or the source name. */
   name: string | null;
   warnings: string[];
+  tileUrl?: string;
 }
 
 const CRS_MEMBER_MISSING = [

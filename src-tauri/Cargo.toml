@@ -32,7 +32,7 @@ flatgeobuf = "6.0"
 toml = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 chrono = { version = "0.4", features = ["serde"] }
-moka = { version = "0.12", features = ["future"] }
+moka = { version = "0.12", features = ["future", "sync"] }
 sgp4 = "2.4"
 bytemuck = { version = "1.21", features = ["derive"] }
 tokio = { version = "1", features = ["rt", "sync", "time", "net"] }
@@ -47,6 +47,7 @@ dotenvy = "0.15"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 jord = "0.20.0"
 aircraft_icao_country = "1.0.4"
+shapefile = "0.6"
 
 
 [dev-dependencies]

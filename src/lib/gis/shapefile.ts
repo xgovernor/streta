@@ -24,6 +24,7 @@ export interface ShapefileParts {
 
 export interface ShapefileSet {
   name: string;
+  path?: string | null;
   parts: ShapefileParts;
 }
 

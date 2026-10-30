@@ -5,6 +5,7 @@ import {
   registerGeoJsonWithRust,
   getLayerRecordsFromRust,
   hasLayerInRust,
+  loadSpatialDatasetNative,
 } from "./tiledBackend";
 
 describe("tiledBackend", () => {
@@ -26,6 +27,11 @@ describe("tiledBackend", () => {
         properties: { name: "Origin" },
       },
     ]);
+    expect(result).toBeNull();
+  });
+
+  it("loadSpatialDatasetNative returns null in non-Tauri environment", async () => {
+    const result = await loadSpatialDatasetNative("/path/to/data.gpkg");
     expect(result).toBeNull();
   });
 

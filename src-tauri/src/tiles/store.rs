@@ -44,17 +44,27 @@ pub struct Dataset {
     pub features: Vec<IndexedFeature>,
 }
 
-#[derive(Default)]
 pub struct DatasetStore {
     datasets: HashMap<String, Dataset>,
+    tile_cache: moka::sync::Cache<(String, u32, u32, u32), Arc<Vec<u8>>>,
 }
 
 pub type SharedDatasetStore = Arc<RwLock<DatasetStore>>;
+
+impl Default for DatasetStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl DatasetStore {
     pub fn new() -> Self {
         Self {
             datasets: HashMap::new(),
+            tile_cache: moka::sync::Cache::builder()
+                .max_capacity(10_000)
+                .time_to_idle(std::time::Duration::from_secs(600))
+                .build(),
         }
     }
 
@@ -117,6 +127,7 @@ impl DatasetStore {
         let count = indexed_features.len();
         let tree = RTree::bulk_load(indexed_features.clone());
 
+        self.tile_cache.invalidate_all();
         self.datasets.insert(
             dataset_id.to_string(),
             Dataset {
@@ -130,11 +141,87 @@ impl DatasetStore {
         Ok(count)
     }
 
+    pub fn insert_indexed_features(&mut self, dataset_id: &str, indexed_features: Vec<IndexedFeature>) -> usize {
+        let count = indexed_features.len();
+        let tree = RTree::bulk_load(indexed_features.clone());
+
+        self.tile_cache.invalidate_all();
+        self.datasets.insert(
+            dataset_id.to_string(),
+            Dataset {
+                id: dataset_id.to_string(),
+                name: dataset_id.to_string(),
+                tree,
+                features: indexed_features,
+            },
+        );
+
+        count
+    }
+
+    pub fn insert_gpkg(&mut self, dataset_id: &str, file_path: &str) -> Result<usize, String> {
+        let features = super::gpkg::read_gpkg_file(file_path)?;
+        Ok(self.insert_indexed_features(dataset_id, features))
+    }
+
+    pub fn insert_shapefile(&mut self, dataset_id: &str, file_path: &str) -> Result<usize, String> {
+        let features = super::shapefile_reader::read_shapefile(file_path)?;
+        Ok(self.insert_indexed_features(dataset_id, features))
+    }
+
+    pub fn insert_spatial_file(&mut self, dataset_id: &str, file_path: &str) -> Result<usize, String> {
+        let path = std::path::Path::new(file_path);
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+
+        match ext.as_str() {
+            "gpkg" => self.insert_gpkg(dataset_id, file_path),
+            "shp" => self.insert_shapefile(dataset_id, file_path),
+            "parquet" | "geoparquet" => {
+                let load_res = crate::analysis::load_geoparquet_as_geojson(file_path, None)?;
+                let geojson_str = serde_json::to_string(&load_res.feature_collection)
+                    .map_err(|e| e.to_string())?;
+                self.insert_geojson(dataset_id, &geojson_str)
+            }
+            "geojson" | "json" => {
+                let content = std::fs::read_to_string(file_path)
+                    .map_err(|e| format!("Could not read file '{file_path}': {e}"))?;
+                self.insert_geojson(dataset_id, &content)
+            }
+            _ => Err(format!("Unsupported spatial format: '.{}'", ext)),
+        }
+    }
+
+    pub fn get_dataset_bounds_4326(&self, dataset_id: &str) -> Option<[f64; 4]> {
+        let dataset = self.datasets.get(dataset_id)?;
+        if dataset.features.is_empty() {
+            return None;
+        }
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for f in &dataset.features {
+            if f.min_x < min_x { min_x = f.min_x; }
+            if f.min_y < min_y { min_y = f.min_y; }
+            if f.max_x > max_x { max_x = f.max_x; }
+            if f.max_y > max_y { max_y = f.max_y; }
+        }
+        let (min_lon, min_lat) = super::math::epsg3857_to_lon_lat(min_x, min_y);
+        let (max_lon, max_lat) = super::math::epsg3857_to_lon_lat(max_x, max_y);
+        Some([min_lon, min_lat, max_lon, max_lat])
+    }
+
+    pub fn get_dataset_feature_collection(&self, dataset_id: &str) -> Option<Value> {
+        let dataset = self.datasets.get(dataset_id)?;
+        Some(dataset_to_geojson_feature_collection(dataset))
+    }
+
     pub fn has_dataset(&self, dataset_id: &str) -> bool {
         self.datasets.contains_key(dataset_id)
     }
 
     pub fn clear_dataset(&mut self, dataset_id: &str) -> bool {
+        self.tile_cache.invalidate_all();
         self.datasets.remove(dataset_id).is_some()
     }
 
@@ -161,8 +248,13 @@ impl DatasetStore {
         results
     }
 
-    /// Renders an MVT tile for a dataset at (z, x, y).
+    /// Renders an MVT tile for a dataset at (z, x, y), utilizing LRU memory caching.
     pub fn render_tile(&self, dataset_id: &str, z: u32, x: u32, y: u32) -> Result<Vec<u8>, String> {
+        let cache_key = (dataset_id.to_string(), z, x, y);
+        if let Some(cached) = self.tile_cache.get(&cache_key) {
+            return Ok((*cached).clone());
+        }
+
         let dataset = self.datasets.get(dataset_id)
             .ok_or_else(|| format!("Dataset '{dataset_id}' not found"))?;
 
@@ -339,6 +431,7 @@ impl DatasetStore {
 
             // Tag feature ID
             let _ = mvt_feature.tag("_id", feat.id.as_str());
+            let _ = mvt_feature.tag("id", feat.id.as_str());
 
             // Add properties as tags
             for (k, v) in &feat.properties {
@@ -366,6 +459,7 @@ impl DatasetStore {
         }
 
         let bytes = current_layer.encode();
+        self.tile_cache.insert(cache_key, Arc::new(bytes.clone()));
         Ok(bytes)
     }
 
@@ -501,7 +595,7 @@ fn parse_coord(c: &Value) -> Result<[f64; 2], String> {
     Ok([lon, lat])
 }
 
-fn compute_bounds(geom: &Geometry3857) -> (f64, f64, f64, f64) {
+pub fn compute_bounds(geom: &Geometry3857) -> (f64, f64, f64, f64) {
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
@@ -532,6 +626,112 @@ fn compute_bounds(geom: &Geometry3857) -> (f64, f64, f64, f64) {
     }
 
     (min_x, min_y, max_x, max_y)
+}
+
+pub fn geometry3857_to_geojson_4326(geom: &Geometry3857) -> Value {
+    match geom {
+        Geometry3857::Point(pt) => {
+            let (lon, lat) = super::math::epsg3857_to_lon_lat(pt[0], pt[1]);
+            serde_json::json!({
+                "type": "Point",
+                "coordinates": [lon, lat]
+            })
+        }
+        Geometry3857::MultiPoint(pts) => {
+            let coords: Vec<[f64; 2]> = pts.iter()
+                .map(|p| {
+                    let (lon, lat) = super::math::epsg3857_to_lon_lat(p[0], p[1]);
+                    [lon, lat]
+                })
+                .collect();
+            serde_json::json!({
+                "type": "MultiPoint",
+                "coordinates": coords
+            })
+        }
+        Geometry3857::LineString(line) => {
+            let coords: Vec<[f64; 2]> = line.iter()
+                .map(|p| {
+                    let (lon, lat) = super::math::epsg3857_to_lon_lat(p[0], p[1]);
+                    [lon, lat]
+                })
+                .collect();
+            serde_json::json!({
+                "type": "LineString",
+                "coordinates": coords
+            })
+        }
+        Geometry3857::MultiLineString(lines) => {
+            let coords: Vec<Vec<[f64; 2]>> = lines.iter()
+                .map(|line| {
+                    line.iter()
+                        .map(|p| {
+                            let (lon, lat) = super::math::epsg3857_to_lon_lat(p[0], p[1]);
+                            [lon, lat]
+                        })
+                        .collect()
+                })
+                .collect();
+            serde_json::json!({
+                "type": "MultiLineString",
+                "coordinates": coords
+            })
+        }
+        Geometry3857::Polygon(rings) => {
+            let coords: Vec<Vec<[f64; 2]>> = rings.iter()
+                .map(|ring| {
+                    ring.iter()
+                        .map(|p| {
+                            let (lon, lat) = super::math::epsg3857_to_lon_lat(p[0], p[1]);
+                            [lon, lat]
+                        })
+                        .collect()
+                })
+                .collect();
+            serde_json::json!({
+                "type": "Polygon",
+                "coordinates": coords
+            })
+        }
+        Geometry3857::MultiPolygon(polys) => {
+            let coords: Vec<Vec<Vec<[f64; 2]>>> = polys.iter()
+                .map(|poly| {
+                    poly.iter()
+                        .map(|ring| {
+                            ring.iter()
+                                .map(|p| {
+                                    let (lon, lat) = super::math::epsg3857_to_lon_lat(p[0], p[1]);
+                                    [lon, lat]
+                                })
+                                .collect()
+                        })
+                        .collect()
+                })
+                .collect();
+            serde_json::json!({
+                "type": "MultiPolygon",
+                "coordinates": coords
+            })
+        }
+    }
+}
+
+pub fn dataset_to_geojson_feature_collection(dataset: &Dataset) -> Value {
+    let features: Vec<Value> = dataset.features.iter()
+        .map(|f| {
+            serde_json::json!({
+                "type": "Feature",
+                "id": f.id,
+                "geometry": geometry3857_to_geojson_4326(&f.geometry),
+                "properties": f.properties,
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "type": "FeatureCollection",
+        "features": features,
+    })
 }
 
 #[cfg(test)]
@@ -568,6 +768,10 @@ mod tests {
         // Tile (0, 0, 0) covers the whole world, so it should include both features
         let tile_bytes = store.render_tile("infra_test", 0, 0, 0).expect("Render tile failed");
         assert!(!tile_bytes.is_empty(), "MVT tile bytes should not be empty");
+
+        // Subsequent tile request should hit the LRU cache and return identical bytes
+        let cached_bytes = store.render_tile("infra_test", 0, 0, 0).expect("Cached render tile failed");
+        assert_eq!(tile_bytes, cached_bytes, "Cached tile bytes must match original");
 
         // Test pagination
         let records = store.get_records("infra_test", 0, 10, None).expect("Get records failed");

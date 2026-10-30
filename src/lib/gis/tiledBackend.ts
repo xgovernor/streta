@@ -98,6 +98,40 @@ export async function registerGeoJsonWithRust(
   }
 }
 
+export interface NativeSpatialDatasetResult {
+  success: boolean;
+  dataset_id: string;
+  feature_count: number;
+  bounds?: [number, number, number, number] | null;
+  tile_url: string;
+  feature_collection?: unknown | null;
+}
+
+/**
+ * Ingests a local spatial file (.gpkg, .shp, .parquet, .geojson, .json)
+ * natively via the Rust backend into the spatial R*-Tree store.
+ * Returns the dynamic vector tile URL (strata://tiles/{datasetId}/{z}/{x}/{y}.pbf).
+ */
+export async function loadSpatialDatasetNative(
+  filePath: string,
+  datasetId?: string,
+): Promise<NativeSpatialDatasetResult | null> {
+  if (!isTauriEnvironment()) {
+    return null;
+  }
+
+  const id = datasetId || filePath.replace(/^.*[\\/]/, "").replace(/\.[^.]+$/, "");
+  try {
+    return await invoke<NativeSpatialDatasetResult>("load_spatial_dataset_native", {
+      datasetId: id,
+      filePath,
+    });
+  } catch (err) {
+    console.error(`Failed to load spatial dataset "${filePath}" via Rust backend:`, err);
+    return null;
+  }
+}
+
 /**
  * Checks if a dataset is already indexed in the Rust backend.
  */
