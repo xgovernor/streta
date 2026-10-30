@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Car,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Flame,
@@ -134,7 +133,7 @@ export function LiveFeedsSection() {
   const [providerStatus, setProviderStatus] = useState<ApiProvidersStatus | null>(null);
 
   useEffect(() => {
-    void getApiProvidersStatus().then(setProviderStatus).catch(() => {});
+    void getApiProvidersStatus().then(setProviderStatus).catch(() => { });
   }, []);
 
   const flightsEnabled = useTelemetryStore((state) => state.flightsEnabled);
@@ -468,78 +467,6 @@ export function LiveFeedsSection() {
         </div>
       </div>
 
-      {/* Verified API Providers Status Strip */}
-      <div className="flex flex-wrap items-center gap-1.5 rounded-[2px] border border-line bg-surface p-2 font-mono text-[8.5px]">
-        <div className="flex items-center gap-1 text-ink-subtle">
-          <span className="font-semibold">PROVIDERS:</span>
-        </div>
-        <span
-          className={cx(
-            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
-            providerStatus?.google_maps
-              ? "border-line-strong bg-tint text-ok"
-              : "bg-tint text-ink-muted"
-          )}
-          title="Google Maps authenticated tile quota"
-        >
-          <CheckCircle2 size={9} /> Google Maps
-        </span>
-        <span
-          className={cx(
-            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
-            providerStatus?.opensky_oauth
-              ? "border-line-strong bg-tint text-ok"
-              : "bg-tint text-ink-muted"
-          )}
-          title="OpenSky Network OAuth2 Bearer token auth"
-        >
-          <CheckCircle2 size={9} /> OpenSky OAuth2
-        </span>
-        <span
-          className={cx(
-            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
-            providerStatus?.nasa_firms
-              ? "border-line-strong bg-tint text-ok"
-              : "bg-tint text-ink-muted"
-          )}
-          title="NASA FIRMS NRT active fire hotspots"
-        >
-          <CheckCircle2 size={9} /> NASA FIRMS
-        </span>
-        <span
-          className={cx(
-            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
-            providerStatus?.aisstream
-              ? "border-line-strong bg-tint text-ok"
-              : "bg-tint text-ink-muted"
-          )}
-          title="AISStream maritime vessel tracking"
-        >
-          <CheckCircle2 size={9} /> AISStream
-        </span>
-        <span
-          className={cx(
-            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
-            providerStatus?.tomtom_traffic
-              ? "border-line-strong bg-tint text-ok"
-              : "bg-tint text-ink-muted"
-          )}
-          title="TomTom real-time traffic flow"
-        >
-          <CheckCircle2 size={9} /> TomTom Traffic
-        </span>
-        <span
-          className={cx(
-            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
-            providerStatus?.cesium_ion
-              ? "border-line-strong bg-tint text-ok"
-              : "bg-tint text-ink-muted"
-          )}
-          title="Cesium Ion 3D & Bing imagery assets"
-        >
-          <CheckCircle2 size={9} /> Cesium Ion
-        </span>
-      </div>
 
       {/* TomTom Real-Time Traffic Layer Toggle */}
       <div className="flex items-center justify-between rounded-[2px] border border-line bg-surface px-2.5 py-1.5">
@@ -1130,8 +1057,8 @@ export function LiveFeedsSection() {
                           "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
                           isEmg && "border-l-2 border-critical/60 bg-critical-20",
                           selectedTarget?.type === "flight" &&
-                            selectedTarget.data.icao24 === flight.icao24 &&
-                            "bg-accent-soft"
+                          selectedTarget.data.icao24 === flight.icao24 &&
+                          "bg-accent-soft"
                         )}
                       >
                         <div className="flex items-center gap-2 min-w-0">
@@ -1304,8 +1231,8 @@ export function LiveFeedsSection() {
                       className={cx(
                         "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
                         selectedTarget?.type === "earthquake" &&
-                          selectedTarget.data.id === eq.id &&
-                          "bg-accent-soft"
+                        selectedTarget.data.id === eq.id &&
+                        "bg-accent-soft"
                       )}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -1448,8 +1375,8 @@ export function LiveFeedsSection() {
                       className={cx(
                         "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
                         selectedTarget?.type === "satellite" &&
-                          selectedTarget.data.id === sat.id &&
-                          "bg-accent-soft"
+                        selectedTarget.data.id === sat.id &&
+                        "bg-accent-soft"
                       )}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -1586,8 +1513,8 @@ export function LiveFeedsSection() {
                       className={cx(
                         "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
                         selectedTarget?.type === "fire" &&
-                          selectedTarget.data.id === fire.id &&
-                          "bg-accent-soft"
+                        selectedTarget.data.id === fire.id &&
+                        "bg-accent-soft"
                       )}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -1726,8 +1653,8 @@ export function LiveFeedsSection() {
                       className={cx(
                         "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
                         selectedTarget?.type === "vessel" &&
-                          selectedTarget.data.mmsi === vessel.mmsi &&
-                          "bg-accent-soft"
+                        selectedTarget.data.mmsi === vessel.mmsi &&
+                        "bg-accent-soft"
                       )}
                     >
                       <div className="flex items-center gap-2 min-w-0">

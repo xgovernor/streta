@@ -95,8 +95,7 @@ impl TelemetryDb {
                  emergency TEXT,
                  category INTEGER NOT NULL DEFAULT 0,
                  last_contact_epoch INTEGER NOT NULL,
-                 position_time_epoch INTEGER,
-                 simulated INTEGER NOT NULL DEFAULT 0
+                 position_time_epoch INTEGER
              );
 
              -- 2. SQLite Official R*Tree Virtual Table (id maps to live_flights.rowid)
@@ -145,8 +144,8 @@ impl TelemetryDb {
                     icao24, callsign, origin_country, lon, lat,
                     altitude_m, geo_altitude_m, velocity_mps, heading_deg, vertical_rate_mps,
                     on_ground, squawk, emergency, category, last_contact_epoch,
-                    position_time_epoch, simulated
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                    position_time_epoch
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                  ON CONFLICT(icao24) DO UPDATE SET
                     callsign = excluded.callsign,
                     origin_country = excluded.origin_country,
@@ -162,8 +161,7 @@ impl TelemetryDb {
                     emergency = excluded.emergency,
                     category = excluded.category,
                     last_contact_epoch = excluded.last_contact_epoch,
-                    position_time_epoch = excluded.position_time_epoch,
-                    simulated = excluded.simulated
+                    position_time_epoch = excluded.position_time_epoch
                  RETURNING rowid;",
             )
             .map_err(|e| e.to_string())?;
@@ -187,7 +185,6 @@ impl TelemetryDb {
         for f in flights {
             let country = resolve_country(&f.icao24, Some(&f.origin_country));
             let on_ground_int = if f.on_ground { 1 } else { 0 };
-            let sim_int = if f.simulated { 1 } else { 0 };
 
             let rowid: i64 = upsert_stmt
                 .query_row(
@@ -208,7 +205,6 @@ impl TelemetryDb {
                         f.category as i32,
                         f.last_contact_epoch,
                         f.position_time_epoch,
-                        sim_int,
                     ],
                     |row| row.get(0),
                 )
@@ -281,7 +277,7 @@ impl TelemetryDb {
                 "SELECT f.icao24, f.callsign, f.origin_country, f.lon, f.lat,
                         f.altitude_m, f.geo_altitude_m, f.velocity_mps, f.heading_deg,
                         f.vertical_rate_mps, f.on_ground, f.squawk, f.emergency,
-                        f.category, f.last_contact_epoch, f.position_time_epoch, f.simulated
+                        f.category, f.last_contact_epoch, f.position_time_epoch
                  FROM flight_rtree r
                  JOIN live_flights f ON r.id = f.rowid
                  WHERE r.min_lon <= ?3 AND r.max_lon >= ?1
@@ -292,7 +288,6 @@ impl TelemetryDb {
         let rows = stmt
             .query_map(params![min_lon, min_lat, max_lon, max_lat], |row| {
                 let on_ground_int: i32 = row.get(10)?;
-                let sim_int: i32 = row.get(16)?;
                 let cat_int: i32 = row.get(13)?;
 
                 Ok(FlightTarget {
@@ -312,7 +307,6 @@ impl TelemetryDb {
                     category: cat_int as u8,
                     last_contact_epoch: row.get(14)?,
                     position_time_epoch: row.get(15)?,
-                    simulated: sim_int == 1,
                     spi: false,
                     position_source: 0,
                 })

@@ -500,7 +500,7 @@ export async function fetchLiveFlights(
   if (isTauriEnvironment()) {
     try {
       const raw = await invoke<any[]>("fetch_live_flights", { bbox: bbox || null });
-      if (Array.isArray(raw) && raw.length > 0) {
+      if (Array.isArray(raw)) {
         return raw.map((f) => {
           const cat = f.category ?? 0;
           const vRate = f.verticalRateMps ?? f.vertical_rate_mps ?? 0;
@@ -525,124 +525,18 @@ export async function fetchLiveFlights(
             positionSource: f.positionSource ?? f.position_source ?? 0,
             lastContactEpoch: f.lastContactEpoch ?? f.last_contact_epoch ?? 0,
             positionTimeEpoch: f.positionTimeEpoch ?? f.position_time_epoch ?? null,
-            simulated: f.simulated ?? false,
+            simulated: false,
           };
         });
       }
     } catch (e) {
-      console.warn("Tauri fetch_live_flights failed, falling back:", e);
+      console.warn("Tauri fetch_live_flights failed:", e);
     }
   }
 
-  // Fallback realistic active flights corridor (transatlantic, transpacific, transcontinental)
-  const now = Date.now() / 1000;
-  const corridorFlights: FlightTarget[] = [
-    {
-      icao24: "a8b301",
-      callsign: "UAL857",
-      originCountry: "United States",
-      longitude: -122.375 + Math.sin(now * 0.05) * 0.5,
-      latitude: 37.619 + Math.cos(now * 0.05) * 0.5,
-      altitudeMeters: 10668,
-      velocityMps: 245.5,
-      headingDeg: 285.0,
-      verticalRateMps: 0.0,
-      onGround: false,
-      squawk: "7700",
-    },
-    {
-      icao24: "400a12",
-      callsign: "BAW178",
-      originCountry: "United Kingdom",
-      longitude: -45.5 + Math.cos(now * 0.02) * 2.0,
-      latitude: 52.2 + Math.sin(now * 0.02) * 1.0,
-      altitudeMeters: 11277,
-      velocityMps: 260.0,
-      headingDeg: 78.0,
-      verticalRateMps: 0.0,
-      onGround: false,
-      squawk: "1200",
-    },
-    {
-      icao24: "3c65c4",
-      callsign: "DLH452",
-      originCountry: "Germany",
-      longitude: -30.2,
-      latitude: 56.5,
-      altitudeMeters: 11887,
-      velocityMps: 252.0,
-      headingDeg: 84.0,
-      verticalRateMps: 0.0,
-      onGround: false,
-      squawk: "2411",
-    },
-    {
-      icao24: "780d32",
-      callsign: "CCA981",
-      originCountry: "China",
-      longitude: 116.5 + Math.cos(now * 0.03) * 1.5,
-      latitude: 40.1,
-      altitudeMeters: 9800,
-      velocityMps: 238.0,
-      headingDeg: 310.0,
-      verticalRateMps: 1.5,
-      onGround: false,
-      squawk: "4420",
-    },
-    {
-      icao24: "86d21b",
-      callsign: "JAL004",
-      originCountry: "Japan",
-      longitude: 140.4 + Math.sin(now * 0.04) * 0.8,
-      latitude: 35.8,
-      altitudeMeters: 10363,
-      velocityMps: 255.0,
-      headingDeg: 62.0,
-      verticalRateMps: 0.0,
-      onGround: false,
-      squawk: "3102",
-    },
-    {
-      icao24: "7c1b52",
-      callsign: "QFA011",
-      originCountry: "Australia",
-      longitude: 151.2,
-      latitude: -33.9,
-      altitudeMeters: 11582,
-      velocityMps: 268.0,
-      headingDeg: 55.0,
-      verticalRateMps: 0.0,
-      onGround: false,
-      squawk: "5512",
-    },
-    {
-      icao24: "e4811a",
-      callsign: "TAM8072",
-      originCountry: "Brazil",
-      longitude: -46.6,
-      latitude: -23.5,
-      altitudeMeters: 10972,
-      velocityMps: 240.0,
-      headingDeg: 35.0,
-      verticalRateMps: 0.0,
-      onGround: false,
-      squawk: "1000",
-    },
-    {
-      icao24: "06a143",
-      callsign: "QTR701",
-      originCountry: "Qatar",
-      longitude: 51.5,
-      latitude: 25.3,
-      altitudeMeters: 11200,
-      velocityMps: 262.0,
-      headingDeg: 315.0,
-      verticalRateMps: 0.0,
-      onGround: false,
-      squawk: "6215",
-    },
-  ];
-  return corridorFlights;
+  // No browser-side fallback: ADS-B flight telemetry is streamed only through
+  // the Tauri backend to ensure genuine live data.
+  return [];
 }
 
 /**
@@ -1001,7 +895,6 @@ export function vesselTargetsToFeatures(vessels: VesselTarget[]): FeatureRecord[
       headingDeg: v.headingDeg ? Math.round(v.headingDeg) : null,
       status: v.status,
       destination: v.destination || "—",
-      simulated: v.simulated,
     },
   }));
 }
@@ -1388,7 +1281,6 @@ export interface VesselTarget {
   headingDeg?: number;
   destination: string;
   status: string;
-  simulated: boolean;
 }
 
 export interface ApiProvidersStatus {
@@ -1418,54 +1310,15 @@ export async function fetchLiveVessels(
 ): Promise<VesselTarget[]> {
   if (isTauriEnvironment()) {
     try {
-      const res = await invoke<VesselTarget[]>("fetch_live_vessels", { bbox: bbox ?? null });
-      if (Array.isArray(res) && res.length > 0) {
-        return res;
-      }
+      return await invoke<VesselTarget[]>("fetch_live_vessels", { bbox: bbox ?? null });
     } catch (err) {
       console.error("fetch_live_vessels failed:", err);
     }
   }
 
-  // Realistic global maritime shipping corridor fallback (English Channel, Malacca, Gibraltar, Suez, Pacific, Atlantic, Panama, etc.)
-  const baseVessels: VesselTarget[] = [
-    { mmsi: 235089332, name: "EVER GIVEN", callsign: "H3RC", shipType: "Container", lon: 1.45, lat: 51.12, speedKnots: 16.4, courseDeg: 235, headingDeg: 234, destination: "ROTTERDAM", status: "Under way using engine", simulated: true },
-    { mmsi: 244710000, name: "ROTTERDAM EXPRESS", callsign: "PDBC", shipType: "Cargo", lon: 1.82, lat: 51.28, speedKnots: 14.2, courseDeg: 55, headingDeg: 56, destination: "HAMBURG", status: "Under way using engine", simulated: true },
-    { mmsi: 211281820, name: "CMA CGM ANTOINE", callsign: "DJCG", shipType: "Container", lon: 0.95, lat: 50.85, speedKnots: 18.1, courseDeg: 240, headingDeg: 239, destination: "LE HAVRE", status: "Under way using engine", simulated: true },
-    { mmsi: 257076820, name: "NORDIC PASSION", callsign: "LAKR", shipType: "Tanker", lon: 2.15, lat: 51.52, speedKnots: 11.5, courseDeg: 62, headingDeg: 60, destination: "ANTWERP", status: "Under way using engine", simulated: true },
-    { mmsi: 232005670, name: "QUEEN MARY 2", callsign: "GBDY", shipType: "Passenger", lon: -1.25, lat: 50.45, speedKnots: 21.0, courseDeg: 210, headingDeg: 210, destination: "NEW YORK", status: "Under way using engine", simulated: true },
-    { mmsi: 255806490, name: "GRANDE EUROPA", callsign: "IBEE", shipType: "Cargo", lon: -5.35, lat: 35.98, speedKnots: 15.6, courseDeg: 85, headingDeg: 84, destination: "VALENCIA", status: "Under way using engine", simulated: true },
-    { mmsi: 228389600, name: "MEDITERRANEAN SEA", callsign: "FNRW", shipType: "Passenger", lon: -5.45, lat: 36.12, speedKnots: 22.0, courseDeg: 195, headingDeg: 194, destination: "TANGER MED", status: "Under way using engine", simulated: true },
-    { mmsi: 247385200, name: "MSC GRANDIOSA", callsign: "IBIR", shipType: "Passenger", lon: 14.25, lat: 40.75, speedKnots: 18.4, courseDeg: 150, headingDeg: 150, destination: "NAPLES", status: "Under way using engine", simulated: true },
-    { mmsi: 563004000, name: "MAERSK MC-KINNEY MOLLER", callsign: "9V9876", shipType: "Container", lon: 32.55, lat: 30.25, speedKnots: 9.5, courseDeg: 165, headingDeg: 166, destination: "SUEZ CANAL", status: "Under way using engine", simulated: true },
-    { mmsi: 371822000, name: "PACIFIC PIONEER", callsign: "3ELQ2", shipType: "Tanker", lon: 32.35, lat: 30.82, speedKnots: 8.2, courseDeg: 345, headingDeg: 344, destination: "PORT SAID", status: "Under way using engine", simulated: true },
-    { mmsi: 422019900, name: "GULF STAR", callsign: "EQPQ", shipType: "Tanker", lon: 56.45, lat: 26.25, speedKnots: 12.0, courseDeg: 130, headingDeg: 130, destination: "RAS TANURA", status: "Under way using engine", simulated: true },
-    { mmsi: 470123000, name: "AL GHARIYA", callsign: "A7FA", shipType: "Tanker", lon: 55.15, lat: 25.85, speedKnots: 15.2, courseDeg: 315, headingDeg: 315, destination: "RAS LAFFAN", status: "Under way using engine", simulated: true },
-    { mmsi: 352002194, name: "ONE OLYMPUS", callsign: "3FBL5", shipType: "Container", lon: 103.82, lat: 1.25, speedKnots: 12.8, courseDeg: 290, headingDeg: 292, destination: "SINGAPORE", status: "Under way using engine", simulated: true },
-    { mmsi: 477123400, name: "COSCO SHIPPING GALAXY", callsign: "VRQY", shipType: "Container", lon: 101.95, lat: 2.45, speedKnots: 17.5, courseDeg: 130, headingDeg: 132, destination: "PORT KLANG", status: "Under way using engine", simulated: true },
-    { mmsi: 636019822, name: "BERGE TOKYO", callsign: "D5TI3", shipType: "Cargo", lon: 102.55, lat: 2.12, speedKnots: 10.4, courseDeg: 305, headingDeg: 304, destination: "CHINA OFFSHORE", status: "Under way using engine", simulated: true },
-    { mmsi: 413000000, name: "YANTIAN EXPRESS", callsign: "BRLG", shipType: "Container", lon: 114.25, lat: 22.15, speedKnots: 18.2, courseDeg: 75, headingDeg: 75, destination: "SHENZHEN", status: "Under way using engine", simulated: true },
-    { mmsi: 416000000, name: "EVER ACE", callsign: "BKHE", shipType: "Container", lon: 119.5, lat: 23.85, speedKnots: 20.4, courseDeg: 40, headingDeg: 40, destination: "KAOHSIUNG", status: "Under way using engine", simulated: true },
-    { mmsi: 431000000, name: "MOL TRIUMPH", callsign: "7JAL", shipType: "Container", lon: 139.85, lat: 35.35, speedKnots: 14.5, courseDeg: 195, headingDeg: 195, destination: "TOKYO", status: "Under way using engine", simulated: true },
-    { mmsi: 355000000, name: "OOCL HONG KONG", callsign: "3FLM", shipType: "Container", lon: 175.5, lat: 38.25, speedKnots: 21.5, courseDeg: 88, headingDeg: 88, destination: "LONG BEACH", status: "Under way using engine", simulated: true },
-    { mmsi: 477000000, name: "CMA CGM ANTOINE", callsign: "VRXJ", shipType: "Container", lon: -155.0, lat: 36.5, speedKnots: 20.0, courseDeg: 92, headingDeg: 92, destination: "LOS ANGELES", status: "Under way using engine", simulated: true },
-    { mmsi: 244000000, name: "ATLANTIC CONVEYOR", callsign: "PDBN", shipType: "Container", lon: -35.5, lat: 48.25, speedKnots: 19.0, courseDeg: 255, headingDeg: 255, destination: "NEW YORK", status: "Under way using engine", simulated: true },
-    { mmsi: 257000000, name: "NORDIC POLARIS", callsign: "LAKX", shipType: "Tanker", lon: -30.0, lat: 38.0, speedKnots: 13.0, courseDeg: 240, headingDeg: 240, destination: "HOUSTON", status: "Under way using engine", simulated: true },
-    { mmsi: 303123000, name: "AMERICAN EAGLE", callsign: "WDDB", shipType: "Tug", lon: -74.02, lat: 40.65, speedKnots: 8.5, courseDeg: 180, headingDeg: 182, destination: "NEW YORK HARBOR", status: "Under way using engine", simulated: true },
-    { mmsi: 368000000, name: "HORIZON PACIFIC", callsign: "WYX1", shipType: "Container", lon: -73.85, lat: 40.48, speedKnots: 15.2, courseDeg: 310, headingDeg: 311, destination: "PORT NEWARK", status: "Under way using engine", simulated: true },
-    { mmsi: 366989000, name: "PACIFIC HORIZON", callsign: "WRH9", shipType: "Tanker", lon: -118.22, lat: 33.71, speedKnots: 0.2, courseDeg: 110, headingDeg: 110, destination: "LOS ANGELES", status: "At anchor", simulated: true },
-    { mmsi: 351234000, name: "HYUNDAI BRAVE", callsign: "D7TK", shipType: "Container", lon: -118.15, lat: 33.68, speedKnots: 11.2, courseDeg: 225, headingDeg: 226, destination: "LONG BEACH", status: "Under way using engine", simulated: true },
-    { mmsi: 372991000, name: "PANAMA GLORY", callsign: "3FTX", shipType: "Cargo", lon: -79.91, lat: 9.35, speedKnots: 6.5, courseDeg: 140, headingDeg: 140, destination: "COLON", status: "Under way using engine", simulated: true },
-    { mmsi: 311999000, name: "WONDER OF THE SEAS", callsign: "C6CX4", shipType: "Passenger", lon: -80.12, lat: 25.75, speedKnots: 18.5, courseDeg: 125, headingDeg: 125, destination: "MIAMI", status: "Under way using engine", simulated: true },
-    { mmsi: 601000000, name: "CAPE DISCOVERY", callsign: "ZRCD", shipType: "Cargo", lon: 18.45, lat: -34.45, speedKnots: 12.8, courseDeg: 110, headingDeg: 110, destination: "DURBAN", status: "Under way using engine", simulated: true },
-    { mmsi: 503000000, name: "PACIFIC JEWEL", callsign: "VJN2", shipType: "Passenger", lon: 151.25, lat: -33.85, speedKnots: 16.0, courseDeg: 75, headingDeg: 75, destination: "SYDNEY", status: "Under way using engine", simulated: true },
-  ];
-
-  if (bbox) {
-    const [minLon, minLat, maxLon, maxLat] = bbox;
-    return baseVessels.filter((v) => v.lon >= minLon && v.lon <= maxLon && v.lat >= minLat && v.lat <= maxLat);
-  }
-  return baseVessels;
+  // No browser-side vessel source exists: AIS is fetched through the Tauri
+  // backend. Returns empty until the aisstream.io integration is live.
+  return [];
 }
 
 export async function getApiProvidersStatus(): Promise<ApiProvidersStatus> {

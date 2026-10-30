@@ -1,5 +1,6 @@
 import Feature from "ol/Feature";
 import LineString from "ol/geom/LineString";
+import MultiLineString from "ol/geom/MultiLineString";
 import Point from "ol/geom/Point";
 import VectorLayer from "ol/layer/Vector";
 import type OlMap from "ol/Map";
@@ -7,12 +8,15 @@ import { fromLonLat, toLonLat } from "ol/proj";
 import VectorSource from "ol/source/Vector";
 import { Stroke, Style } from "ol/style";
 import type { EarthquakeTarget, FireTarget, FlightTarget, SatelliteTarget, VesselTarget } from "../lib/gis/types";
+import { computeVoyageRoute, formatRouteStats } from "../lib/gis/voyageRoute";
 import { useTelemetryStore } from "../state/telemetryStore";
 import {
   getEarthquakeStyle,
   getFireStyle,
   getFlightStyle,
   getSatelliteStyle,
+  getVesselRouteLineStyle,
+  getVesselRoutePortStyle,
   getVesselStyle,
 } from "./telemetryIcons";
 
@@ -22,6 +26,7 @@ export interface TelemetryLayers {
   satellitesLayer: VectorLayer<VectorSource>;
   firesLayer: VectorLayer<VectorSource>;
   vesselsLayer: VectorLayer<VectorSource>;
+  vesselRoutesLayer: VectorLayer<VectorSource>;
   tracksLayer: VectorLayer<VectorSource>;
 }
 
@@ -34,6 +39,7 @@ let earthquakesSource: VectorSource | null = null;
 let satellitesSource: VectorSource | null = null;
 let firesSource: VectorSource | null = null;
 let vesselsSource: VectorSource | null = null;
+let vesselRoutesSource: VectorSource | null = null;
 let tracksSource: VectorSource | null = null;
 
 let flightsLayer: VectorLayer<VectorSource> | null = null;
@@ -41,6 +47,7 @@ let earthquakesLayer: VectorLayer<VectorSource> | null = null;
 let satellitesLayer: VectorLayer<VectorSource> | null = null;
 let firesLayer: VectorLayer<VectorSource> | null = null;
 let vesselsLayer: VectorLayer<VectorSource> | null = null;
+let vesselRoutesLayer: VectorLayer<VectorSource> | null = null;
 let tracksLayer: VectorLayer<VectorSource> | null = null;
 
 /**
@@ -63,6 +70,7 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
   if (satellitesLayer) map.removeLayer(satellitesLayer);
   if (firesLayer) map.removeLayer(firesLayer);
   if (vesselsLayer) map.removeLayer(vesselsLayer);
+  if (vesselRoutesLayer) map.removeLayer(vesselRoutesLayer);
   if (tracksLayer) map.removeLayer(tracksLayer);
 
   flightsSource = new VectorSource();
@@ -70,6 +78,7 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
   satellitesSource = new VectorSource();
   firesSource = new VectorSource();
   vesselsSource = new VectorSource();
+  vesselRoutesSource = new VectorSource();
   tracksSource = new VectorSource();
 
   // 1. ADS-B Flights: Category-specific aircraft silhouette (Airliner / Heavy / Rotorcraft / Drone / Prop)
@@ -107,6 +116,18 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
     zIndex: TELEMETRY_POINTS_Z,
   });
 
+  // 5b. Estimated voyage routes: dashed geodesic arcs (vessel fix -> resolved
+  // destination port). Dashed marks "predicted, not traveled" per S-52; sits a
+  // plane below the vessel icons so routes never cover ships.
+  vesselRoutesLayer = new VectorLayer({
+    source: vesselRoutesSource,
+    style: (feature) =>
+      feature.get("routeKind") === "port"
+        ? getVesselRoutePortStyle(feature)
+        : getVesselRouteLineStyle(feature),
+    zIndex: TELEMETRY_TRACKS_Z,
+  });
+
   // 6. Satellite Ground Tracks (LineStrings)
   tracksLayer = new VectorLayer({
     source: tracksSource,
@@ -125,6 +146,7 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
   map.addLayer(earthquakesLayer);
   map.addLayer(satellitesLayer);
   map.addLayer(firesLayer);
+  map.addLayer(vesselRoutesLayer);
   map.addLayer(vesselsLayer);
 
   return {
@@ -133,6 +155,7 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
     satellitesLayer,
     firesLayer,
     vesselsLayer,
+    vesselRoutesLayer,
     tracksLayer,
   };
 }
@@ -152,6 +175,10 @@ interface MovingKinematicState {
 
 const activeFlightFeatures = new Map<string, Feature>();
 const activeVesselFeatures = new Map<string, Feature>();
+/** Estimated voyage-route pair per vessel: dashed geodesic line + port marker. */
+const activeVesselRouteFeatures = new Map<string, { line: Feature; port: Feature }>();
+let emphasizedRouteHoverId: string | null = null;
+let emphasizedRouteSelectedId: string | null = null;
 const activeKinematics = new Map<string, MovingKinematicState>();
 let deadReckoningFrameId: number | null = null;
 let lastFrameTime = 0;
@@ -772,7 +799,118 @@ export function updateVesselFeatures(vessels: VesselTarget[]) {
     }
   }
 
+  syncVesselRouteFeatures(vessels);
+
   ensureDeadReckoningLoop();
+}
+
+/**
+ * Rebuilds the estimated voyage-route layer strictly from the current vessel
+ * snapshot. Each destination that resolves against the port gazetteer gets a
+ * dashed great-circle arc from the fix to the port plus an open-ring
+ * destination marker; unresolved destination strings draw nothing.
+ */
+function syncVesselRouteFeatures(vessels: VesselTarget[]) {
+  if (!vesselRoutesSource) return;
+
+  const routeIds = new Set<string>();
+
+  for (const vessel of vessels) {
+    if (
+      vessel.lon == null ||
+      vessel.lat == null ||
+      isNaN(vessel.lon) ||
+      isNaN(vessel.lat)
+    ) {
+      continue;
+    }
+
+    const id = String(vessel.mmsi);
+    const route = computeVoyageRoute(vessel.lon, vessel.lat, vessel.destination, vessel.speedKnots);
+    if (!route) continue;
+    routeIds.add(id);
+
+    const emphasized = id === emphasizedRouteHoverId || id === emphasizedRouteSelectedId;
+    const stats = formatRouteStats(route.distanceNm, route.etaDays, vessel.speedKnots);
+    const lineCoords = route.segments.map((segment) =>
+      segment.map(([lon, lat]) => fromLonLat([lon, lat])),
+    );
+    const portCoord = fromLonLat([route.portLon, route.portLat]);
+
+    let pair = activeVesselRouteFeatures.get(id);
+    if (pair) {
+      (pair.line.getGeometry() as MultiLineString).setCoordinates(lineCoords);
+      (pair.port.getGeometry() as Point).setCoordinates(portCoord);
+      pair.port.set("routeLabel", route.label);
+      pair.port.set("routeStats", stats);
+      pair.line.set("isEmphasized", emphasized ? 1 : 0);
+      pair.port.set("isEmphasized", emphasized ? 1 : 0);
+      pair.line.set("raw", vessel);
+      pair.port.set("raw", vessel);
+      pair.line.set("vesselId", id);
+      pair.port.set("vesselId", id);
+    } else {
+      const line = new Feature({
+        geometry: new MultiLineString(lineCoords),
+        telemetryType: "vessel-route",
+        routeKind: "line",
+        id: `route-${id}`,
+        vesselId: id,
+        raw: vessel,
+      });
+      const port = new Feature({
+        geometry: new Point(portCoord),
+        telemetryType: "vessel-route",
+        routeKind: "port",
+        id: `routeport-${id}`,
+        vesselId: id,
+        routeLabel: route.label,
+        routeStats: stats,
+        raw: vessel,
+      });
+      line.set("isEmphasized", emphasized ? 1 : 0);
+      port.set("isEmphasized", emphasized ? 1 : 0);
+      pair = { line, port };
+      activeVesselRouteFeatures.set(id, pair);
+      vesselRoutesSource.addFeature(line);
+      vesselRoutesSource.addFeature(port);
+    }
+  }
+
+  for (const [id, pair] of activeVesselRouteFeatures.entries()) {
+    if (!routeIds.has(id)) {
+      vesselRoutesSource.removeFeature(pair.line);
+      vesselRoutesSource.removeFeature(pair.port);
+      activeVesselRouteFeatures.delete(id);
+    }
+  }
+}
+
+/**
+ * Mirrors hover / selection emphasis from the vessel point features onto the
+ * matching estimate-route line and destination marker. Passing an id that has
+ * no route is harmless.
+ */
+export function setVesselRouteEmphasis(hoverId: string | null, selectedId: string | null) {
+  const nextHover = hoverId ?? null;
+  const nextSelected = selectedId ?? null;
+  if (nextHover === emphasizedRouteHoverId && nextSelected === emphasizedRouteSelectedId) return;
+
+  emphasizedRouteHoverId = nextHover;
+  emphasizedRouteSelectedId = nextSelected;
+
+  for (const [id, pair] of activeVesselRouteFeatures.entries()) {
+    const emphasized = id === nextHover || id === nextSelected ? 1 : 0;
+    if (pair.line.get("isEmphasized") !== emphasized) pair.line.set("isEmphasized", emphasized);
+    if (pair.port.get("isEmphasized") !== emphasized) pair.port.set("isEmphasized", emphasized);
+  }
+}
+
+/**
+ * Returns the active OpenLayers feature for a given vessel MMSI id, if present.
+ */
+export function getVesselFeature(id: string): Feature | undefined {
+  return activeVesselFeatures.get(id);
 }
 
 /**
@@ -793,6 +931,7 @@ export function setTelemetryLayerVisibility(
     firesLayer.setVisible(visible);
   } else if (feed === "vessels" && vesselsLayer) {
     vesselsLayer.setVisible(visible);
+    if (vesselRoutesLayer) vesselRoutesLayer.setVisible(visible);
   }
 }
 

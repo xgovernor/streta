@@ -50,7 +50,6 @@ pub struct FlightTarget {
     pub last_contact_epoch: i64,
     /// Unix timestamp of the last position report from the transponder.
     pub position_time_epoch: Option<i64>,
-    pub simulated: bool,
     /// 4-digit octal transponder code (e.g. "7700" for emergency).
     pub squawk: Option<String>,
     /// Special Purpose Indicator — pilot pressed "Ident" for ATC.
@@ -122,7 +121,7 @@ fn warn_once(msg: &str) {
     static WARNED: AtomicBool = AtomicBool::new(false);
     if !WARNED.swap(true, Ordering::Relaxed) {
         eprintln!(
-            "[OpenSky ADS-B] Warning ({}), using synthetic corridor fallback",
+            "[OpenSky ADS-B] Warning ({}), no synthetic fallback: returning empty",
             msg
         );
     }
@@ -288,8 +287,8 @@ pub async fn fetch_live_flights(
             if let Some(ref snap) = *cache {
                 return Ok(snap.flights.clone());
             }
-            // No cache during cooldown — fall back to synthetic
-            return Ok(generate_corridor_flights(bbox));
+            // No cache during cooldown — nothing to serve this cycle
+            return Ok(Vec::new());
         }
     }
 
@@ -358,7 +357,7 @@ pub async fn fetch_live_flights(
                 if let Some(ref snap) = *cache {
                     return Ok(snap.flights.clone());
                 }
-                return Ok(generate_corridor_flights(bbox));
+                return Ok(Vec::new());
             }
 
             // 5b. Handle 5xx upstream errors — serve stale
@@ -371,18 +370,18 @@ pub async fn fetch_live_flights(
                 if let Some(ref snap) = *cache {
                     return Ok(snap.flights.clone());
                 }
-                return Ok(generate_corridor_flights(bbox));
+                return Ok(Vec::new());
             }
 
             // 5c. Handle 401/403 — auth failure
             if status.as_u16() == 401 || status.as_u16() == 403 {
                 warn_once(&format!("Auth failure (HTTP {}). Check OPENSKY_CLIENT_ID/SECRET.", status));
-                return Ok(generate_corridor_flights(bbox));
+                return Ok(Vec::new());
             }
 
             if !status.is_success() {
                 warn_once(&format!("HTTP {}", status));
-                return Ok(generate_corridor_flights(bbox));
+                return Ok(Vec::new());
             }
 
             // 5d. Extract credit-governor metadata from response headers
@@ -411,7 +410,7 @@ pub async fn fetch_live_flights(
                     // OpenSky returns {"time": ..., "states": null} when a valid bbox is empty
                     let Some(states_val) = json.get("states") else {
                         warn_once("Malformed OpenSky response: missing 'states' key");
-                        return Ok(generate_corridor_flights(bbox));
+                        return Ok(Vec::new());
                     };
 
                     if states_val.is_null() {
@@ -471,9 +470,8 @@ pub async fn fetch_live_flights(
         }
     }
 
-    let corridor = generate_corridor_flights(bbox);
-    let _ = super::TelemetryDb::global().upsert_flights(&corridor);
-    Ok(corridor)
+    // No cache and no upstream data: honest empty response, no synthetic fill.
+    Ok(Vec::new())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -566,7 +564,6 @@ fn parse_opensky_states(states: &[Value]) -> Vec<FlightTarget> {
             on_ground,
             last_contact_epoch: last_contact,
             position_time_epoch: position_time,
-            simulated: false,
             squawk,
             spi,
             position_source,
@@ -578,177 +575,9 @@ fn parse_opensky_states(states: &[Value]) -> Vec<FlightTarget> {
     targets
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Synthetic Corridor Flights (Fallback)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Wraps longitude into [-180.0, 180.0]
-fn wrap_lon(lon: f64) -> f64 {
-    ((lon + 180.0).rem_euclid(360.0)) - 180.0
-}
-
-/// Calculates initial true bearing (0..360 deg) between two lat/lon points
-fn initial_bearing_deg(lat1_deg: f64, lon1_deg: f64, lat2_deg: f64, lon2_deg: f64) -> f64 {
-    let lat1 = lat1_deg.to_radians();
-    let lat2 = lat2_deg.to_radians();
-    let d_lon = (lon2_deg - lon1_deg).to_radians();
-
-    let y = d_lon.sin() * lat2.cos();
-    let x = lat1.cos() * lat2.sin() - lat1.sin() * lat2.cos() * d_lon.cos();
-    (y.atan2(x).to_degrees() + 360.0) % 360.0
-}
-
-fn generate_corridor_flights(bbox: Option<(f64, f64, f64, f64)>) -> Vec<FlightTarget> {
-    let now_ms = chrono::Utc::now().timestamp_millis();
-    let now_sec = (now_ms as f64) / 1000.0;
-
-    let corridors = [
-        (
-            "4840e4",
-            "KLM685",
-            "Netherlands",
-            4.76,
-            52.31,
-            -73.78,
-            40.64,
-            10600.0,
-            240.0,
-        ),
-        (
-            "a12b34",
-            "UAL100",
-            "United States",
-            -73.78,
-            40.64,
-            -0.45,
-            51.47,
-            11200.0,
-            255.0,
-        ),
-        (
-            "3c65c2", "DLH400", "Germany", 8.57, 50.03, -73.78, 40.64, 10900.0, 245.0,
-        ),
-        (
-            "896172", "ANA008", "Japan", 139.78, 35.55, -122.37, 37.62, 11800.0, 260.0,
-        ),
-        (
-            "7809a1", "CSN327", "China", 113.30, 23.39, -118.41, 33.94, 11500.0, 250.0,
-        ),
-        (
-            "06a0df",
-            "QFA011",
-            "Australia",
-            151.18,
-            -33.95,
-            -118.41,
-            33.94,
-            12000.0,
-            258.0,
-        ),
-        (
-            "400a12",
-            "BAW178",
-            "United Kingdom",
-            -73.78,
-            40.64,
-            -0.45,
-            51.47,
-            10800.0,
-            242.0,
-        ),
-        (
-            "8001fa", "AIC101", "India", 77.10, 28.56, -73.78, 40.64, 11400.0, 248.0,
-        ),
-        (
-            "c051a2", "ACA850", "Canada", -79.62, 43.68, -0.45, 51.47, 10700.0, 245.0,
-        ),
-        (
-            "7c6d12",
-            "JST201",
-            "Australia",
-            144.84,
-            -37.67,
-            151.18,
-            -33.95,
-            8500.0,
-            210.0,
-        ),
-        (
-            "e08812", "TAM8070", "Brazil", -46.47, -23.43, 8.57, 50.03, 11600.0, 252.0,
-        ),
-        (
-            "020084", "RAM202", "Morocco", -7.58, 33.36, -73.78, 40.64, 11000.0, 246.0,
-        ),
-    ];
-
-    let mut flights = Vec::with_capacity(corridors.len());
-    // Realistic 8-hour (28,800s) cycle instead of 20-minute teleportation
-    let cycle_duration_sec = 28_800.0;
-
-    for (i, &(icao, callsign, country, x1, y1, x2, y2, alt, speed)) in corridors.iter().enumerate()
-    {
-        let phase_offset = (i as f64) / (corridors.len() as f64);
-        let progress = ((now_sec / cycle_duration_sec) + phase_offset).rem_euclid(1.0);
-
-        // Shortest-path longitude delta across the ±180 antimeridian
-        let mut d_lon = x2 - x1;
-        if d_lon > 180.0 {
-            d_lon -= 360.0;
-        } else if d_lon < -180.0 {
-            d_lon += 360.0;
-        }
-
-        let lon = wrap_lon(x1 + d_lon * progress);
-        let lat = y1 + (y2 - y1) * progress;
-        let heading = initial_bearing_deg(lat, lon, y2, x2);
-
-        if let Some((min_lon, min_lat, max_lon, max_lat)) = bbox {
-            if lon < min_lon || lon > max_lon || lat < min_lat || lat > max_lat {
-                continue;
-            }
-        }
-
-        flights.push(FlightTarget {
-            icao24: icao.to_string(),
-            callsign: callsign.to_string(),
-            origin_country: country.to_string(),
-            lon: (lon * 10000.0).round() / 10000.0,
-            lat: (lat * 10000.0).round() / 10000.0,
-            altitude_m: Some(alt),
-            geo_altitude_m: Some(alt),
-            velocity_mps: Some(speed),
-            heading_deg: Some((heading * 10.0).round() / 10.0),
-            vertical_rate_mps: Some(0.0),
-            on_ground: false,
-            last_contact_epoch: now_ms / 1000,
-            position_time_epoch: Some(now_ms / 1000),
-            simulated: true,
-            squawk: None,
-            spi: false,
-            position_source: 0,
-            category: 4, // Large aircraft for corridor flights
-            emergency: None,
-        });
-    }
-
-    flights
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_corridor_flights_generation() {
-        let flights = generate_corridor_flights(None);
-        assert!(!flights.is_empty(), "Should generate corridor flight targets");
-        let first = &flights[0];
-        assert!(!first.callsign.is_empty());
-        assert!(first.lon >= -180.0 && first.lon <= 180.0);
-        assert!(first.lat >= -90.0 && first.lat <= 90.0);
-        assert_eq!(first.simulated, true);
-        assert_eq!(first.category, 4);
-    }
 
     #[test]
     fn test_emitter_category_labels() {
@@ -828,7 +657,6 @@ mod tests {
         assert_eq!(t.spi, false);
         assert_eq!(t.position_source, 0);
         assert_eq!(t.category, 4);
-        assert_eq!(t.simulated, false);
         assert_eq!(t.position_time_epoch, Some(1698765432));
     }
 

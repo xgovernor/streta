@@ -107,7 +107,6 @@ mod tests {
             on_ground: false,
             last_contact_epoch: 1000,
             position_time_epoch: Some(1000),
-            simulated: false,
             squawk: Some("1200".to_string()),
             spi: false,
             position_source: 0,

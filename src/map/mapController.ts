@@ -67,6 +67,8 @@ import {
   updateFireFeatures,
   updateVesselFeatures,
   setTelemetryLayerVisibility,
+  setVesselRouteEmphasis,
+  getVesselFeature,
   clearTelemetryLayers,
   displayFlightTrail,
   clearFlightTrails,
@@ -607,6 +609,16 @@ export function mountMap(target: HTMLElement): () => void {
 
   let currentlyHoveredTelemFeature: any = null;
 
+  /** Current vessel-feature override for estimate-route emphasis (null = none). */
+  const syncVesselRouteEmphasis = (hoverVesselId: string | null) => {
+    const selected = useTelemetryStore.getState().selectedTarget;
+    const selectedVesselId =
+      selected?.type === "vessel" && (selected.data as any)?.mmsi != null
+        ? String((selected.data as any).mmsi)
+        : null;
+    setVesselRouteEmphasis(hoverVesselId, selectedVesselId);
+  };
+
   const pointerKey = map.on("pointermove", (event) => {
     const [lon, lat] = transform(event.coordinate, VIEW_CRS, GEOGRAPHIC_CRS);
     const hit = topFeatureAt(event.pixel);
@@ -647,6 +659,15 @@ export function mountMap(target: HTMLElement): () => void {
           hitTelemetry = { type: t, data: feature.get("raw"), feature };
           return true;
         }
+        if (t === "vessel-route") {
+          const rawVessel = feature.get("raw");
+          const vesselId = feature.get("vesselId");
+          const vesselFeat = vesselId ? getVesselFeature(String(vesselId)) : null;
+          if (rawVessel) {
+            hitTelemetry = { type: "vessel", data: rawVessel, feature: vesselFeat || feature };
+            return true;
+          }
+        }
         return false;
       },
       { hitTolerance: 10 }
@@ -666,6 +687,14 @@ export function mountMap(target: HTMLElement): () => void {
         currentlyHoveredTelemFeature = telem.feature;
         currentlyHoveredTelemFeature.set("isHovered", 1);
       }
+
+      // Estimate-route emphasis mirrors hover so the vessel's dashed voyage
+      // line lights up with its destination label.
+      syncVesselRouteEmphasis(
+        telem.type === "vessel" && telem.feature?.get?.("id") != null
+          ? String(telem.feature.get("id"))
+          : null,
+      );
 
       // Feature-anchoring: anchor directly to the physical vector feature's center pixel, not mouse pointer
       const geom = telem.feature.getGeometry();
@@ -693,6 +722,7 @@ export function mountMap(target: HTMLElement): () => void {
         currentlyHoveredTelemFeature.set("isHovered", 0);
         currentlyHoveredTelemFeature = null;
       }
+      syncVesselRouteEmphasis(null);
       if (useTelemetryStore.getState().hoveredTarget) {
         useTelemetryStore.getState().setHoveredTarget(null, null, null);
       }
@@ -801,6 +831,7 @@ export function mountMap(target: HTMLElement): () => void {
       currentlyHoveredTelemFeature.set("isHovered", 0);
       currentlyHoveredTelemFeature = null;
     }
+    syncVesselRouteEmphasis(null);
     useTelemetryStore.getState().setHoveredTarget(null, null, null);
 
     if (!isOverPopup && store.activeFeature) {
@@ -869,6 +900,13 @@ export function mountMap(target: HTMLElement): () => void {
         if (t === "flight" || t === "earthquake" || t === "satellite" || t === "vessel" || t === "fire") {
           hitTelemetry = { type: t, data: feature.get("raw") };
           return true;
+        }
+        if (t === "vessel-route") {
+          const rawVessel = feature.get("raw");
+          if (rawVessel) {
+            hitTelemetry = { type: "vessel", data: rawVessel };
+            return true;
+          }
         }
         return false;
       },
@@ -1066,6 +1104,21 @@ export function mountMap(target: HTMLElement): () => void {
       setTelemetryLayerVisibility("vessels", state.vesselsEnabled);
     }
     if (state.selectedTarget !== previous.selectedTarget) {
+      // Selection emphasis for estimate routes rides the same helper as hover:
+      // null/foreign selections simply drop the selected-vessel emphasis.
+      const selSync = state.selectedTarget;
+      const selectedVesselId =
+        selSync?.type === "vessel" && (selSync.data as any)?.mmsi != null
+          ? String((selSync.data as any).mmsi)
+          : null;
+      setVesselRouteEmphasis(
+        currentlyHoveredTelemFeature?.get?.("telemetryType") === "vessel" &&
+          currentlyHoveredTelemFeature?.get?.("id") != null
+          ? String(currentlyHoveredTelemFeature.get("id"))
+          : null,
+        selectedVesselId,
+      );
+
       if (state.selectedTarget?.type === "flight" && (state.selectedTarget.data as any)?.icao24) {
         fetchFlightTrail((state.selectedTarget.data as any).icao24)
           .then((trail) => {

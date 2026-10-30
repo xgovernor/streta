@@ -4,6 +4,7 @@ import Style from "ol/style/Style";
 import Fill from "ol/style/Fill";
 import Stroke from "ol/style/Stroke";
 import Text from "ol/style/Text";
+import CircleStyle from "ol/style/Circle";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Aviation & Maritime Telemetry SVG Icon Registry
@@ -524,4 +525,58 @@ export function getEarthquakeStyle(feature: FeatureLike): Style {
       }),
     });
   });
+}
+
+/**
+ * Estimated voyage-route styles (S-52 convention: dashed = predicted path,
+ * never traveled). The line is a dashed neutral hairline in the MarineTraffic/
+ * VesselFinder manner; ECDIS conspicuous magenta is reserved for own-ship
+ * planned routes, so third-party voyage estimates stay neutral white.
+ */
+const ROUTE_LINE_DASH = [6, 9];
+
+export function getVesselRouteLineStyle(feature: FeatureLike): Style {
+  const emphasized = Boolean(feature.get("isEmphasized"));
+  const cacheKey = `vessel-route-line:${emphasized}`;
+
+  return getCachedStyle(cacheKey, () =>
+    new Style({
+      stroke: new Stroke({
+        color: emphasized ? "rgba(255, 255, 255, 0.95)" : "rgba(255, 255, 255, 0.38)",
+        width: emphasized ? 2 : 1.5,
+        lineDash: ROUTE_LINE_DASH,
+      }),
+    }),
+  );
+}
+
+/**
+ * Destination-port marker: an open hairline ring (no fill), with the port name
+ * plus distance/ETA statistic appearing only when the vessel is hovered or
+ * selected — matching the emphasis contract used by the other telemetry tags.
+ */
+export function getVesselRoutePortStyle(feature: FeatureLike): Style | Style[] {
+  const emphasized = Boolean(feature.get("isEmphasized"));
+  const markerKey = `vessel-route-port:${emphasized}`;
+
+  const markerStyle = getCachedStyle(markerKey, () =>
+    new Style({
+      image: new CircleStyle({
+        radius: emphasized ? 5.5 : 4.5,
+        stroke: new Stroke({
+          color: emphasized ? "rgba(255, 255, 255, 0.95)" : "rgba(255, 255, 255, 0.55)",
+          width: emphasized ? 2 : 1.5,
+        }),
+      }),
+    }),
+  );
+
+  if (!emphasized) return markerStyle;
+
+  const portLabel = String(feature.get("routeLabel") || "");
+  const stats = String(feature.get("routeStats") || "");
+  if (!portLabel) return markerStyle;
+
+  const text = stats ? `${portLabel} · ${stats}` : portLabel;
+  return [markerStyle, getCachedLabelStyle(text, "rgba(255, 255, 255, 0.95)", -12)];
 }

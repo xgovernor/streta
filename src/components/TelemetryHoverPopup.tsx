@@ -12,6 +12,7 @@ import {
 import { useTelemetryStore } from "../state/telemetryStore";
 import { useUiStore } from "../state/uiStore";
 import { resolveVesselFlag } from "../lib/gis/telemetryExtendedDb";
+import { computeVoyageRoute } from "../lib/gis/voyageRoute";
 
 const POPUP_WIDTH = 260;
 const POPUP_HEIGHT = 180;
@@ -243,11 +244,32 @@ export function TelemetryHoverPopup() {
             </div>
           </div>
 
-          {data.destination && (
-            <div className="text-[9.5px] text-ink-soft truncate">
-              <span className="text-ink-muted">Dest:</span> {data.destination}
-            </div>
-          )}
+          {data.destination && (() => {
+            const voyage =
+              data.lon != null && data.lat != null
+                ? computeVoyageRoute(data.lon, data.lat, data.destination, data.speedKnots || 0)
+                : null;
+            return (
+              <div className="rounded-[2px] bg-tint p-1.5 text-[9.5px]">
+                <div className="flex items-center justify-between text-ink-soft">
+                  <span className="text-ink-muted uppercase tracking-wider text-[8px]">Destination</span>
+                  {voyage && (
+                    <span className="font-mono text-[8.5px] text-accent">
+                      {Math.round(voyage.distanceNm).toLocaleString()} NM
+                    </span>
+                  )}
+                </div>
+                <div className="font-medium text-ink truncate mt-0.5">
+                  {voyage?.label || data.destination}
+                </div>
+                {voyage && (
+                  <div className="text-[8.5px] font-mono text-ink-muted mt-0.5">
+                    ETA {voyage.etaDays < 1 ? `~${Math.max(1, Math.round(voyage.etaDays * 24))} H` : `~${voyage.etaDays.toFixed(1)} D`} · Great-Circle Route
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 

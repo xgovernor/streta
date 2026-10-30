@@ -4694,6 +4694,7 @@ dependencies = [
  "reqwest 0.12.28",
  "rstar 0.13.0",
  "rusqlite",
+ "rustls",
  "serde",
  "serde_json",
  "sgp4",
@@ -4703,7 +4704,9 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-opener",
  "tokio",
+ "tokio-rustls",
  "toml 0.8.2",
+ "webpki-roots",
 ]
 
 [[package]]
