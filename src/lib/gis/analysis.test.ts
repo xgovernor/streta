@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { measureGeodesic } from "./tiledBackend";
+import { computeElevationProfile, measureGeodesic } from "./tiledBackend";
 
 describe("Phase 3 Geodesic Analysis Engine", () => {
   it("calculates distance and forward/reverse azimuth bearings between two coordinates", async () => {
@@ -68,5 +68,11 @@ describe("Phase 3 Geodesic Analysis Engine", () => {
   it("returns null when fewer than 2 coordinates are provided", async () => {
     const result = await measureGeodesic([[10, 20]], false);
     expect(result).toBeNull();
+  });
+
+  it("safely handles computeElevationProfile validation and edge cases", async () => {
+    // Rejects paths with fewer than 2 coordinates
+    expect(await computeElevationProfile([])).toBeNull();
+    expect(await computeElevationProfile([[10, 20]])).toBeNull();
   });
 });

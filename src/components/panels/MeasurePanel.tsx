@@ -24,6 +24,7 @@ import {
   renderBufferOverlay,
   renderKnnOverlay,
   setBufferPicker,
+  setProfileHoverCoord,
 } from "../../map/mapController";
 import { cx } from "../../lib/cx";
 import { formatDistance } from "../../lib/format";
@@ -100,7 +101,7 @@ export function MeasurePanel() {
   const setElevationSelectedFeatureId = useMapStore((state) => state.setElevationSelectedFeatureId);
   const [elevationLoading, setElevationLoading] = useState(false);
   const [sampleCount, setSampleCount] = useState<number>(40);
-  const lastSlicedIdRef = useRef<string | null>(null);
+  const lastSlicedIdRef = useRef<string | null>(useMapStore.getState().elevationSelectedFeatureId);
 
   // Available measurement lines on canvas (reacts to measurement updates)
   const availableLines = useMemo(() => getMeasurementLines(), [measureSummary]);
@@ -109,9 +110,12 @@ export function MeasurePanel() {
     [availableLines],
   );
   const targetLines = lineStrings.length > 0 ? lineStrings : availableLines;
+  const activeLineId = targetLines.some((l) => l.id === elevationSelectedFeatureId)
+    ? elevationSelectedFeatureId
+    : targetLines[0]?.id ?? null;
 
   const handleSliceElevation = async (overrideTargetId?: string, overrideSampleCount?: number) => {
-    const targetId = overrideTargetId ?? elevationSelectedFeatureId ?? targetLines[0]?.id ?? undefined;
+    const targetId = overrideTargetId ?? activeLineId ?? undefined;
     const coords = measureCoordinates(targetId);
     if (coords.length < 2) {
       notify("Draw at least 2 points on the map first");
@@ -476,7 +480,7 @@ export function MeasurePanel() {
               </div>
               <div className="flex flex-wrap gap-1">
                 {targetLines.map((line) => {
-                  const isSelected = (elevationSelectedFeatureId ?? targetLines[0]?.id) === line.id;
+                  const isSelected = activeLineId === line.id;
                   return (
                     <button
                       key={line.id}
@@ -580,6 +584,7 @@ export function MeasurePanel() {
                   className={cx(SECONDARY_BUTTON, "text-[10px] h-[24px] text-critical/80 hover:text-critical gap-1")}
                   onClick={() => {
                     setElevationResult(null);
+                    setProfileHoverCoord(null);
                     notify("Elevation profile cleared");
                   }}
                 >
@@ -596,8 +601,19 @@ export function MeasurePanel() {
                           `${(s.distance_m / 1000).toFixed(3)},${s.elevation_m.toFixed(1)},${(s.slope_pct ?? 0).toFixed(1)},${s.lat.toFixed(5)},${s.lon.toFixed(5)}`,
                       ),
                     ].join("\n");
-                    await navigator.clipboard.writeText(csv);
-                    notify("Elevation & Slope CSV copied to clipboard");
+                    try {
+                      await navigator.clipboard.writeText(csv);
+                      notify("Elevation & Slope CSV copied to clipboard");
+                    } catch {
+                      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `elevation_profile_${Date.now()}.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      notify("Elevation & Slope CSV downloaded");
+                    }
                   }}
                 >
                   <Copy size={11} /> Copy Profile CSV

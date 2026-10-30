@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ElevationProfileResult, ElevationSample } from "../../lib/gis/tiledBackend";
-import { setProfileHoverCoord } from "../../map/mapController";
+import { flyToCoordinate, setProfileHoverCoord } from "../../map/mapController";
 import { ArrowDownRight, ArrowUpRight, Mountain, Ruler, TrendingUp } from "lucide-react";
 
 interface ElevationChartProps {
@@ -10,6 +10,13 @@ interface ElevationChartProps {
 export function ElevationChart({ data }: ElevationChartProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // Clean up map hover indicator on unmount
+  useEffect(() => {
+    return () => {
+      setProfileHoverCoord(null);
+    };
+  }, []);
 
   const samples = data.samples;
   const count = samples.length;
@@ -128,6 +135,12 @@ export function ElevationChart({ data }: ElevationChartProps) {
     setProfileHoverCoord(null);
   };
 
+  const handleClick = () => {
+    if (activeSample) {
+      flyToCoordinate(activeSample.lon, activeSample.lat, 14);
+    }
+  };
+
   const activeSample: ElevationSample | null =
     hoverIndex !== null && samples[hoverIndex] ? samples[hoverIndex] : null;
 
@@ -214,6 +227,7 @@ export function ElevationChart({ data }: ElevationChartProps) {
           className="w-full cursor-crosshair select-none"
           onPointerMove={handlePointerMove}
           onPointerLeave={handlePointerLeave}
+          onClick={handleClick}
         >
           <defs>
             <linearGradient id="strata-elev-grad" x1="0" y1="0" x2="0" y2="1">
@@ -364,7 +378,7 @@ export function ElevationChart({ data }: ElevationChartProps) {
           </>
         ) : (
           <span className="text-[10px] text-ink-muted/80">
-            Hover over chart to trace elevation &amp; synchronize map pin.
+            Hover to trace &amp; synchronize map pin · Click to fly map to point.
           </span>
         )}
       </div>

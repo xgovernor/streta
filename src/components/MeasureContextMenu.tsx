@@ -24,7 +24,7 @@ import {
 } from "../map/mapController";
 
 const MENU_WIDTH = 240;
-const MENU_HEIGHT = 340;
+const MENU_HEIGHT = 380;
 const PADDING = 8;
 
 export function MeasureContextMenu() {

@@ -432,7 +432,7 @@ async function computeClientElevationFallback(
   coords: [number, number][],
   sampleCount: number,
 ): Promise<ElevationProfileResult> {
-  const count = Math.min(Math.max(sampleCount, 10), 80);
+  const count = Math.min(Math.max(sampleCount, 10), 100);
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const R = 6371008.8; // WGS 84 mean radius
 

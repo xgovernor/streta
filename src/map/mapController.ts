@@ -2618,17 +2618,36 @@ export function setProfileHoverCoord(
   const existing = activeAnalysisSource
     .getFeatures()
     .filter((f) => f.get("analysisType") === "profileHover");
-  existing.forEach((f) => activeAnalysisSource?.removeFeature(f));
 
-  if (coord) {
-    const hoverFeature = new Feature({
-      geometry: new Point(fromLonLat(coord)),
-    });
-    hoverFeature.set("analysisType", "profileHover");
-    hoverFeature.set("elevationM", elevationM);
-    hoverFeature.set("slopePct", slopePct);
-    activeAnalysisSource.addFeature(hoverFeature);
+  if (!coord) {
+    existing.forEach((f) => activeAnalysisSource?.removeFeature(f));
+    return;
   }
+
+  // Update in place to avoid vector source R-tree rebuild and GC pressure during 60fps mouse scrub
+  if (existing.length > 0) {
+    const feature = existing[0];
+    const geom = feature.getGeometry();
+    if (geom instanceof Point) {
+      geom.setCoordinates(fromLonLat(coord));
+    } else {
+      feature.setGeometry(new Point(fromLonLat(coord)));
+    }
+    feature.set("elevationM", elevationM);
+    feature.set("slopePct", slopePct);
+    for (let i = 1; i < existing.length; i++) {
+      activeAnalysisSource.removeFeature(existing[i]);
+    }
+    return;
+  }
+
+  const hoverFeature = new Feature({
+    geometry: new Point(fromLonLat(coord)),
+  });
+  hoverFeature.set("analysisType", "profileHover");
+  hoverFeature.set("elevationM", elevationM);
+  hoverFeature.set("slopePct", slopePct);
+  activeAnalysisSource.addFeature(hoverFeature);
 }
 
 /**
