@@ -1,9 +1,8 @@
 import { useEffect } from "react";
 import { MapCanvas } from "./map/MapCanvas";
 import { resetNorth, zoomBy } from "./map/mapController";
-import { LeftRibbon } from "./components/LeftRibbon";
+import { CommandBar } from "./components/CommandBar";
 import { MapAttribution } from "./components/MapAttribution";
-import { RightRibbon } from "./components/RightRibbon";
 import { FeaturePopup } from "./components/FeaturePopup";
 import { TelemetryHoverPopup } from "./components/TelemetryHoverPopup";
 import { PanelHost } from "./components/PanelHost";
@@ -22,10 +21,22 @@ const PANEL_KEYS: Record<string, "data" | "table" | "measure"> = {
 
 function App() {
   const theme = useUiStore((state) => state.theme);
+  const timelineOpen = useUiStore((state) => state.timelineOpen);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  /** The bottom dock raises the attribute table and attribution above it. */
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--timeline-h",
+      timelineOpen ? "128px" : "0px",
+    );
+    return () => {
+      document.documentElement.style.removeProperty("--timeline-h");
+    };
+  }, [timelineOpen]);
 
   // Layers that could not be restored from the last session are reported once.
   useEffect(() => {
@@ -42,8 +53,11 @@ function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const ui = useUiStore.getState();
       if (event.key === "Escape") {
-        if (ui.activePanel) {
+        // Closes the dock used most recently; independent otherwise.
+        if (ui.leftPanel || ui.rightPanel) {
           ui.closePanel();
+        } else if (ui.alertsOpen) {
+          ui.setAlertsOpen(false);
         } else if (useProjectStore.getState().measureMode !== "off") {
           useProjectStore.getState().setMeasureMode("off");
         }
@@ -116,8 +130,7 @@ function App() {
     <main className="fixed inset-0 isolate overflow-hidden bg-shell">
       <MapCanvas />
       <div className="pointer-events-none absolute inset-0 z-10 [contain:layout_paint_style]">
-        <LeftRibbon />
-        <RightRibbon />
+        <CommandBar />
         <FeaturePopup />
         <TelemetryHoverPopup />
         <PanelHost />

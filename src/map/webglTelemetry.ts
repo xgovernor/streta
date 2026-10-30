@@ -112,7 +112,7 @@ export function createTelemetryLayers(map: OlMap): TelemetryLayers {
     source: tracksSource,
     style: new Style({
       stroke: new Stroke({
-        color: "rgba(192, 132, 252, 0.65)",
+        color: "rgba(255, 255, 255, 0.6)",
         width: 2,
         lineDash: [6, 4],
       }),
@@ -333,6 +333,20 @@ export function updateFlightFeatures(flights: FlightTarget[]) {
 
     currentIds.add(flight.icao24);
     const isEmergency = Boolean(flight.emergency);
+
+    // Track staleness straight from the source fix time, so a 60 s old
+    // contact reads as 60 s old regardless of when the client last polled.
+    const fixEpoch =
+      flight.positionTimeEpoch && flight.positionTimeEpoch > 0
+        ? flight.positionTimeEpoch
+        : (flight.lastContactEpoch && flight.lastContactEpoch > 0
+          ? flight.lastContactEpoch
+          : nowSec);
+    const fixAgeSec = Math.max(0, Math.round(nowSec - fixEpoch));
+    // Longer than one dead-reckoning horizon => this is a replayed instant,
+    // not a live fix: draw the recorded position frozen, never extrapolate.
+    const isReplay = fixAgeSec > 30;
+
     let feature = activeFlightFeatures.get(flight.icao24);
 
     if (feature) {
@@ -344,13 +358,16 @@ export function updateFlightFeatures(flights: FlightTarget[]) {
       feature.set("country", flight.originCountry);
       feature.set("isEmergency", isEmergency ? 1 : 0);
       feature.set("squawk", flight.squawk || "");
+      feature.set("ageSec", fixAgeSec);
       feature.set("category", flight.category || 0);
       feature.set("categoryLabel", flight.categoryLabel || "");
       feature.set("raw", flight);
 
       // Smooth position convergence towards new telemetry coordinate
       const kin = activeKinematics.get(flight.icao24);
-      if (kin) {
+      if (isReplay) {
+        (feature.getGeometry() as Point).setCoordinates(fromLonLat([flight.longitude, flight.latitude]));
+      } else if (kin) {
         const distDeg = Math.hypot(flight.longitude - kin.renderedLon, flight.latitude - kin.renderedLat);
         if (distDeg > 0.5) {
           // Large reposition / teleport
@@ -381,6 +398,7 @@ export function updateFlightFeatures(flights: FlightTarget[]) {
         country: flight.originCountry,
         isEmergency: isEmergency ? 1 : 0,
         squawk: flight.squawk || "",
+        ageSec: fixAgeSec,
         category: flight.category || 0,
         categoryLabel: flight.categoryLabel || "",
         raw: flight,
@@ -389,7 +407,7 @@ export function updateFlightFeatures(flights: FlightTarget[]) {
       activeFlightFeatures.set(flight.icao24, feature);
       flightsSource.addFeature(feature);
 
-      if (!flight.onGround && (flight.velocityMps || 0) > 0) {
+      if (!isReplay && !flight.onGround && (flight.velocityMps || 0) > 0) {
         activeKinematics.set(flight.icao24, {
           feature,
           lon: flight.longitude,
@@ -440,7 +458,7 @@ export function displayFlightTrail(trailGeojson: any) {
   trailFeature.setStyle(
     new Style({
       stroke: new Stroke({
-        color: "#38bdf8",
+        color: "#ffffff",
         width: 3,
         lineCap: "round",
         lineJoin: "round",
@@ -639,6 +657,17 @@ export function updateVesselFeatures(vessels: VesselTarget[]) {
     const id = String(vessel.mmsi);
     currentIds.add(id);
 
+    // Track staleness straight from the fix-receipt time, so a 60 s old AIS
+    // contact reads as 60 s old regardless of when the client last polled.
+    const fixEpoch =
+      vessel.lastContactEpoch && vessel.lastContactEpoch > 0
+        ? vessel.lastContactEpoch
+        : nowSec;
+    const fixAgeSec = Math.max(0, Math.round(nowSec - fixEpoch));
+    // Longer than one dead-reckoning horizon => this is a replayed instant:
+    // draw the recorded position frozen, never dead-reckon live vessels.
+    const isReplay = fixAgeSec > 30;
+
     // Moored / Drifting Ship Deadband:
     // If speed is < 0.5 knots or status indicates anchored/moored, freeze heading and set velocity to 0.
     // Prevents erratic GPS noise jitter and unwanted kinematic crawl across piers.
@@ -662,10 +691,14 @@ export function updateVesselFeatures(vessels: VesselTarget[]) {
       feature.set("destination", vessel.destination || "");
       feature.set("status", vessel.status || "Under way");
       feature.set("isMoored", isMoored ? 1 : 0);
+      feature.set("ageSec", fixAgeSec);
       feature.set("raw", vessel);
 
       const kin = activeKinematics.get(id);
-      if (kin) {
+      if (isReplay) {
+        (feature.getGeometry() as Point).setCoordinates(fromLonLat([vessel.lon, vessel.lat]));
+        activeKinematics.delete(id);
+      } else if (kin) {
         kin.lon = vessel.lon;
         kin.lat = vessel.lat;
         kin.speedMps = speedMps;
@@ -673,6 +706,24 @@ export function updateVesselFeatures(vessels: VesselTarget[]) {
         kin.lastUpdated = nowSec;
         kin.renderedLon = kin.renderedLon + (vessel.lon - kin.renderedLon) * 0.35;
         kin.renderedLat = kin.renderedLat + (vessel.lat - kin.renderedLat) * 0.35;
+      } else if (speedMps > 0.1) {
+        // Returning to live after a scrub: resurrect dead reckoning from the
+        // feature's projected geometry (toLonLat reads it back to lon/lat).
+        const [kinLon, kinLat] = toLonLat(
+          (feature.getGeometry() as Point).getCoordinates(),
+        );
+        activeKinematics.set(id, {
+          feature,
+          lon: vessel.lon,
+          lat: vessel.lat,
+          renderedLon: kinLon,
+          renderedLat: kinLat,
+          speedMps,
+          headingDeg: course,
+          targetHeadingDeg: course,
+          lastUpdated: nowSec,
+          kind: "vessel",
+        });
       }
     } else {
       feature = new Feature({
@@ -688,13 +739,14 @@ export function updateVesselFeatures(vessels: VesselTarget[]) {
         destination: vessel.destination || "",
         status: vessel.status || "Under way",
         isMoored: isMoored ? 1 : 0,
+        ageSec: fixAgeSec,
         raw: vessel,
       });
 
       activeVesselFeatures.set(id, feature);
       vesselsSource.addFeature(feature);
 
-      if (speedMps > 0.1) {
+      if (!isReplay && speedMps > 0.1) {
         activeKinematics.set(id, {
           feature,
           lon: vessel.lon,

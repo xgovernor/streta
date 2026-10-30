@@ -397,12 +397,12 @@ export function RasterDatasetsSection() {
       </div>
 
       {/* Gateway Security Badge */}
-      <div className="flex items-center justify-between rounded-lg border border-cyan-500/20 bg-cyan-950/20 px-2.5 py-1 text-[10px]">
-        <div className="flex items-center gap-1.5 font-medium text-cyan-300">
-          <CheckCircle2 size={12} className="text-cyan-400" />
-          Strict <code className="font-mono text-cyan-200">strata://cog</code> Gateway
+      <div className="flex items-center justify-between rounded-[2px] border border-line bg-tint px-2.5 py-1 text-[10px]">
+        <div className="flex items-center gap-1.5 font-medium text-ink-soft">
+          <CheckCircle2 size={12} className="text-ink-soft" />
+          Strict <code className="font-mono text-ink">strata://cog</code> Gateway
         </div>
-        <span className="font-mono text-[8.5px] text-cyan-400">Zero Direct HTTPS</span>
+        <span className="font-mono text-[8.5px] text-ink-muted">Zero Direct HTTPS</span>
       </div>
 
       {/* Presets List */}
@@ -416,10 +416,10 @@ export function RasterDatasetsSection() {
             <div
               key={preset.id}
               className={cx(
-                "flex flex-col rounded-lg border transition-colors",
+                "flex flex-col rounded-[2px] border transition-colors",
                 isMounted
-                  ? "border-accent/40 bg-accent/5"
-                  : "border-line bg-tint/60 hover:border-line-hover",
+                  ? "border-accent bg-accent-5"
+                  : "border-line bg-tint hover:border-line-strong",
               )}
             >
               {/* Header row */}
@@ -429,7 +429,7 @@ export function RasterDatasetsSection() {
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   onClick={() => setExpandedId(isExpanded ? null : preset.id)}
                 >
-                  <span className="grid size-6 shrink-0 place-items-center rounded bg-solid text-accent">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-[2px] bg-solid text-accent">
                     {isMulti ? <Layers size={13} /> : <Mountain size={13} />}
                   </span>
                   <div className="flex min-w-0 flex-1 flex-col">
@@ -463,7 +463,7 @@ export function RasterDatasetsSection() {
 
               {/* Expanded details & controls */}
               {isExpanded && (
-                <div className="flex flex-col gap-2.5 border-t border-line/60 p-2.5 bg-tint/40 text-[10px]">
+                <div className="flex flex-col gap-2.5 border-t border-line p-2.5 bg-tint text-[10px]">
                   <p className="text-[9.5px] leading-relaxed text-ink-muted">
                     {preset.description}
                   </p>
@@ -498,7 +498,7 @@ export function RasterDatasetsSection() {
                                   key={f.id}
                                   type="button"
                                   className={cx(
-                                    "rounded px-2 py-0.5 text-[9.5px] font-semibold transition-all border",
+                                    "rounded-[2px] px-2 py-0.5 text-[9.5px] font-semibold transition-all border",
                                     isActive
                                       ? "border-accent bg-accent text-white shadow-sm"
                                       : "border-line bg-solid text-ink-muted hover:text-ink",
@@ -514,13 +514,13 @@ export function RasterDatasetsSection() {
                       )}
 
                       {/* Active Formula Explanation & Gradient Ramp */}
-                      <div className="flex flex-col gap-1 rounded border border-line bg-solid/80 p-2">
+                      <div className="flex flex-col gap-1 rounded-[2px] border border-line bg-solid p-2">
                         <div className="flex items-center justify-between font-mono text-[9px]">
                           <span className="font-bold text-ink">{activeMeta.name}</span>
                           <span className="text-accent">{activeMeta.math}</span>
                         </div>
                         <div
-                          className="h-2 w-full rounded border border-line"
+                          className="h-2 w-full rounded-[2px] border border-line"
                           style={{ background: activeMeta.gradient }}
                         />
                         <div className="flex justify-between text-[8px] font-mono text-ink-muted">
@@ -532,10 +532,10 @@ export function RasterDatasetsSection() {
 
                       {/* Elevation Contour Isolines Action */}
                       {!isMulti && (
-                        <div className="flex flex-col gap-2 rounded border border-line bg-solid/80 p-2 text-[10px]">
+                        <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-solid p-2 text-[10px]">
                           <div className="flex items-center justify-between">
                             <span className="font-semibold text-ink flex items-center gap-1.5">
-                              <Mountain size={12} className="text-amber-500" />
+                              <Mountain size={12} className="text-warn" />
                               Contour Isolines (Marching Squares)
                             </span>
                             <span className="font-mono text-[8.5px] text-ink-muted">Vector Derivation</span>
@@ -549,10 +549,10 @@ export function RasterDatasetsSection() {
                                   key={step}
                                   type="button"
                                   className={cx(
-                                    "rounded px-1.5 py-0.5 font-mono text-[9px] border transition-all",
+                                    "rounded-[2px] px-1.5 py-0.5 font-mono text-[9px] border transition-all",
                                     contourInterval === step
-                                      ? "border-amber-500 bg-amber-500/20 text-amber-300 font-bold"
-                                      : "border-line bg-tint/60 text-ink-muted hover:text-ink",
+                                      ? "border-line-strong bg-warn-20 text-warn font-bold"
+                                      : "border-line bg-tint text-ink-muted hover:text-ink",
                                   )}
                                   onClick={() => setContourInterval(step)}
                                 >
@@ -584,12 +584,12 @@ export function RasterDatasetsSection() {
                       )}
 
                       {/* Live Pixel Probe HUD */}
-                      <div className="flex flex-col gap-1 rounded border border-line bg-solid/80 p-2">
+                      <div className="flex flex-col gap-1 rounded-[2px] border border-line bg-solid p-2">
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-[10px] text-ink">
                             Cursor Pixel Probe
                           </span>
-                          <span className="flex items-center gap-1 font-mono text-[8.5px] text-emerald-400">
+                          <span className="flex items-center gap-1 font-mono text-[8.5px] text-ok">
                             <Activity size={9} className="animate-pulse" />
                             Synchronous GPU
                           </span>
@@ -635,7 +635,7 @@ export function RasterDatasetsSection() {
                           step="0.05"
                           value={opacity}
                           onChange={(e) => handleOpacitySlider(parseFloat(e.target.value))}
-                          className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-line accent-accent"
+                          className="h-1.5 w-full cursor-pointer appearance-none rounded-[2px] bg-line accent-accent"
                         />
                       </div>
 
@@ -653,7 +653,7 @@ export function RasterDatasetsSection() {
                             step="0.00005"
                             value={contrastScale}
                             onChange={(e) => handleContrastSlider(parseFloat(e.target.value))}
-                            className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-line accent-accent"
+                            className="h-1.5 w-full cursor-pointer appearance-none rounded-[2px] bg-line accent-accent"
                           />
                         </div>
                       )}

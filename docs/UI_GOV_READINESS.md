@@ -11,6 +11,77 @@ not the pixels.
 
 ---
 
+## 0. Executive summary — the blunt version
+
+Strata is a very good desktop GIS with a live-feed demo bolted on. It is **not** a
+government operational interface. The gap isn't polish — it's that the UI answers
+analyst questions ("what's here, how big, what projection") and almost none of the
+operator questions ("what changed, how sure are we, who owns it, what do I do, what did
+it look like ten minutes ago"). If a colonel opened this in a TOC, they'd see a
+beautiful map and no way to act.
+
+You are also hedging between two products that need different UIs: an analyst
+workstation and a COP client. You're ~80% to the first, ~2% to the second. Build the
+first properly.
+
+### What Palantir and Anduril do that you don't
+
+- **Selection is the unit of work.** Palantir's right-hand Selection panel holds
+  details, time series, and *actions*; you can write back to objects from the map.
+  Strata's feature panel has zoom and copy.
+- **Time is an axis.** Palantir ships selected time, a time window, "View latest" for
+  streaming, and timeline scrubbing that moves tracks. Strata has no timeline, no as-of,
+  no replay.
+- **Annotation is a layer.** Text/shape notes with title, notes, styling, measurement
+  labels. Strata's measurement is ephemeral and unattributable.
+- **A COP is an architecture, not five feeds.** One authoritative writer, fusion,
+  visible staleness, role/classification filtering, layers ordered by update tempo.
+  Strata renders five independent feeds identically.
+
+### Where the code actually fails (measured, not estimated)
+
+1. **188 instances of text below 10px** (43 at 8px, 13 at 7.5px). Rule: 12px floor,
+   11px labels minimum.
+2. **155 hardcoded Tailwind hue utilities + 134 hex colors in map styling.**
+   Cyan/fuchsia/emerald are per-tab brands; green means live, ok, safe, configured,
+   and climbing at once. Orange is both accent and warning.
+3. **"Live" is a lie.** Both the plaque and status bar pulse green off `mapStore.ready`
+   — a render flag. Data freshness is one global `lastUpdated`. In gov use that's a
+   safety bug, not a cosmetic one.
+4. **`activePanel` is a single value.** You cannot compare attributes, selection, and
+   feeds side by side. Pressing `D` twice closes your only layer list.
+5. **Status bar reports GIS internals** — zoom, rotation, scale denominator, EPSG — and
+   omits UTC, selection count, AOI, alert count, MGRS. `rg -i mgrs` returns nothing
+   in `src`.
+6. **No provenance, classification, audit, users, roles, or permissions.** Any security
+   review stops there.
+7. **No brief export.** GeoJSON/CSV per layer only. Gov work ends in a signed product,
+   not a data file.
+8. **Alerting is buried:** emergency squawk banner inside a scrollable panel, pulsing
+   forever, no ack, no queue, no sound. Toasts are one slot for 3.2s.
+9. **Accessibility:** zero component tests, nine files with `div`/`span onClick`, no
+   focus management, no skip link, no high-contrast mode. You can't pass a VPAT in
+   this state.
+10. **Maintainability:** `LiveFeedsSection` is 1,547 lines; with `MeasurePanel` that's
+    31% of all UI in two files, with five duplicated target cards that will drift.
+
+### What to cut (§7 has the full list)
+
+Zoom buttons, rotation/scale readouts, the duplicate Live dot, per-tab colors,
+"SIMD/AVX2/sub-microsecond/CAG" copy, glass blur, ping dots, panel entrance animations,
+library catalog in the Datasets panel.
+
+### The one correction worth highlighting
+
+`FlightTarget` already carries `lastContactEpoch`/`positionTimeEpoch` from the backend —
+so per-track staleness for ADS-B is a UI change, not a data change. Start there.
+
+**Do these five first (§4):** labelled command bar + docks, truthful status, a time
+model, provenance + alert queue, and a legibility pass. Nothing else matters until
+those land.
+
+---
+
 ## 1. Verdict
 
 Strata is a very good desktop GIS with a live-feed demo stapled to it. It is not yet a

@@ -168,7 +168,7 @@ function buildCard(
   const resolved = resolveFeature(layer, feature);
 
   const className =
-    "pointer-events-auto absolute z-20 w-[272px] -translate-x-1/2 -translate-y-full overflow-hidden rounded-[10px] border border-line bg-raised shadow-[0_20px_48px_-16px_rgba(0,0,0,0.7)] border-tinted opacity-100 transition-[box-shadow,border-color,opacity,transform] duration-150 ease-out";
+    "pointer-events-auto absolute z-20 w-[272px] -translate-x-1/2 -translate-y-full overflow-hidden rounded-[2px] border border-line bg-raised opacity-100 transition-[box-shadow,border-color,opacity,transform] duration-150 ease-out";
 
   return (
     <div
@@ -186,7 +186,7 @@ function buildCard(
         </span>
         <button
           type="button"
-          className="ml-auto grid size-[18px] flex-none place-items-center rounded-[5px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
+          className="ml-auto grid size-[18px] flex-none place-items-center rounded-[2px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
           aria-label="Close feature card"
           onClick={() => {
             useMapStore.getState().setPopup(null);
@@ -198,7 +198,7 @@ function buildCard(
       </div>
 
       <div
-        className="cursor-pointer px-2.5 pb-2.5 pt-1.5 transition-colors hover:bg-tint/40"
+        className="cursor-pointer px-2.5 pb-2.5 pt-1.5 transition-colors hover:bg-tint"
         title="Click to view details"
         onClick={() => {
           useProjectStore.getState().select({
@@ -366,7 +366,7 @@ function CameraHoverWidget({
 
   return (
     <div
-      className="pointer-events-auto absolute z-20 w-[300px] -translate-x-1/2 -translate-y-full overflow-hidden rounded-[10px] border border-tinted bg-raised shadow-[0_20px_48px_-16px_rgba(0,0,0,0.75)] opacity-100 transition-[box-shadow,border-color,opacity,transform] duration-150 ease-out"
+      className="pointer-events-auto absolute z-20 w-[300px] -translate-x-1/2 -translate-y-full overflow-hidden rounded-[2px] border border-line bg-raised opacity-100 transition-[box-shadow,border-color,opacity,transform] duration-150 ease-out"
       style={{ left, top }}
       role={role}
       aria-label={`${layer.name} · ${name}`}
@@ -374,19 +374,19 @@ function CameraHoverWidget({
       onMouseLeave={() => setPopupHovered(false)}
     >
       {/* Header bar */}
-      <div className="flex items-center gap-1.5 border-b border-line bg-tint/20 px-2.5 py-1.5">
+      <div className="flex items-center gap-1.5 border-b border-line bg-tint px-2.5 py-1.5">
         <LayerSwatch color={layer.style.color} />
         <span className="truncate font-mono text-[8px] uppercase tracking-[0.12em] text-ink-muted">
           CCTV Camera
         </span>
         <div className="ml-auto flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-[4px] border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-emerald-400">
-            <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="inline-flex items-center gap-1 rounded-[2px] border border-line bg-tint px-1.5 py-0.5 font-mono text-[8px] font-semibold text-ok">
+            <span className="size-1.5 rounded-full bg-ok animate-pulse" />
             LIVE
           </span>
           <button
             type="button"
-            className="grid size-[18px] flex-none place-items-center rounded-[5px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
+            className="grid size-[18px] flex-none place-items-center rounded-[2px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
             aria-label="Close camera popup"
             onClick={() => {
               useMapStore.getState().setPopup(null);
@@ -400,7 +400,7 @@ function CameraHoverWidget({
 
       {/* Camera identity */}
       <div
-        className="px-2.5 pt-2 pb-1.5 cursor-pointer hover:bg-tint/30 transition-colors"
+        className="px-2.5 pt-2 pb-1.5 cursor-pointer hover:bg-tint transition-colors"
         onClick={() => handleOpenDetails()}
       >
         <strong className="block truncate text-[12px] font-semibold tracking-[-0.01em] text-ink" title={String(name)}>
@@ -424,7 +424,7 @@ function CameraHoverWidget({
       {rawUrl ? (
         <div className="px-2.5 pb-2">
           {hasError ? (
-            <div className="flex flex-col items-center justify-center gap-1.5 rounded-[6px] border border-line/60 bg-tint/30 py-3 text-center">
+            <div className="flex flex-col items-center justify-center gap-1.5 rounded-[2px] border border-line bg-tint py-3 text-center">
               <Camera size={16} strokeWidth={1.5} className="text-ink-muted" />
               <p className="m-0 text-[10px] text-ink-muted">Feed unavailable or blocked by CORS</p>
               <div className="flex items-center gap-2 mt-0.5">
@@ -448,7 +448,7 @@ function CameraHoverWidget({
             </div>
           ) : (
             <div
-              className="group relative aspect-video w-full overflow-hidden rounded-[6px] border border-line bg-black/90 cursor-pointer"
+              className="group relative aspect-video w-full overflow-hidden rounded-[2px] border border-line bg-black cursor-pointer"
               title="Click to view feature details"
               onClick={() => handleOpenDetails()}
             >
@@ -463,7 +463,7 @@ function CameraHoverWidget({
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
               <button
                 type="button"
-                className="absolute top-1.5 right-1.5 grid size-5 place-items-center rounded bg-black/75 text-ink-muted hover:text-white backdrop-blur-sm transition-all shadow"
+                className="absolute top-1.5 right-1.5 grid size-5 place-items-center rounded-[2px] bg-black text-ink-muted hover:text-white transition-all shadow"
                 title="Refresh snapshot feed"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -489,9 +489,9 @@ function CameraHoverWidget({
       <div className="px-2.5 pb-2">
         <div className="grid grid-cols-2 gap-1.5">
           {heading != null ? (
-            <div className="flex items-center gap-1.5 rounded-[5px] border border-line/60 bg-tint/25 px-2 py-1 text-[9.5px]">
+            <div className="flex items-center gap-1.5 rounded-[2px] border border-line bg-tint px-2 py-1 text-[9.5px]">
               <div
-                className="grid size-4 flex-none place-items-center rounded bg-accent/15 text-accent"
+                className="grid size-4 flex-none place-items-center rounded-[2px] bg-accent-15 text-accent"
                 style={{ transform: `rotate(${heading}deg)` }}
                 title={`Heading: ${heading}°`}
               >
@@ -505,7 +505,7 @@ function CameraHoverWidget({
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 rounded-[5px] border border-line/60 bg-tint/25 px-2 py-1 text-[9.5px]">
+            <div className="flex items-center gap-1.5 rounded-[2px] border border-line bg-tint px-2 py-1 text-[9.5px]">
               <Compass size={11} strokeWidth={2} className="text-ink-muted" />
               <div className="flex flex-col truncate">
                 <span className="font-mono text-[7.5px] uppercase tracking-wider text-ink-muted">Heading</span>
@@ -515,7 +515,7 @@ function CameraHoverWidget({
           )}
 
           {totalElev != null || mountHeight != null ? (
-            <div className="flex items-center justify-between rounded-[5px] border border-line/60 bg-tint/25 px-2 py-1 text-[9.5px]">
+            <div className="flex items-center justify-between rounded-[2px] border border-line bg-tint px-2 py-1 text-[9.5px]">
               <div className="flex flex-col truncate">
                 <span className="font-mono text-[7.5px] uppercase tracking-wider text-ink-muted">Elevation</span>
                 <span className="font-mono font-medium text-ink truncate">
@@ -529,10 +529,10 @@ function CameraHoverWidget({
               ) : null}
             </div>
           ) : (
-            <div className="flex items-center gap-1 rounded-[5px] border border-line/60 bg-tint/25 px-2 py-1 text-[9.5px]">
+            <div className="flex items-center gap-1 rounded-[2px] border border-line bg-tint px-2 py-1 text-[9.5px]">
               <div className="flex flex-col truncate">
                 <span className="font-mono text-[7.5px] uppercase tracking-wider text-ink-muted">Status</span>
-                <span className="font-mono font-medium text-emerald-400 capitalize">
+                <span className="font-mono font-medium text-ok capitalize">
                   {String(props.status ?? "Active")}
                 </span>
               </div>
@@ -540,7 +540,7 @@ function CameraHoverWidget({
           )}
 
           {fov != null && range != null ? (
-            <div className="col-span-2 flex items-center justify-between rounded-[5px] border border-line/60 bg-tint/25 px-2 py-1 text-[9.5px]">
+            <div className="col-span-2 flex items-center justify-between rounded-[2px] border border-line bg-tint px-2 py-1 text-[9.5px]">
               <span className="font-mono text-[7.5px] uppercase tracking-wider text-ink-muted">Viewshed Cone</span>
               <span className="font-mono text-[9px] text-ink-soft">
                 {fov}° FOV · {range}m range
@@ -551,11 +551,11 @@ function CameraHoverWidget({
       </div>
 
       {/* Action Footer */}
-      <div className="flex items-center justify-between gap-1.5 border-t border-line bg-tint/30 px-2.5 py-1.5">
+      <div className="flex items-center justify-between gap-1.5 border-t border-line bg-tint px-2.5 py-1.5">
         <div className="flex items-center gap-1">
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-[5px] border border-line/70 bg-surface px-2 py-1 font-mono text-[9px] font-medium text-ink hover:border-accent hover:text-accent transition-colors shadow-sm"
+            className="inline-flex items-center gap-1 rounded-[2px] border border-line bg-surface px-2 py-1 font-mono text-[9px] font-medium text-ink hover:border-accent hover:text-accent transition-colors shadow-sm"
             title="Zoom map to camera"
             onClick={handleZoom}
           >
@@ -564,7 +564,7 @@ function CameraHoverWidget({
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-[5px] border border-line/70 bg-surface px-2 py-1 font-mono text-[9px] font-medium text-ink hover:border-accent hover:text-accent transition-colors shadow-sm"
+            className="inline-flex items-center gap-1 rounded-[2px] border border-line bg-surface px-2 py-1 font-mono text-[9px] font-medium text-ink hover:border-accent hover:text-accent transition-colors shadow-sm"
             title="View complete attributes and camera telemetry"
             onClick={handleOpenDetails}
           >
@@ -581,8 +581,8 @@ function CameraHoverWidget({
         >
           {copied ? (
             <>
-              <Check size={9} strokeWidth={2.5} className="text-emerald-400" />
-              <span className="text-emerald-400">Copied</span>
+              <Check size={9} strokeWidth={2.5} className="text-ok" />
+              <span className="text-ok">Copied</span>
             </>
           ) : (
             <>

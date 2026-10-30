@@ -1,8 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "@fontsource-variable/instrument-sans";
+import "./assets/fonts/helvetica-now-display/stylesheet.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
 import "ol/ol.css";
 import "./index.css";
 import App from "./App";

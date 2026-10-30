@@ -19,7 +19,7 @@ export function MapAttribution() {
 
   return (
     <div
-      className="glass pointer-events-auto absolute bottom-[calc(var(--footer-h)+6px)] right-14 z-[24] flex items-center gap-[3px] rounded border border-line px-1.5 py-0.5 font-mono text-[8px] leading-[1.4] text-ink-muted shadow-float"
+      className="pointer-events-auto absolute bottom-[calc(var(--footer-h)+6px)] right-14 z-[24] flex items-center gap-[3px] rounded-[2px] border border-line bg-solid px-1.5 py-0.5 font-mono text-[8px] leading-[1.4] text-ink-muted shadow-float"
       role="note"
       aria-label="Map data attribution"
     >

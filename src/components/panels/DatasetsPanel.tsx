@@ -56,7 +56,7 @@ const DATASET_KIND_LABEL: Record<string, string> = {
 };
 
 const STEP_BUTTON =
-  "grid h-[11px] w-4 place-items-center rounded-[3px] text-ink-muted transition-colors hover:bg-tint hover:text-ink disabled:opacity-30";
+  "grid h-[11px] w-4 place-items-center rounded-[2px] text-ink-muted transition-colors hover:bg-tint hover:text-ink disabled:opacity-30";
 
 /** The dataset name edits in place, like a layer's does in its properties. */
 function DatasetNameField({ id, name }: { id: string; name: string }) {
@@ -320,7 +320,7 @@ export function DatasetsPanel() {
         {LIBRARY.map((product) => (
           <div
             key={product.id}
-            className="flex items-center gap-2 rounded-lg border border-line bg-tint p-2"
+            className="flex items-center gap-2 rounded-[2px] border border-line bg-tint p-2"
           >
             <span className="flex min-w-0 flex-1 flex-col gap-px">
               <strong className="truncate text-[11px] font-semibold">
@@ -364,7 +364,7 @@ export function DatasetsPanel() {
               return (
                 <div
                   key={group.dataset.id}
-                  className="rounded-lg border border-line-strong bg-raised p-2"
+                  className="rounded-[2px] border border-line-strong bg-raised p-2"
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="flex flex-none flex-col">
@@ -396,7 +396,7 @@ export function DatasetsPanel() {
 
                     <button
                       type="button"
-                      className="grid size-5 flex-none place-items-center rounded-[4px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
+                      className="grid size-5 flex-none place-items-center rounded-[2px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
                       aria-expanded={!group.dataset.collapsed}
                       aria-label={`${group.dataset.collapsed ? "Expand" : "Collapse"} ${group.dataset.name}`}
                       onClick={() => toggleDataset(group.dataset.id)}
@@ -457,7 +457,7 @@ export function DatasetsPanel() {
                           <div
                             key={layer.id}
                             className={cx(
-                              "rounded-[7px] border p-1.5 transition-colors",
+                              "rounded-[2px] border p-1.5 transition-colors",
                               layer.visible ?
                                 "border-line bg-tint"
                                 : "border-transparent bg-shell-2 opacity-70",
@@ -642,7 +642,7 @@ export function DatasetsPanel() {
               {recent.map((entry) => (
                 <div
                   key={`${entry.name}-${entry.featureCount}`}
-                  className="flex items-center gap-2 rounded-[7px] px-1.5 py-[7px]"
+                  className="flex items-center gap-2 rounded-[2px] px-1.5 py-[7px]"
                 >
                   <LayerSwatch color={entry.color} />
                   <span className="flex min-w-0 flex-1 flex-col gap-px">
@@ -676,8 +676,8 @@ export function DatasetsPanel() {
         ) : null}
 
       <SectionLabel>Reference</SectionLabel>
-      <div className="flex items-center gap-2 rounded-lg border border-line bg-tint p-2">
-        <span className="grid size-[26px] flex-none place-items-center rounded-md bg-tint text-ink-muted">
+      <div className="flex items-center gap-2 rounded-[2px] border border-line bg-tint p-2">
+        <span className="grid size-[26px] flex-none place-items-center rounded-[2px] bg-tint text-ink-muted">
           <Grid3x3 size={15} strokeWidth={1.7} aria-hidden="true" />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-px">

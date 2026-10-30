@@ -11,7 +11,7 @@ export function Kbd({
   return (
     <kbd
       className={cx(
-        "inline-flex h-4 min-w-4 items-center justify-center rounded border border-line border-b-line-strong bg-tint px-1 font-mono text-[8.5px] leading-none text-ink-soft",
+        "inline-flex h-4 min-w-4 items-center justify-center rounded-[2px] border border-line border-b-line-strong bg-tint px-1 font-mono text-[8.5px] leading-none text-ink-soft",
         className,
       )}
     >

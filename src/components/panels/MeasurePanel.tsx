@@ -420,7 +420,7 @@ export function MeasurePanel() {
       footer={
         <>
           <span className="flex items-center gap-1">
-            <span className="size-1.5 rounded-full bg-cyan-400" />
+            <span className="size-1.5 rounded-full bg-accent" />
             WGS 84 Ellipsoidal
           </span>
           <span className="capitalize">{activeTab} ({measureMode === "off" ? "idle" : "drawing"})</span>
@@ -429,7 +429,7 @@ export function MeasurePanel() {
     >
       {/* Tab Switcher */}
       <SectionLabel>Analytical Tool</SectionLabel>
-      <div className="grid grid-cols-6 gap-0.5 rounded-lg border border-line bg-tint p-0.5">
+      <div className="grid grid-cols-6 gap-0.5 rounded-[2px] border border-line bg-tint p-0.5">
         {MODES.map((mode) => {
           const Icon = mode.icon;
           const active = activeTab === mode.id;
@@ -440,9 +440,9 @@ export function MeasurePanel() {
               key={mode.id}
               type="button"
               className={cx(
-                "flex h-[26px] items-center justify-center gap-[4px] rounded-md text-[10px] font-semibold transition-colors",
+                "flex h-[26px] items-center justify-center gap-[4px] rounded-[2px] text-[10px] font-semibold transition-colors",
                 active
-                  ? "bg-solid text-cyan-400 shadow-sm"
+                  ? "bg-solid text-ink shadow-sm"
                   : "text-ink-muted hover:text-ink",
               )}
               aria-pressed={active}
@@ -461,12 +461,12 @@ export function MeasurePanel() {
       {activeTab === "distance" && (
         <div className="flex flex-col gap-3">
           <SectionLabel>Ellipsoidal Metrics</SectionLabel>
-          <div className="flex flex-col gap-[6px] rounded-lg border border-line bg-tint/40 p-2.5">
+          <div className="flex flex-col gap-[6px] rounded-[2px] border border-line bg-tint p-2.5">
             <KeyValue
               label="Total Distance"
               value={
                 details ? (
-                  <span className="font-mono font-semibold text-cyan-400">
+                  <span className="font-mono font-semibold text-ink">
                     {details.total_distance_km.toFixed(3)} km
                   </span>
                 ) : summary ? (
@@ -508,19 +508,19 @@ export function MeasurePanel() {
               <SectionLabel trailing={<span className="text-[9px] lowercase font-normal">({details.segments.length} legs)</span>}>
                 Segment Bearings (Karney Geodesic)
               </SectionLabel>
-              <div className="max-h-[140px] overflow-y-auto rounded-lg border border-line bg-tint/30 p-1.5 flex flex-col gap-1">
+              <div className="max-h-[140px] overflow-y-auto rounded-[2px] border border-line bg-tint p-1.5 flex flex-col gap-1">
                 {details.segments.map((seg, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between rounded-md bg-solid/60 px-2 py-1 text-[10px]"
+                    className="flex items-center justify-between rounded-[2px] bg-solid px-2 py-1 text-[10px]"
                   >
                     <span className="font-mono text-ink-muted">#{idx + 1}</span>
                     <span className="font-mono text-ink">
                       {formatDistance(seg.distance_m)}
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span className="flex items-center gap-0.5 rounded bg-cyan-950/60 px-1 py-0.5 font-mono text-[9.5px] font-medium text-cyan-300 border border-cyan-800/40">
-                        <Compass size={10} className="text-cyan-400" />
+                      <span className="flex items-center gap-0.5 rounded-[2px] bg-tint px-1 py-0.5 font-mono text-[9.5px] font-medium text-ink border border-line">
+                        <Compass size={10} className="text-ink-soft" />
                         {seg.forward_bearing_deg.toFixed(0)}° {bearingToDirection(seg.forward_bearing_deg)}
                       </span>
                       <span className="font-mono text-[9px] text-ink-muted" title="Reverse Back-Bearing">
@@ -584,12 +584,12 @@ export function MeasurePanel() {
       {activeTab === "area" && (
         <div className="flex flex-col gap-3">
           <SectionLabel>Geodesic Polygon Metrics</SectionLabel>
-          <div className="flex flex-col gap-[6px] rounded-lg border border-line bg-tint/40 p-2.5">
+          <div className="flex flex-col gap-[6px] rounded-[2px] border border-line bg-tint p-2.5">
             <KeyValue
               label="Area (sq km)"
               value={
                 details?.area_sq_km != null ? (
-                  <span className="font-mono font-semibold text-cyan-400">
+                  <span className="font-mono font-semibold text-ink">
                     {details.area_sq_km.toFixed(3)} km²
                   </span>
                 ) : summary ? (
@@ -682,7 +682,7 @@ export function MeasurePanel() {
         <div className="flex flex-col gap-3">
           <SectionLabel>Copernicus DEM GLO-90 Slicer</SectionLabel>
 
-          <div className="flex items-center justify-between rounded-lg border border-line bg-tint/40 p-2 text-[10.5px]">
+          <div className="flex items-center justify-between rounded-[2px] border border-line bg-tint p-2 text-[10.5px]">
             <span className="text-ink-muted">Sampling Density</span>
             <div className="flex gap-1">
               {[20, 40, 80].map((count) => (
@@ -690,9 +690,9 @@ export function MeasurePanel() {
                   key={count}
                   type="button"
                   className={cx(
-                    "rounded px-2 py-0.5 font-mono text-[10px] font-semibold transition-colors",
+                    "rounded-[2px] px-2 py-0.5 font-mono text-[10px] font-semibold transition-colors",
                     sampleCount === count
-                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      ? "bg-tint text-ink border border-line"
                       : "bg-solid text-ink-muted hover:text-ink",
                   )}
                   onClick={() => setSampleCount(count)}
@@ -758,16 +758,16 @@ export function MeasurePanel() {
           <SectionLabel>Geodesic Proximity Query</SectionLabel>
 
           {/* Center Point Picker */}
-          <div className="flex flex-col gap-1.5 rounded-lg border border-line bg-tint/40 p-2.5">
+          <div className="flex flex-col gap-1.5 rounded-[2px] border border-line bg-tint p-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[10.5px] text-ink-muted">Center Point</span>
               <button
                 type="button"
                 className={cx(
-                  "inline-flex h-[22px] items-center gap-1 rounded px-2 text-[10px] font-medium transition-colors",
+                  "inline-flex h-[22px] items-center gap-1 rounded-[2px] px-2 text-[10px] font-medium transition-colors",
                   isPickingCenter
-                    ? "bg-cyan-500 text-black font-semibold animate-pulse"
-                    : "bg-solid text-cyan-400 hover:text-cyan-300 border border-line",
+                    ? "bg-accent text-on-accent font-semibold animate-pulse"
+                    : "bg-solid text-ink hover:text-ink-soft border border-line",
                 )}
                 onClick={toggleCenterPicker}
               >
@@ -777,7 +777,7 @@ export function MeasurePanel() {
             </div>
             <div className="font-mono text-[11px] text-ink">
               {bufferCenter ? (
-                <span className="flex items-center gap-1 text-cyan-400">
+                <span className="flex items-center gap-1 text-ink">
                   <MapPin size={12} />
                   {bufferCenter[1].toFixed(4)}°N, {bufferCenter[0].toFixed(4)}°E
                 </span>
@@ -796,9 +796,9 @@ export function MeasurePanel() {
                   key={r}
                   type="button"
                   className={cx(
-                    "rounded border py-1 text-[10px] font-mono transition-colors",
+                    "rounded-[2px] border py-1 text-[10px] font-mono transition-colors",
                     bufferRadius === r
-                      ? "border-cyan-500 bg-cyan-950/40 text-cyan-300 font-semibold"
+                      ? "border-line-strong bg-tint text-ink font-semibold"
                       : "border-line bg-solid text-ink-muted hover:text-ink",
                   )}
                   onClick={() => {
@@ -884,15 +884,15 @@ export function MeasurePanel() {
           {/* Hit Results */}
           {bufferResult && (
             <div className="flex flex-col gap-1.5">
-              <SectionLabel trailing={<span className="text-cyan-400 font-mono font-semibold">({bufferResult.total_hits} hits)</span>}>
+              <SectionLabel trailing={<span className="text-ink font-mono font-semibold">({bufferResult.total_hits} hits)</span>}>
                 Ranked Spatial Intersections
               </SectionLabel>
               {bufferResult.hits.length === 0 ? (
-                <div className="rounded-md border border-line bg-tint/20 py-4 text-center text-[10.5px] text-ink-muted">
+                <div className="rounded-[2px] border border-line bg-tint py-4 text-center text-[10.5px] text-ink-muted">
                   No features intercepted within this buffer.
                 </div>
               ) : (
-                <div className="max-h-[220px] overflow-y-auto rounded-lg border border-line bg-tint/30 p-1 flex flex-col gap-1">
+                <div className="max-h-[220px] overflow-y-auto rounded-[2px] border border-line bg-tint p-1 flex flex-col gap-1">
                   {bufferResult.hits.map((hit, idx) => {
                     const layer = layers.find((l) => l.id === hit.layer_id);
                     const name =
@@ -905,7 +905,7 @@ export function MeasurePanel() {
                     return (
                       <div
                         key={idx}
-                        className="group flex flex-col gap-1 rounded-md bg-solid/80 p-2 text-[10.5px] hover:border-cyan-500/40 border border-transparent transition-colors cursor-pointer"
+                        className="group flex flex-col gap-1 rounded-[2px] bg-solid p-2 text-[10.5px] hover:border-line-strong border border-transparent transition-colors cursor-pointer"
                         onClick={() => {
                           const props = hit.properties;
                           const lon = Number(props?.longitude ?? props?.lon ?? bufferResult.center_lon);
@@ -918,7 +918,7 @@ export function MeasurePanel() {
                           <span className="font-semibold text-ink truncate max-w-[170px]" title={name}>
                             {name}
                           </span>
-                          <span className="font-mono text-cyan-400 font-medium">
+                          <span className="font-mono text-ink font-medium">
                             {formatDistance(hit.distance_m)}
                           </span>
                         </div>
@@ -955,19 +955,19 @@ export function MeasurePanel() {
         <div className="flex flex-col gap-3">
           <SectionLabel>SIMD Nearest-Neighbor Engine</SectionLabel>
 
-          <div className="flex flex-col gap-2 rounded-lg border border-line bg-tint/40 p-2.5">
+          <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
             <div className="flex items-center justify-between text-[11px] font-medium text-ink">
               <span className="flex items-center gap-1.5">
-                <Crosshair size={13} className="text-fuchsia-400" />
+                <Crosshair size={13} className="text-ink-soft" />
                 Query Probe Origin
               </span>
               <button
                 type="button"
                 className={cx(
-                  "flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-semibold transition-colors",
+                  "flex items-center gap-1 rounded-[2px] px-2 py-0.5 text-[10px] font-semibold transition-colors",
                   isPickingKnnCenter
-                    ? "bg-fuchsia-500 text-white animate-pulse"
-                    : "bg-solid text-fuchsia-400 hover:text-fuchsia-300 border border-line",
+                    ? "bg-accent text-on-accent animate-pulse"
+                    : "bg-solid text-ink hover:text-ink-soft border border-line",
                 )}
                 onClick={toggleKnnPicker}
               >
@@ -977,9 +977,9 @@ export function MeasurePanel() {
             </div>
 
             {knnCenter ? (
-              <div className="flex items-center justify-between rounded bg-solid/60 px-2 py-1 font-mono text-[10px] text-ink-muted">
+              <div className="flex items-center justify-between rounded-[2px] bg-solid px-2 py-1 font-mono text-[10px] text-ink-muted">
                 <span>{knnCenter[1].toFixed(5)}°N, {knnCenter[0].toFixed(5)}°E</span>
-                <span className="text-[9px] text-fuchsia-400 font-semibold">Origin Active</span>
+                <span className="text-[9px] text-ink font-semibold">Origin Active</span>
               </div>
             ) : (
               <p className="text-[10px] text-ink-muted">
@@ -1018,9 +1018,9 @@ export function MeasurePanel() {
                     key={kVal}
                     type="button"
                     className={cx(
-                      "h-5 min-w-[22px] rounded text-[10px] font-semibold transition-colors",
+                      "h-5 min-w-[22px] rounded-[2px] text-[10px] font-semibold transition-colors",
                       knnK === kVal
-                        ? "bg-fuchsia-600 text-white"
+                        ? "bg-accent text-on-accent"
                         : "bg-solid text-ink-muted hover:text-ink border border-line",
                     )}
                     onClick={() => {
@@ -1039,7 +1039,7 @@ export function MeasurePanel() {
               <button
                 type="button"
                 disabled={!knnCenter || knnLoading}
-                className={cx(PRIMARY_BUTTON, "flex-1 !bg-fuchsia-600 hover:!bg-fuchsia-500 text-white")}
+                className={cx(PRIMARY_BUTTON, "flex-1")}
                 onClick={() => knnCenter && executeKnnQuery(knnCenter, knnK, selectedKnnLayerId)}
               >
                 {knnLoading ? (
@@ -1067,17 +1067,17 @@ export function MeasurePanel() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between text-[11px] font-medium text-ink">
                 <span>Nearest {knnResult.neighbors.length} Neighbors</span>
-                <span className="flex items-center gap-1 text-[9.5px] font-mono text-fuchsia-400">
+                <span className="flex items-center gap-1 text-[9.5px] font-mono text-ink">
                   <Zap size={10} />
                   {knnResult.execution_micros.toFixed(1)} µs
                 </span>
               </div>
 
-              <div className="max-h-[240px] overflow-y-auto rounded-lg border border-line bg-tint/30 p-1 flex flex-col gap-1">
+              <div className="max-h-[240px] overflow-y-auto rounded-[2px] border border-line bg-tint p-1 flex flex-col gap-1">
                 {knnResult.neighbors.map((n, idx) => (
                   <div
                     key={idx}
-                    className="group flex flex-col gap-1 rounded-md bg-solid/80 p-2 text-[10.5px] hover:border-fuchsia-500/50 border border-transparent transition-colors cursor-pointer"
+                    className="group flex flex-col gap-1 rounded-[2px] bg-solid p-2 text-[10.5px] hover:border-line-strong border border-transparent transition-colors cursor-pointer"
                     onClick={() => {
                       flyToCoordinate(n.lon, n.lat, 15);
                       notify(`Focused on #${idx + 1}: ${n.id}`);
@@ -1085,12 +1085,12 @@ export function MeasurePanel() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-ink truncate max-w-[170px]" title={n.id}>
-                        <span className="mr-1.5 font-mono text-[9.5px] text-fuchsia-400 font-bold">
+                        <span className="mr-1.5 font-mono text-[9.5px] text-ink font-bold">
                           #{idx + 1}
                         </span>
                         {n.id}
                       </span>
-                      <span className="font-mono text-fuchsia-400 font-semibold">
+                      <span className="font-mono text-ink font-semibold">
                         {n.surface_distance_m >= 1000
                           ? `${(n.surface_distance_m / 1000).toFixed(2)} km`
                           : `${Math.round(n.surface_distance_m)} m`}
@@ -1124,7 +1124,7 @@ export function MeasurePanel() {
         <div className="flex flex-col gap-3">
           <SectionLabel>Polygon Boolean Operations</SectionLabel>
 
-          <div className="flex flex-col gap-2 rounded-lg border border-line bg-tint/40 p-2.5">
+          <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
             {/* Operation Type Buttons */}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-medium text-ink-muted">Operation Type</label>
@@ -1141,9 +1141,9 @@ export function MeasurePanel() {
                     key={op.id}
                     type="button"
                     className={cx(
-                      "h-6 rounded text-[10px] font-semibold transition-colors",
+                      "h-6 rounded-[2px] text-[10px] font-semibold transition-colors",
                       booleanOp === op.id
-                        ? "bg-emerald-600 text-white"
+                        ? "bg-accent text-on-accent"
                         : "bg-solid text-ink-muted hover:text-ink border border-line",
                     )}
                     onClick={() => setBooleanOp(op.id)}
@@ -1197,7 +1197,7 @@ export function MeasurePanel() {
               <button
                 type="button"
                 disabled={!booleanLayerA || !booleanLayerB || booleanLoading}
-                className={cx(PRIMARY_BUTTON, "flex-1 !bg-emerald-600 hover:!bg-emerald-500 text-white")}
+                className={cx(PRIMARY_BUTTON, "flex-1")}
                 onClick={executeBooleanOp}
               >
                 {booleanLoading ? (
@@ -1222,8 +1222,8 @@ export function MeasurePanel() {
 
           {/* Results Summary Card */}
           {booleanResult && (
-            <div className="flex flex-col gap-2 rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-2.5">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-400">
+            <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-ok">
                 <span className="capitalize">{booleanResult.operation} Result</span>
                 <span className="font-mono text-[10px] text-ink-muted">
                   {booleanResult.polygon_count} Polygon(s)
@@ -1243,7 +1243,7 @@ export function MeasurePanel() {
 
               <button
                 type="button"
-                className={cx(PRIMARY_BUTTON, "mt-2 !bg-emerald-700 hover:!bg-emerald-600 text-white font-semibold")}
+                className={cx(PRIMARY_BUTTON, "mt-2 font-semibold")}
                 onClick={saveBooleanResultAsLayer}
               >
                 <Check size={12} />

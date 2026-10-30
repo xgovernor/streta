@@ -175,7 +175,7 @@ export function ProjectPanel() {
             {[...layers].reverse().map((layer) => (
               <div
                 key={layer.id}
-                className="flex items-center gap-2 rounded-[7px] px-1.5 py-[6px]"
+                className="flex items-center gap-2 rounded-[2px] px-1.5 py-[6px]"
               >
                 <LayerSwatch color={layer.style.color} />
                 <span className="min-w-0 flex-1 truncate text-[10.5px] text-ink-soft">

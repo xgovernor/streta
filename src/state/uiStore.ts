@@ -10,8 +10,33 @@ import type {
 
 export type AnalysisTab = "distance" | "area" | "elevation" | "buffer" | "knn" | "boolean";
 
+/** Which dock a panel opens in. Independent: one left + one right at once. */
+const PANEL_DOCK: Record<PanelId, "left" | "right"> = {
+  search: "left",
+  project: "left",
+  data: "left",
+  telemetry: "left",
+  table: "left",
+  join: "left",
+  basemaps: "left",
+  settings: "left",
+  feature: "right",
+  layer: "right",
+  measure: "right",
+};
+
+/**
+ * Workspace state. The old single `activePanel` is gone: a dataset stack can
+ * stay open on the left while an inspection and the measure tools run on the
+ * right, and the bottom timeline dock is a third, fully independent surface.
+ */
 interface UiState {
-  activePanel: PanelId | null;
+  leftPanel: PanelId | null;
+  rightPanel: PanelId | null;
+  /** Dock that last opened, so Escape closes the surface you just used. */
+  lastDock: "left" | "right" | null;
+  timelineOpen: boolean;
+  alertsOpen: boolean;
   analysisTab: AnalysisTab;
   basemap: BasemapId;
   theme: ThemeMode;
@@ -21,7 +46,10 @@ interface UiState {
   toast: string | null;
   openPanel: (panel: PanelId) => void;
   togglePanel: (panel: PanelId) => void;
-  closePanel: () => void;
+  closePanel: (side?: "left" | "right") => void;
+  setTimelineOpen: (open: boolean) => void;
+  toggleTimeline: () => void;
+  setAlertsOpen: (open: boolean) => void;
   setAnalysisTab: (tab: AnalysisTab) => void;
   openAnalysisTab: (tab: AnalysisTab) => void;
   setBasemap: (basemap: BasemapId) => void;
@@ -37,7 +65,7 @@ interface UiState {
 /** Preferences that survive an app restart, stored on the local device. */
 type PersistedUi = Pick<
   UiState,
-  "basemap" | "coordFormat" | "theme" | "graticule" | "trafficFlow"
+  "basemap" | "coordFormat" | "theme" | "graticule" | "trafficFlow" | "timelineOpen"
 >;
 
 export const DEFAULT_PREFERENCES: PersistedUi = {
@@ -46,6 +74,7 @@ export const DEFAULT_PREFERENCES: PersistedUi = {
   theme: "dark",
   graticule: false,
   trafficFlow: false,
+  timelineOpen: false,
 };
 
 const STORAGE_KEY = "strata.preferences";
@@ -87,6 +116,10 @@ function readPreferences(value: unknown): PersistedUi {
       typeof stored.trafficFlow === "boolean" ?
         stored.trafficFlow
       : DEFAULT_PREFERENCES.trafficFlow,
+    timelineOpen:
+      typeof stored.timelineOpen === "boolean" ?
+        stored.timelineOpen
+      : DEFAULT_PREFERENCES.timelineOpen,
   };
 }
 
@@ -95,24 +128,51 @@ let flashTimer: number | undefined;
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      activePanel: null,
+      leftPanel: null,
+      rightPanel: null,
+      lastDock: null,
+      alertsOpen: false,
       analysisTab: "distance",
       ...DEFAULT_PREFERENCES,
       toast: null,
 
-      openPanel: (panel) => set({ activePanel: panel }),
+      openPanel: (panel) =>
+        set(() => {
+          const dock = PANEL_DOCK[panel];
+          const update = dock === "left" ? { leftPanel: panel } : { rightPanel: panel };
+          return { ...update, lastDock: dock };
+        }),
 
       togglePanel: (panel) =>
-        set((state) => ({
-          activePanel: state.activePanel === panel ? null : panel,
-        })),
+        set((state) => {
+          const dock = PANEL_DOCK[panel];
+          const key = dock === "left" ? "leftPanel" : "rightPanel";
+          const closing = state[key] === panel;
+          const update = dock === "left" ? { leftPanel: closing ? null : panel } : { rightPanel: closing ? null : panel };
+          return { ...update, lastDock: closing ? state.lastDock : dock };
+        }),
 
-      closePanel: () => set({ activePanel: null }),
+      /**
+       * Closes one dock, or when no side is named, the one opened most
+       * recently — that is what the Escape handler wants.
+       */
+      closePanel: (side) =>
+        set((state) => {
+          const target: "left" | "right" | null = side ?? state.lastDock;
+          if (target === "left") return { leftPanel: null };
+          if (target === "right") return { rightPanel: null };
+          return {};
+        }),
+
+      setTimelineOpen: (timelineOpen) => set({ timelineOpen }),
+      toggleTimeline: () =>
+        set((state) => ({ timelineOpen: !state.timelineOpen })),
+      setAlertsOpen: (alertsOpen) => set({ alertsOpen }),
 
       setAnalysisTab: (tab) => set({ analysisTab: tab }),
 
       openAnalysisTab: (tab) =>
-        set({ activePanel: "measure", analysisTab: tab }),
+        set({ rightPanel: "measure", lastDock: "right", analysisTab: tab }),
 
       setBasemap: (basemap) => set({ basemap }),
 
@@ -169,6 +229,7 @@ export const useUiStore = create<UiState>()(
         theme: state.theme,
         graticule: state.graticule,
         trafficFlow: state.trafficFlow,
+        timelineOpen: state.timelineOpen,
       }),
       merge: (persisted, current) => ({
         ...current,

@@ -219,7 +219,7 @@ export function AttributesPanel() {
             ))}
           </select>
 
-          <div className="flex h-[26px] w-[210px] items-center gap-1.5 rounded-[7px] border border-line bg-tint px-2 focus-within:border-accent-line">
+          <div className="flex h-[26px] w-[210px] items-center gap-1.5 rounded-[2px] border border-line bg-tint px-2 focus-within:border-accent-line">
             <Search
               size={12}
               strokeWidth={1.9}
@@ -260,7 +260,7 @@ export function AttributesPanel() {
         <>
           <button
             type="button"
-            className="inline-flex h-[24px] items-center gap-1.5 rounded-[6px] border border-line bg-tint px-2 text-[10px] font-semibold text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+            className="inline-flex h-[24px] items-center gap-1.5 rounded-[2px] border border-line bg-tint px-2 text-[10px] font-semibold text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
             onClick={() => zoomToSelection()}
             disabled={!selection}
             title="Zoom map to selected feature"
@@ -270,7 +270,7 @@ export function AttributesPanel() {
           </button>
           <button
             type="button"
-            className="grid size-6 place-items-center rounded-md text-ink-muted transition-colors hover:bg-tint hover:text-ink"
+            className="grid size-6 place-items-center rounded-[2px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
             onClick={() => setMaximized((prev) => !prev)}
             aria-label={
               maximized ? "Restore table height" : "Maximize table height"
@@ -304,7 +304,7 @@ export function AttributesPanel() {
         </>
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-line bg-shell/40">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2px] border border-line bg-shell">
         <div
           ref={scrollerRef}
           className="panel-scroll min-h-0 flex-1 overflow-auto"
@@ -360,7 +360,7 @@ export function AttributesPanel() {
                       <div
                         key={feature.id}
                         className={cx(
-                          "flex items-stretch gap-px border-b border-line/60 transition-colors",
+                          "flex items-stretch gap-px border-b border-line transition-colors",
                           selected ? "bg-accent-soft" : "hover:bg-tint",
                         )}
                         style={{ height: ROW_HEIGHT }}

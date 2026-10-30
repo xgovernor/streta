@@ -110,10 +110,10 @@ function buildDroneSvg(color: string): string {
       <line x1="7" y1="7" x2="21" y2="21" stroke="#ffffff" stroke-width="1.8"/>
       <line x1="21" y1="7" x2="7" y2="21" stroke="#ffffff" stroke-width="1.8"/>
       <!-- 4 Rotor Circles -->
-      <circle cx="7" cy="7" r="3.5" fill="none" stroke="#38bdf8" stroke-width="1.4"/>
-      <circle cx="21" cy="7" r="3.5" fill="none" stroke="#38bdf8" stroke-width="1.4"/>
-      <circle cx="7" cy="21" r="3.5" fill="none" stroke="#38bdf8" stroke-width="1.4"/>
-      <circle cx="21" cy="21" r="3.5" fill="none" stroke="#38bdf8" stroke-width="1.4"/>
+      <circle cx="7" cy="7" r="3.5" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="1.4"/>
+      <circle cx="21" cy="7" r="3.5" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="1.4"/>
+      <circle cx="7" cy="21" r="3.5" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="1.4"/>
+      <circle cx="21" cy="21" r="3.5" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="1.4"/>
       <!-- Central Body Hub -->
       <circle cx="14" cy="14" r="4" fill="${color}" stroke="#ffffff" stroke-width="1.3"/>
       <!-- Forward Arrow -->
@@ -160,7 +160,7 @@ function buildCargoShipSvg(color = "#06b6d4"): string {
       <rect x="11.5" y="18" width="5" height="3" fill="#38bdf8" rx="0.4"/>
       <!-- Aft Bridge Superstructure -->
       <rect x="11" y="23.5" width="6" height="3.5" fill="#ffffff" rx="0.5"/>
-      <circle cx="14" cy="25" r="0.8" fill="#0f172a"/>
+      <circle cx="14" cy="25" r="0.8" fill="#0a0a0a"/>
     </svg>`
   );
 }
@@ -207,7 +207,7 @@ function buildTugFishingSvg(color = "#14b8a6"): string {
         fill="${color}" stroke="#ffffff" stroke-width="1.3"/>
       <!-- High Wheelhouse -->
       <circle cx="13" cy="13" r="3.2" fill="#ffffff"/>
-      <circle cx="13" cy="13" r="1.5" fill="#0f172a"/>
+      <circle cx="13" cy="13" r="1.5" fill="#0a0a0a"/>
       <!-- Tow Winch / Rigging -->
       <line x1="13" y1="18" x2="13" y2="23" stroke="#facc15" stroke-width="1.6"/>
     </svg>`
@@ -283,8 +283,8 @@ export function getCachedLabelStyle(
     text: new Text({
       text,
       font: '600 9px "IBM Plex Mono", "SF Mono", monospace',
-      fill: new Fill({ color: "#f8fafc" }),
-      backgroundFill: new Fill({ color: "rgba(15, 23, 42, 0.88)" }),
+      fill: new Fill({ color: "#ffffff" }),
+      backgroundFill: new Fill({ color: "rgba(0, 0, 0, 0.88)" }),
       backgroundStroke: new Stroke({ color: accentColor, width: 1 }),
       padding: [1.5, 4, 1.5, 4],
       offsetY,
@@ -321,8 +321,14 @@ export function getFlightStyle(feature: FeatureLike, resolution?: number): Style
   const isEmergency = Boolean(feature.get("isEmergency"));
   const category = (feature.get("category") as number) || 0;
 
+  // A fix older than one dead-reckoning horizon is stale: fade it, so an
+  // operator can read track age on the map instead of trusting the picture.
+  const ageSec = (feature.get("ageSec") as number) || 0;
+  const staleness = isEmergency ? "live" : ageSec > 90 ? "stale" : "fresh";
+  const staleOpacity = staleness === "stale" ? 0.45 : 1;
+
   const color = isEmergency ? "#ef4444" : getAircraftAltitudeColor(alt);
-  const cacheKey = `flight:${category}:${color}:${isEmergency ? 1 : 0}:${headingDegQuant}`;
+  const cacheKey = `flight:${category}:${color}:${isEmergency ? 1 : 0}:${headingDegQuant}:${staleness}`;
 
   const iconStyle = getCachedStyle(cacheKey, () => {
     let iconSrc: string;
@@ -350,6 +356,7 @@ export function getFlightStyle(feature: FeatureLike, resolution?: number): Style
         rotation: headingRad,
         rotateWithView: true,
         anchor: [0.5, 0.5],
+        opacity: staleOpacity,
         scale: isEmergency ? 1.15 : 1.0,
       }),
     });
@@ -372,10 +379,10 @@ export function getFlightStyle(feature: FeatureLike, resolution?: number): Style
     const accent = isEmergency
       ? "rgba(239, 68, 68, 0.95)"
       : isSelected
-      ? "rgba(56, 189, 248, 0.95)"
+      ? "rgba(255, 255, 255, 0.95)"
       : isHovered
-      ? "rgba(245, 158, 11, 0.95)"
-      : "rgba(56, 189, 248, 0.45)";
+      ? "rgba(255, 255, 255, 0.78)"
+      : "rgba(255, 255, 255, 0.45)";
     const tagStyle = getCachedLabelStyle(callsign, accent, 19);
     return [iconStyle, tagStyle];
   }
@@ -405,7 +412,7 @@ export function getSatelliteStyle(feature: FeatureLike, resolution?: number): St
   const shouldShowSatTag = Boolean(satName) && (isHovered || isSelected || (resolution != null && resolution < 3500));
 
   if (shouldShowSatTag) {
-    const accent = isHovered || isSelected ? "rgba(192, 132, 252, 0.95)" : "rgba(192, 132, 252, 0.5)";
+    const accent = isHovered || isSelected ? "rgba(255, 255, 255, 0.95)" : "rgba(255, 255, 255, 0.5)";
     const tagStyle = getCachedLabelStyle(satName, accent, 18);
     return [iconStyle, tagStyle];
   }
@@ -423,7 +430,14 @@ export function getVesselStyle(feature: FeatureLike, resolution?: number): Style
   const courseDegQuant = isMoored ? 0 : Math.round(course / 2) * 2;
 
   const shipType = String(feature.get("shipType") || "").toLowerCase();
-  const cacheKey = `vessel:${isMoored ? "moored" : shipType}:${courseDegQuant}`;
+
+  // Same staleness contract as flights: a fix older than the dead-reckoning
+  // horizon fades, so track age is readable on the map without trusting it.
+  const ageSec = (feature.get("ageSec") as number) || 0;
+  const staleness = ageSec > 90 ? "stale" : "fresh";
+  const staleOpacity = staleness === "stale" ? 0.45 : 1;
+
+  const cacheKey = `vessel:${isMoored ? "moored" : shipType}:${courseDegQuant}:${staleness}`;
 
   const iconStyle = getCachedStyle(cacheKey, () => {
     let iconSrc: string;
@@ -448,6 +462,7 @@ export function getVesselStyle(feature: FeatureLike, resolution?: number): Style
         rotateWithView: !isMoored,
         anchor: [0.5, 0.5],
         scale: 1.0,
+        opacity: staleOpacity,
       }),
     });
   });
@@ -458,7 +473,7 @@ export function getVesselStyle(feature: FeatureLike, resolution?: number): Style
   const shouldShowVesselTag = Boolean(vesselName) && (isHovered || isSelected || (resolution != null && resolution < 1500));
 
   if (shouldShowVesselTag) {
-    const accent = isHovered || isSelected ? "rgba(20, 184, 166, 0.95)" : "rgba(20, 184, 166, 0.45)";
+    const accent = isHovered || isSelected ? "rgba(255, 255, 255, 0.95)" : "rgba(255, 255, 255, 0.45)";
     const tagStyle = getCachedLabelStyle(vesselName, accent, 18);
     return [iconStyle, tagStyle];
   }

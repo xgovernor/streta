@@ -43,6 +43,7 @@ import {
 } from "../../lib/gis/telemetryExtendedDb";
 import { useProjectStore } from "../../state/projectStore";
 import {
+  FEED_PROVENANCE,
   useTelemetryStore,
   type SelectedTelemetryTarget,
   type TelemetryFeedType,
@@ -74,6 +75,51 @@ function formatTimeAgo(timestampMs: number): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}d ago`;
+}
+
+/**
+ * Per-feed provenance and health: who publishes it, when it was last fetched
+ * and whether the last fetch failed. This is the data-age truth the old
+ * pulsing "live" dot hid.
+ */
+function FeedProvenance({ feed }: { feed: TelemetryFeedType }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => tick((n) => n + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const status = useTelemetryStore((state) => state.feedStatus[feed]);
+  const provenance = FEED_PROVENANCE[feed];
+
+  return (
+    <>
+      <span className="truncate font-mono text-[9px] text-ink-muted">
+        {provenance.provider} · {provenance.organization} · {provenance.cadence}
+      </span>
+      <span
+        className={cx(
+          "flex items-center gap-1 truncate font-mono text-[9px]",
+          status.lastError ? "text-critical" : "text-ink-muted",
+        )}
+        title={status.lastError ?? undefined}
+      >
+        {status.lastError ? (
+          <>
+            <AlertTriangle size={9} strokeWidth={2} aria-hidden="true" />
+            <span className="truncate">Last fetch failed — shown data is stale</span>
+          </>
+        ) : (
+          <>
+            <span>
+              Fetched {status.lastOk ? formatTimeAgo(status.lastOk) : "—"} ·{" "}
+              {formatCount(status.count)} targets
+            </span>
+          </>
+        )}
+      </span>
+    </>
+  );
 }
 
 export function LiveFeedsSection() {
@@ -376,14 +422,14 @@ export function LiveFeedsSection() {
       </div>
 
       {/* Stream Control & Refresh Bar */}
-      <div className="flex items-center justify-between rounded-lg border border-line bg-tint px-2.5 py-1.5">
+      <div className="flex items-center justify-between rounded-[2px] border border-line bg-tint px-2.5 py-1.5">
         <div className="flex items-center gap-2">
           <span className="relative flex size-2">
             {anyLiveActive && (
               <span
                 className={cx(
                   "absolute inline-flex size-full animate-ping rounded-full opacity-75",
-                  loading ? "bg-amber-400" : "bg-emerald-400"
+                  loading ? "bg-warn" : "bg-ok"
                 )}
               />
             )}
@@ -393,8 +439,8 @@ export function LiveFeedsSection() {
                 !anyLiveActive
                   ? "bg-ink-muted"
                   : loading
-                    ? "bg-amber-500"
-                    : "bg-emerald-500"
+                    ? "bg-warn"
+                    : "bg-ok"
               )}
             />
           </span>
@@ -411,7 +457,7 @@ export function LiveFeedsSection() {
           <select
             value={autoRefreshSeconds}
             onChange={(e) => setAutoRefresh(Number(e.target.value))}
-            className="rounded border border-line bg-shell-2 px-1.5 py-0.5 font-mono text-[9.5px] text-ink focus:outline-none"
+            className="rounded-[2px] border border-line bg-shell-2 px-1.5 py-0.5 font-mono text-[9.5px] text-ink focus:outline-none"
             title="Auto-refresh interval"
           >
             <option value={0}>Auto: Off</option>
@@ -423,16 +469,16 @@ export function LiveFeedsSection() {
       </div>
 
       {/* Verified API Providers Status Strip */}
-      <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-surface/50 p-2 font-mono text-[8.5px]">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-[2px] border border-line bg-surface p-2 font-mono text-[8.5px]">
         <div className="flex items-center gap-1 text-ink-subtle">
           <span className="font-semibold">PROVIDERS:</span>
         </div>
         <span
           className={cx(
-            "flex items-center gap-1 rounded px-1.5 py-0.5",
+            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
             providerStatus?.google_maps
-              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-              : "bg-ink-muted/10 text-ink-muted"
+              ? "border-line-strong bg-tint text-ok"
+              : "bg-tint text-ink-muted"
           )}
           title="Google Maps authenticated tile quota"
         >
@@ -440,10 +486,10 @@ export function LiveFeedsSection() {
         </span>
         <span
           className={cx(
-            "flex items-center gap-1 rounded px-1.5 py-0.5",
+            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
             providerStatus?.opensky_oauth
-              ? "bg-sky-500/15 text-sky-400 border border-sky-500/30"
-              : "bg-ink-muted/10 text-ink-muted"
+              ? "border-line-strong bg-tint text-ok"
+              : "bg-tint text-ink-muted"
           )}
           title="OpenSky Network OAuth2 Bearer token auth"
         >
@@ -451,10 +497,10 @@ export function LiveFeedsSection() {
         </span>
         <span
           className={cx(
-            "flex items-center gap-1 rounded px-1.5 py-0.5",
+            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
             providerStatus?.nasa_firms
-              ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
-              : "bg-ink-muted/10 text-ink-muted"
+              ? "border-line-strong bg-tint text-ok"
+              : "bg-tint text-ink-muted"
           )}
           title="NASA FIRMS NRT active fire hotspots"
         >
@@ -462,10 +508,10 @@ export function LiveFeedsSection() {
         </span>
         <span
           className={cx(
-            "flex items-center gap-1 rounded px-1.5 py-0.5",
+            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
             providerStatus?.aisstream
-              ? "bg-teal-500/15 text-teal-400 border border-teal-500/30"
-              : "bg-ink-muted/10 text-ink-muted"
+              ? "border-line-strong bg-tint text-ok"
+              : "bg-tint text-ink-muted"
           )}
           title="AISStream maritime vessel tracking"
         >
@@ -473,10 +519,10 @@ export function LiveFeedsSection() {
         </span>
         <span
           className={cx(
-            "flex items-center gap-1 rounded px-1.5 py-0.5",
+            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
             providerStatus?.tomtom_traffic
-              ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-              : "bg-ink-muted/10 text-ink-muted"
+              ? "border-line-strong bg-tint text-ok"
+              : "bg-tint text-ink-muted"
           )}
           title="TomTom real-time traffic flow"
         >
@@ -484,10 +530,10 @@ export function LiveFeedsSection() {
         </span>
         <span
           className={cx(
-            "flex items-center gap-1 rounded px-1.5 py-0.5",
+            "flex items-center gap-1 rounded-[2px] px-1.5 py-0.5",
             providerStatus?.cesium_ion
-              ? "bg-blue-500/15 text-blue-400 border border-blue-500/30"
-              : "bg-ink-muted/10 text-ink-muted"
+              ? "border-line-strong bg-tint text-ok"
+              : "bg-tint text-ink-muted"
           )}
           title="Cesium Ion 3D & Bing imagery assets"
         >
@@ -496,9 +542,9 @@ export function LiveFeedsSection() {
       </div>
 
       {/* TomTom Real-Time Traffic Layer Toggle */}
-      <div className="flex items-center justify-between rounded-lg border border-line bg-surface/70 px-2.5 py-1.5">
+      <div className="flex items-center justify-between rounded-[2px] border border-line bg-surface px-2.5 py-1.5">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="grid size-6 place-items-center rounded bg-amber-500/10 text-amber-400">
+          <span className="grid size-6 place-items-center rounded-[2px] bg-tint text-ink">
             <Car size={13} strokeWidth={2} />
           </span>
           <div className="flex flex-col min-w-0">
@@ -517,10 +563,10 @@ export function LiveFeedsSection() {
         />
       </div>
       {selectedTarget && (
-        <div className="relative overflow-hidden rounded-lg border border-accent/40 bg-accent-soft/15 p-2.5 text-xs backdrop-blur-sm">
+        <div className="relative overflow-hidden rounded-[2px] border border-accent bg-accent-soft p-2.5 text-xs">
           <button
             type="button"
-            className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded text-ink-muted hover:bg-glass hover:text-ink"
+            className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-[2px] text-ink-muted hover:bg-tint hover:text-ink"
             onClick={() => setSelectedTarget(null)}
             title="Close inspection"
           >
@@ -531,17 +577,26 @@ export function LiveFeedsSection() {
             <div className="flex flex-col gap-1.5">
               {/* Emergency Transponder Alert Banner */}
               {selectedTarget.data.emergency && (
-                <div className="flex items-center gap-1.5 rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-[9.5px] font-bold text-red-400 animate-pulse">
+                <div className="flex items-center gap-1.5 border border-critical/50 bg-critical-20 rounded-[2px] px-2 py-1 text-[9.5px] font-bold text-critical">
                   <AlertTriangle size={12} className="flex-shrink-0" />
-                  <span>TRANSPONDER ALERT: {selectedTarget.data.emergency}</span>
-                  <span className="ml-auto font-mono text-[9px] bg-red-500/30 px-1 py-0.5 rounded">
-                    SQK {selectedTarget.data.squawk || "7700"}
+                  <span>
+                    TRANSPONDER ALERT: {selectedTarget.data.emergency}
+                    <span className="ml-1 font-normal text-ink-muted">
+                      — acknowledge in the alert queue
+                    </span>
                   </span>
+                  <button
+                    type="button"
+                    className="ml-auto rounded-[2px] bg-critical-30 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] hover:bg-critical-40"
+                    onClick={() => useUiStore.getState().setAlertsOpen(true)}
+                  >
+                    Alert queue
+                  </button>
                 </div>
               )}
 
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="rounded bg-sky-500/20 px-1 py-0.5 font-mono text-[9px] font-semibold uppercase text-sky-400">
+                <span className="rounded-[2px] bg-tint px-1 py-0.5 font-mono text-[9px] font-semibold uppercase text-ink-soft">
                   ADS-B Mode-S
                 </span>
                 <strong className="font-mono text-[11px] text-ink">
@@ -551,12 +606,12 @@ export function LiveFeedsSection() {
                   [{selectedTarget.data.icao24.toUpperCase()}]
                 </span>
                 {selectedTarget.data.squawk && !selectedTarget.data.emergency && (
-                  <span className="rounded bg-shell-2 border border-line px-1 py-0.5 font-mono text-[8.5px] text-ink-muted">
+                  <span className="rounded-[2px] bg-shell-2 border border-line px-1 py-0.5 font-mono text-[8.5px] text-ink-muted">
                     SQK {selectedTarget.data.squawk}
                   </span>
                 )}
                 {selectedTarget.data.categoryLabel && selectedTarget.data.category !== 0 && (
-                  <span className="rounded bg-accent/15 px-1 py-0.5 font-mono text-[8.5px] font-medium text-accent">
+                  <span className="rounded-[2px] bg-accent-15 px-1 py-0.5 font-mono text-[8.5px] font-medium text-accent">
                     {selectedTarget.data.categoryLabel}
                   </span>
                 )}
@@ -566,7 +621,7 @@ export function LiveFeedsSection() {
               </div>
 
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">ALTITUDE</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.altitudeMeters).toLocaleString()} m
@@ -575,7 +630,7 @@ export function LiveFeedsSection() {
                     {Math.round(selectedTarget.data.altitudeMeters * 3.28084).toLocaleString()} ft
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">GROUND SPEED</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.velocityMps * 3.6)} km/h
@@ -584,15 +639,15 @@ export function LiveFeedsSection() {
                     {Math.round(selectedTarget.data.velocityMps * 1.94384)} kts
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">V-SPEED</span>
                   <span
                     className={cx(
                       "font-semibold",
                       (selectedTarget.data.verticalRateFpm ?? 0) > 60
-                        ? "text-emerald-400"
+                        ? "text-ok"
                         : (selectedTarget.data.verticalRateFpm ?? 0) < -60
-                          ? "text-amber-400"
+                          ? "text-warn"
                           : "text-ink"
                     )}
                   >
@@ -614,8 +669,8 @@ export function LiveFeedsSection() {
 
               {/* Extended Aircraft Particulars & Route (Online Registry) */}
               {extendedLoading && !extendedAircraft && (
-                <div className="flex items-center justify-center gap-1.5 rounded-md bg-surface/50 py-2 text-[9px] font-mono text-ink-subtle">
-                  <RefreshCw size={11} className="animate-spin text-sky-400" />
+                <div className="flex items-center justify-center gap-1.5 rounded-[2px] bg-surface py-2 text-[9px] font-mono text-ink-subtle">
+                  <RefreshCw size={11} className="animate-spin text-ink-soft" />
                   <span>Querying HexDB online aircraft registry...</span>
                 </div>
               )}
@@ -624,14 +679,14 @@ export function LiveFeedsSection() {
                 <div className="flex flex-col gap-1.5 pt-0.5">
                   {/* Real Aircraft Photograph */}
                   {extendedAircraft.imageThumbnailUrl && (
-                    <div className="relative overflow-hidden rounded-md border border-line bg-surface/40 h-24 w-full group">
+                    <div className="relative overflow-hidden rounded-[2px] border border-line bg-surface h-24 w-full group">
                       <img
                         src={extendedAircraft.imageThumbnailUrl}
                         alt={extendedAircraft.type || "Aircraft photo"}
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"
                       />
-                      <div className="absolute bottom-1 right-1.5 rounded bg-black/70 px-1 py-0.5 text-[8px] font-mono text-slate-200 backdrop-blur-sm">
+                      <div className="absolute bottom-1 right-1.5 rounded-[2px] bg-shell px-1 py-0.5 text-[8px] font-mono text-ink-soft">
                         {extendedAircraft.registration || selectedTarget.data.icao24}
                       </div>
                     </div>
@@ -639,21 +694,21 @@ export function LiveFeedsSection() {
 
                   {/* Flight Route Banner */}
                   {extendedAircraft.route && (
-                    <div className="flex items-center justify-between rounded-md bg-surface/80 p-2 border border-line/60">
+                    <div className="flex items-center justify-between rounded-[2px] bg-surface p-2 border border-line">
                       <div className="flex flex-col">
-                        <span className="font-mono text-xs font-bold text-sky-400">
+                        <span className="font-mono text-xs font-bold text-ink">
                           {extendedAircraft.route.originAirport?.iata || extendedAircraft.route.originAirport?.icao || "ORIGIN"}
                         </span>
                         <span className="text-[8px] text-ink-muted truncate max-w-[90px]" title={extendedAircraft.route.originAirport?.name}>
                           {extendedAircraft.route.originAirport?.name || "Departure"}
                         </span>
                       </div>
-                      <div className="flex flex-col items-center px-1 text-sky-400">
+                      <div className="flex flex-col items-center px-1 text-ink">
                         <Plane size={12} className="rotate-90" />
                         <span className="text-[7.5px] font-mono text-ink-subtle">SCHEDULED ROUTE</span>
                       </div>
                       <div className="flex flex-col items-end">
-                        <span className="font-mono text-xs font-bold text-sky-400">
+                        <span className="font-mono text-xs font-bold text-ink">
                           {extendedAircraft.route.destinationAirport?.iata || extendedAircraft.route.destinationAirport?.icao || "DEST"}
                         </span>
                         <span className="text-[8px] text-ink-muted truncate max-w-[90px] text-right" title={extendedAircraft.route.destinationAirport?.name}>
@@ -664,7 +719,7 @@ export function LiveFeedsSection() {
                   )}
 
                   {/* Aircraft Specs Grid */}
-                  <div className="rounded-md bg-surface/70 p-2 border border-line/60 space-y-1 text-[9px] font-mono">
+                  <div className="rounded-[2px] bg-surface p-2 border border-line space-y-1 text-[9px] font-mono">
                     <div className="flex justify-between">
                       <span className="text-ink-subtle">AIRFRAME:</span>
                       <span className="font-semibold text-ink truncate max-w-[170px]">
@@ -674,7 +729,7 @@ export function LiveFeedsSection() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-ink-subtle">TAIL REG:</span>
-                      <span className="font-semibold text-sky-400">
+                      <span className="font-semibold text-ink">
                         {extendedAircraft.registration || "—"}
                       </span>
                     </div>
@@ -700,7 +755,7 @@ export function LiveFeedsSection() {
                   className={cx(SECONDARY_BUTTON, "h-[22px] px-2 text-[9.5px]")}
                   title="Render historical 15-minute breadcrumb flight path"
                 >
-                  <Activity size={10} strokeWidth={2} className="text-sky-400" />
+                  <Activity size={10} strokeWidth={2} className="text-ink-soft" />
                   <span>Show Trail</span>
                 </button>
                 <button
@@ -720,12 +775,12 @@ export function LiveFeedsSection() {
               <div className="flex items-center gap-1.5">
                 <span
                   className={cx(
-                    "rounded px-1 py-0.5 font-mono text-[9px] font-bold uppercase",
+                    "rounded-[2px] px-1 py-0.5 font-mono text-[9px] font-bold uppercase",
                     selectedTarget.data.magnitude >= 6.0
-                      ? "bg-red-500/20 text-red-400"
+                      ? "bg-critical-20 text-critical"
                       : selectedTarget.data.magnitude >= 4.5
-                        ? "bg-amber-500/20 text-amber-400"
-                        : "bg-cyan-500/20 text-cyan-400"
+                        ? "bg-warn-20 text-warn"
+                        : "bg-tint text-ink"
                   )}
                 >
                   M{selectedTarget.data.magnitude.toFixed(1)} Seismic
@@ -738,24 +793,24 @@ export function LiveFeedsSection() {
                 {selectedTarget.data.place}
               </div>
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">DEPTH</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.depthKm.toFixed(1)} km
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">SIGNIFICANCE</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.significance}
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">TSUNAMI RISK</span>
                   <span
                     className={cx(
                       "font-semibold",
-                      selectedTarget.data.tsunami ? "text-red-400" : "text-emerald-400"
+                      selectedTarget.data.tsunami ? "text-critical" : "text-ok"
                     )}
                   >
                     {selectedTarget.data.tsunami ? "YES" : "NO"}
@@ -778,7 +833,7 @@ export function LiveFeedsSection() {
           {selectedTarget.type === "satellite" && (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-1.5">
-                <span className="rounded bg-purple-500/20 px-1 py-0.5 font-mono text-[9px] font-semibold uppercase text-purple-400">
+                <span className="rounded-[2px] bg-tint px-1 py-0.5 font-mono text-[9px] font-semibold uppercase text-ink-soft">
                   NORAD {selectedTarget.data.noradId}
                 </span>
                 <strong className="truncate text-[11px] font-semibold text-ink">
@@ -786,19 +841,19 @@ export function LiveFeedsSection() {
                 </strong>
               </div>
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">ALTITUDE</span>
                   <span className="font-semibold text-ink">
                     {(selectedTarget.data.altitudeKm ?? 0).toFixed(0)} km
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">VELOCITY</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.velocityKmh ?? 0).toLocaleString()} km/h
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">SUB-SAT POS</span>
                   <span className="font-semibold text-ink">
                     {(selectedTarget.data.latitude ?? 0).toFixed(1)}°, {(selectedTarget.data.longitude ?? 0).toFixed(1)}°
@@ -808,32 +863,32 @@ export function LiveFeedsSection() {
 
               {/* Extended Satellite CelesTrak Orbital Parameters */}
               {extendedLoading && !extendedSatellite && (
-                <div className="flex items-center justify-center gap-1.5 rounded-md bg-purple-950/20 py-2 text-[9px] font-mono text-purple-300">
-                  <RefreshCw size={11} className="animate-spin text-purple-400" />
+                <div className="flex items-center justify-center gap-1.5 rounded-[2px] bg-tint py-2 text-[9px] font-mono text-ink-soft">
+                  <RefreshCw size={11} className="animate-spin text-ink-soft" />
                   <span>Querying CelesTrak orbital database...</span>
                 </div>
               )}
 
               {extendedSatellite && (
-                <div className="rounded-md bg-purple-950/30 border border-purple-500/25 p-2 space-y-1 text-[9px] font-mono text-purple-200">
+                <div className="rounded-[2px] bg-tint border border-line p-2 space-y-1 text-[9px] font-mono text-ink-soft">
                   <div className="flex justify-between">
-                    <span className="text-purple-400">COSPAR ID:</span>
+                    <span className="text-ink-muted">COSPAR ID:</span>
                     <span className="font-bold">{extendedSatellite.objectId || "—"}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-purple-400">APOGEE / PERIGEE:</span>
+                    <span className="text-ink-muted">APOGEE / PERIGEE:</span>
                     <span>{extendedSatellite.apogeeKm} km / {extendedSatellite.perigeeKm} km</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-purple-400">INCLINATION:</span>
+                    <span className="text-ink-muted">INCLINATION:</span>
                     <span>{extendedSatellite.inclinationDeg.toFixed(2)}°</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-purple-400">ORBITAL PERIOD:</span>
+                    <span className="text-ink-muted">ORBITAL PERIOD:</span>
                     <span>{extendedSatellite.periodMinutes} min</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-purple-400">TOTAL REVOLUTIONS:</span>
+                    <span className="text-ink-muted">TOTAL REVOLUTIONS:</span>
                     <span>{extendedSatellite.revolutions.toLocaleString()} revs</span>
                   </div>
                 </div>
@@ -855,7 +910,7 @@ export function LiveFeedsSection() {
           {selectedTarget.type === "fire" && (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-1.5">
-                <span className="rounded bg-orange-500/20 px-1 py-0.5 font-mono text-[9px] font-semibold uppercase text-orange-400">
+                <span className="rounded-[2px] bg-tint px-1 py-0.5 font-mono text-[9px] font-semibold uppercase text-warn">
                   NASA FIRMS ({selectedTarget.data.satellite})
                 </span>
                 <strong className="truncate text-[11px] font-semibold text-ink">
@@ -863,19 +918,19 @@ export function LiveFeedsSection() {
                 </strong>
               </div>
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">FRP POWER</span>
-                  <span className="font-semibold text-orange-400">
+                  <span className="font-semibold text-warn">
                     {selectedTarget.data.frpMw.toFixed(1)} MW
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">BRIGHTNESS</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.brightnessK.toFixed(1)} K
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">ACQUISITION</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.acqDate} ({selectedTarget.data.dayNight === "D" ? "Day" : "Night"})
@@ -898,7 +953,7 @@ export function LiveFeedsSection() {
           {selectedTarget.type === "vessel" && (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-1.5">
-                <span className="rounded bg-teal-500/20 px-1 py-0.5 font-mono text-[9px] font-semibold uppercase text-teal-400">
+                <span className="rounded-[2px] bg-tint px-1 py-0.5 font-mono text-[9px] font-semibold uppercase text-ink-soft">
                   AIS Vessel
                 </span>
                 <strong className="truncate text-[11px] font-semibold text-ink">
@@ -909,19 +964,19 @@ export function LiveFeedsSection() {
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">SPEED</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.speedKnots.toFixed(1)} kts
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">COURSE</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.courseDeg)}°
                   </span>
                 </div>
-                <div className="flex flex-col rounded bg-surface/70 p-1">
+                <div className="flex flex-col rounded-[2px] bg-surface p-1">
                   <span className="text-[8px] text-ink-subtle">TYPE</span>
                   <span className="truncate font-semibold text-ink">
                     {selectedTarget.data.shipType}
@@ -929,9 +984,9 @@ export function LiveFeedsSection() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-[9.5px] font-mono rounded bg-surface/60 px-2 py-1 border border-line/50">
+              <div className="flex items-center justify-between text-[9.5px] font-mono rounded-[2px] bg-surface px-2 py-1 border border-line">
                 <span className="text-ink-subtle">FLAG STATE:</span>
-                <span className="font-semibold text-teal-400">
+                <span className="font-semibold text-ink">
                   {resolveVesselFlag(selectedTarget.data.mmsi)}
                 </span>
               </div>
@@ -959,7 +1014,7 @@ export function LiveFeedsSection() {
         {/* Feed 1: Live Flights */}
         <div
           className={cx(
-            "rounded-lg border transition-colors",
+            "rounded-[2px] border transition-colors",
             flightsEnabled
               ? "border-line-strong bg-raised"
               : "border-line bg-tint opacity-80"
@@ -981,7 +1036,7 @@ export function LiveFeedsSection() {
               )}
             </button>
 
-            <span className="grid size-[26px] flex-none place-items-center rounded-md border border-sky-500/30 bg-sky-500/10 text-sky-400">
+            <span className="grid size-[26px] flex-none place-items-center rounded-[2px] border border-line bg-tint text-ink">
               <Plane size={14} strokeWidth={1.8} aria-hidden="true" />
             </span>
 
@@ -992,6 +1047,7 @@ export function LiveFeedsSection() {
               <span className="truncate font-mono text-[9px] text-ink-muted">
                 OpenSky Network · {formatCount(flights.length)} aircraft · Radar
               </span>
+              <FeedProvenance feed="flights" />
             </span>
 
             <Switch
@@ -1037,12 +1093,12 @@ export function LiveFeedsSection() {
 
               {/* OpenSky Adaptive Quota / OAuth Status Banner */}
               {adsbStatus && (
-                <div className="flex items-center justify-between rounded bg-shell-2/60 px-2 py-1 font-mono text-[8.5px] text-ink-subtle border border-line/60">
+                <div className="flex items-center justify-between rounded-[2px] bg-tint px-2 py-1 font-mono text-[8.5px] text-ink-subtle border border-line">
                   <div className="flex items-center gap-1.5">
                     <span
                       className={cx(
                         "size-1.5 rounded-full",
-                        adsbStatus.hasOauth ? "bg-emerald-400" : "bg-sky-400"
+                        adsbStatus.hasOauth ? "bg-ok" : "bg-ink-muted"
                       )}
                     />
                     <span>
@@ -1056,7 +1112,7 @@ export function LiveFeedsSection() {
               )}
 
               {/* Scrollable Flights Target List */}
-              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded border border-line bg-shell-2">
+              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded-[2px] border border-line bg-shell-2">
                 {filteredFlights.length === 0 ? (
                   <div className="p-3 text-center text-[10px] text-ink-muted">
                     {flightsEnabled
@@ -1072,19 +1128,19 @@ export function LiveFeedsSection() {
                         onClick={() => setSelectedTarget({ type: "flight", data: flight })}
                         className={cx(
                           "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
-                          isEmg && "border-l-2 border-red-500 bg-red-500/10",
+                          isEmg && "border-l-2 border-critical/60 bg-critical-20",
                           selectedTarget?.type === "flight" &&
                             selectedTarget.data.icao24 === flight.icao24 &&
-                            "bg-accent-soft/20"
+                            "bg-accent-soft"
                         )}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <span
                             className={cx(
-                              "grid size-5 flex-none place-items-center rounded",
+                              "grid size-5 flex-none place-items-center rounded-[2px]",
                               isEmg
-                                ? "bg-red-500/20 text-red-400 animate-pulse"
-                                : "bg-tint text-sky-400 group-hover:text-accent"
+                                ? "bg-critical-20 text-critical animate-pulse"
+                                : "bg-tint text-ink-soft group-hover:text-accent"
                             )}
                             style={{
                               transform: `rotate(${flight.headingDeg}deg)`,
@@ -1100,7 +1156,7 @@ export function LiveFeedsSection() {
                                 {flight.callsign || flight.icao24}
                               </span>
                               {isEmg && (
-                                <span className="rounded bg-red-500/30 px-1 py-0.2 font-mono text-[7.5px] font-bold text-red-300">
+                                <span className="rounded-[2px] bg-critical-20 px-1 py-0.2 font-mono text-[7.5px] font-bold text-critical">
                                   {flight.emergency}
                                 </span>
                               )}
@@ -1123,7 +1179,7 @@ export function LiveFeedsSection() {
 
                         <div className="flex items-center gap-2 font-mono text-[9px]">
                           <div className="flex flex-col text-right">
-                            <span className={cx(isEmg ? "text-red-400 font-bold" : "text-ink")}>
+                            <span className={cx(isEmg ? "text-critical font-bold" : "text-ink")}>
                               {Math.round(flight.altitudeMeters).toLocaleString()}m
                             </span>
                             <span className="text-[8px] text-ink-subtle">
@@ -1136,7 +1192,7 @@ export function LiveFeedsSection() {
                               e.stopPropagation();
                               handleFlyToTarget({ type: "flight", data: flight });
                             }}
-                            className="rounded p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
+                            className="rounded-[2px] p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
                             title="Fly to aircraft"
                           >
                             <ArrowUpRight size={11} />
@@ -1154,7 +1210,7 @@ export function LiveFeedsSection() {
         {/* Feed 2: Global Earthquakes */}
         <div
           className={cx(
-            "rounded-lg border transition-colors",
+            "rounded-[2px] border transition-colors",
             earthquakesEnabled
               ? "border-line-strong bg-raised"
               : "border-line bg-tint opacity-80"
@@ -1178,7 +1234,7 @@ export function LiveFeedsSection() {
               )}
             </button>
 
-            <span className="grid size-[26px] flex-none place-items-center rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-400">
+            <span className="grid size-[26px] flex-none place-items-center rounded-[2px] border border-line bg-tint text-ink">
               <Activity size={14} strokeWidth={1.8} aria-hidden="true" />
             </span>
 
@@ -1189,6 +1245,7 @@ export function LiveFeedsSection() {
               <span className="truncate font-mono text-[9px] text-ink-muted">
                 USGS Real-time · {formatCount(earthquakes.length)} events · M{earthquakeMinMag}+
               </span>
+              <FeedProvenance feed="earthquakes" />
             </span>
 
             <Switch
@@ -1209,7 +1266,7 @@ export function LiveFeedsSection() {
                       type="button"
                       onClick={() => setEarthquakeMinMag(mag)}
                       className={cx(
-                        "rounded px-1.5 py-0.5 border transition-colors",
+                        "rounded-[2px] px-1.5 py-0.5 border transition-colors",
                         earthquakeMinMag === mag
                           ? "border-accent bg-accent-soft text-accent font-semibold"
                           : "border-line bg-shell-2 text-ink-muted hover:text-ink"
@@ -1232,7 +1289,7 @@ export function LiveFeedsSection() {
               </div>
 
               {/* Scrollable Earthquakes Target List */}
-              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded border border-line bg-shell-2">
+              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded-[2px] border border-line bg-shell-2">
                 {filteredEarthquakes.length === 0 ? (
                   <div className="p-3 text-center text-[10px] text-ink-muted">
                     {earthquakesEnabled
@@ -1248,18 +1305,18 @@ export function LiveFeedsSection() {
                         "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
                         selectedTarget?.type === "earthquake" &&
                           selectedTarget.data.id === eq.id &&
-                          "bg-accent-soft/20"
+                          "bg-accent-soft"
                       )}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <span
                           className={cx(
-                            "grid size-5 flex-none place-items-center rounded font-mono font-bold text-[9px]",
+                            "grid size-5 flex-none place-items-center rounded-[2px] font-mono font-bold text-[9px]",
                             eq.magnitude >= 6.0
-                              ? "bg-red-500/20 text-red-400"
+                              ? "bg-critical-20 text-critical"
                               : eq.magnitude >= 4.5
-                                ? "bg-amber-500/20 text-amber-400"
-                                : "bg-cyan-500/20 text-cyan-400"
+                                ? "bg-warn-20 text-warn"
+                                : "bg-tint text-ink"
                           )}
                         >
                           {eq.magnitude.toFixed(1)}
@@ -1280,7 +1337,7 @@ export function LiveFeedsSection() {
                           e.stopPropagation();
                           handleFlyToTarget({ type: "earthquake", data: eq });
                         }}
-                        className="rounded p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
+                        className="rounded-[2px] p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
                         title="Fly to epicenter"
                       >
                         <ArrowUpRight size={11} />
@@ -1296,7 +1353,7 @@ export function LiveFeedsSection() {
         {/* Feed 3: Orbital Satellites */}
         <div
           className={cx(
-            "rounded-lg border transition-colors",
+            "rounded-[2px] border transition-colors",
             satellitesEnabled
               ? "border-line-strong bg-raised"
               : "border-line bg-tint opacity-80"
@@ -1320,7 +1377,7 @@ export function LiveFeedsSection() {
               )}
             </button>
 
-            <span className="grid size-[26px] flex-none place-items-center rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-400">
+            <span className="grid size-[26px] flex-none place-items-center rounded-[2px] border border-line bg-tint text-ink-muted">
               <Satellite size={14} strokeWidth={1.8} aria-hidden="true" />
             </span>
 
@@ -1331,6 +1388,7 @@ export function LiveFeedsSection() {
               <span className="truncate font-mono text-[9px] text-ink-muted">
                 CelesTrak SGP4 · {formatCount(satellites.length)} objects · 90m orbits
               </span>
+              <FeedProvenance feed="satellites" />
             </span>
 
             <Switch
@@ -1375,7 +1433,7 @@ export function LiveFeedsSection() {
               </div>
 
               {/* Scrollable Satellites Target List */}
-              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded border border-line bg-shell-2">
+              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded-[2px] border border-line bg-shell-2">
                 {filteredSatellites.length === 0 ? (
                   <div className="p-3 text-center text-[10px] text-ink-muted">
                     {satellitesEnabled
@@ -1391,11 +1449,11 @@ export function LiveFeedsSection() {
                         "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
                         selectedTarget?.type === "satellite" &&
                           selectedTarget.data.id === sat.id &&
-                          "bg-accent-soft/20"
+                          "bg-accent-soft"
                       )}
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="grid size-5 flex-none place-items-center rounded bg-purple-500/10 text-purple-400">
+                        <span className="grid size-5 flex-none place-items-center rounded-[2px] bg-tint text-ink-muted">
                           <Satellite size={11} strokeWidth={2} />
                         </span>
                         <div className="flex flex-col min-w-0">
@@ -1418,7 +1476,7 @@ export function LiveFeedsSection() {
                             e.stopPropagation();
                             handleFlyToTarget({ type: "satellite", data: sat });
                           }}
-                          className="rounded p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
+                          className="rounded-[2px] p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
                           title="Fly to satellite"
                         >
                           <ArrowUpRight size={11} />
@@ -1435,7 +1493,7 @@ export function LiveFeedsSection() {
         {/* Feed 4: Active Wildfires (NASA FIRMS) */}
         <div
           className={cx(
-            "rounded-lg border transition-colors",
+            "rounded-[2px] border transition-colors",
             firesEnabled
               ? "border-line-strong bg-raised"
               : "border-line bg-tint opacity-80"
@@ -1459,7 +1517,7 @@ export function LiveFeedsSection() {
               )}
             </button>
 
-            <span className="grid size-[26px] flex-none place-items-center rounded-md border border-orange-500/30 bg-orange-500/10 text-orange-400">
+            <span className="grid size-[26px] flex-none place-items-center rounded-[2px] border border-line bg-tint text-warn">
               <Flame size={14} strokeWidth={1.8} aria-hidden="true" />
             </span>
 
@@ -1470,6 +1528,7 @@ export function LiveFeedsSection() {
               <span className="truncate font-mono text-[9px] text-ink-muted">
                 VIIRS/MODIS NRT · {formatCount(fires.length)} hotspots · Near Real-Time
               </span>
+              <FeedProvenance feed="fires" />
             </span>
 
             <Switch
@@ -1493,9 +1552,9 @@ export function LiveFeedsSection() {
                     step={5}
                     value={fireMinConfidence}
                     onChange={(e) => setFireMinConfidence(Number(e.target.value))}
-                    className="h-1 flex-1 accent-orange-500"
+                    className="h-1 flex-1 accent-warn"
                   />
-                  <span className="w-8 text-right font-semibold text-orange-400">
+                  <span className="w-8 text-right font-semibold text-warn">
                     {fireMinConfidence}%
                   </span>
                 </div>
@@ -1512,7 +1571,7 @@ export function LiveFeedsSection() {
               </div>
 
               {/* Scrollable Wildfire Hotspots List */}
-              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded border border-line bg-shell-2">
+              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded-[2px] border border-line bg-shell-2">
                 {filteredFires.length === 0 ? (
                   <div className="p-3 text-center text-[10px] text-ink-muted">
                     {firesEnabled
@@ -1528,11 +1587,11 @@ export function LiveFeedsSection() {
                         "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
                         selectedTarget?.type === "fire" &&
                           selectedTarget.data.id === fire.id &&
-                          "bg-accent-soft/20"
+                          "bg-accent-soft"
                       )}
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="grid size-5 flex-none place-items-center rounded bg-orange-500/10 text-orange-400">
+                        <span className="grid size-5 flex-none place-items-center rounded-[2px] bg-tint text-ink-soft">
                           <Flame size={11} strokeWidth={2} />
                         </span>
                         <div className="flex flex-col min-w-0">
@@ -1546,7 +1605,7 @@ export function LiveFeedsSection() {
                       </div>
 
                       <div className="flex items-center gap-2 font-mono text-[9px]">
-                        <span className="text-orange-400 font-semibold">
+                        <span className="text-warn font-semibold">
                           {fire.brightnessK.toFixed(0)} K
                         </span>
                         <button
@@ -1555,7 +1614,7 @@ export function LiveFeedsSection() {
                             e.stopPropagation();
                             handleFlyToTarget({ type: "fire", data: fire });
                           }}
-                          className="rounded p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
+                          className="rounded-[2px] p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
                           title="Fly to thermal hotspot"
                         >
                           <ArrowUpRight size={11} />
@@ -1572,7 +1631,7 @@ export function LiveFeedsSection() {
         {/* Feed 5: Maritime Vessels (AIS) */}
         <div
           className={cx(
-            "rounded-lg border transition-colors",
+            "rounded-[2px] border transition-colors",
             vesselsEnabled
               ? "border-line-strong bg-raised"
               : "border-line bg-tint opacity-80"
@@ -1596,7 +1655,7 @@ export function LiveFeedsSection() {
               )}
             </button>
 
-            <span className="grid size-[26px] flex-none place-items-center rounded-md border border-teal-500/30 bg-teal-500/10 text-teal-400">
+            <span className="grid size-[26px] flex-none place-items-center rounded-[2px] border border-line bg-tint text-ink">
               <Ship size={14} strokeWidth={1.8} aria-hidden="true" />
             </span>
 
@@ -1607,6 +1666,7 @@ export function LiveFeedsSection() {
               <span className="truncate font-mono text-[9px] text-ink-muted">
                 AISStream Real-Time · {formatCount(vessels.length)} ships tracked
               </span>
+              <FeedProvenance feed="vessels" />
             </span>
 
             <Switch
@@ -1651,7 +1711,7 @@ export function LiveFeedsSection() {
               </div>
 
               {/* Scrollable Vessels Target List */}
-              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded border border-line bg-shell-2">
+              <div className="flex max-h-[180px] flex-col divide-y divide-line overflow-y-auto rounded-[2px] border border-line bg-shell-2">
                 {filteredVessels.length === 0 ? (
                   <div className="p-3 text-center text-[10px] text-ink-muted">
                     {vesselsEnabled
@@ -1667,11 +1727,11 @@ export function LiveFeedsSection() {
                         "group flex items-center justify-between p-1.5 text-[10px] transition-colors hover:bg-tint cursor-pointer",
                         selectedTarget?.type === "vessel" &&
                           selectedTarget.data.mmsi === vessel.mmsi &&
-                          "bg-accent-soft/20"
+                          "bg-accent-soft"
                       )}
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="grid size-5 flex-none place-items-center rounded bg-teal-500/10 text-teal-400">
+                        <span className="grid size-5 flex-none place-items-center rounded-[2px] bg-tint text-ink-soft">
                           <Ship size={11} strokeWidth={2} />
                         </span>
                         <div className="flex flex-col min-w-0">
@@ -1685,7 +1745,7 @@ export function LiveFeedsSection() {
                       </div>
 
                       <div className="flex items-center gap-2 font-mono text-[9px]">
-                        <span className="text-teal-400 font-semibold">
+                        <span className="text-ink font-semibold">
                           {vessel.speedKnots.toFixed(1)} kts
                         </span>
                         <button
@@ -1694,7 +1754,7 @@ export function LiveFeedsSection() {
                             e.stopPropagation();
                             handleFlyToTarget({ type: "vessel", data: vessel });
                           }}
-                          className="rounded p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
+                          className="rounded-[2px] p-0.5 text-ink-subtle hover:bg-tint hover:text-accent"
                           title="Fly to vessel"
                         >
                           <ArrowUpRight size={11} />

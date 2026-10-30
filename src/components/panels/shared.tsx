@@ -2,19 +2,19 @@ import type { ReactNode } from "react";
 import { cx } from "../../lib/cx";
 
 export const PRIMARY_BUTTON =
-  "inline-flex h-[30px] items-center justify-center gap-1.5 rounded-[7px] border border-accent bg-accent text-[10.5px] font-semibold text-on-accent transition-[background-color,border-color,transform] hover:border-accent-strong hover:bg-accent-strong active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45";
+  "inline-flex h-[30px] items-center justify-center gap-1.5 rounded-[2px] border border-accent bg-accent text-[10.5px] font-semibold uppercase tracking-[0.06em] text-on-accent transition-[background-color,border-color,transform] hover:border-accent-strong hover:bg-accent-strong active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45";
 
 export const SECONDARY_BUTTON =
-  "inline-flex h-[30px] items-center justify-center gap-1.5 rounded-[7px] border border-line bg-tint px-2.5 text-[10.5px] font-semibold text-ink-soft transition-[border-color,color,transform] hover:border-line-strong hover:text-ink active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45";
+  "inline-flex h-[30px] items-center justify-center gap-1.5 rounded-[2px] border border-line bg-transparent px-2.5 text-[10.5px] font-semibold text-ink-soft transition-[border-color,color,transform] hover:border-line-strong hover:text-ink active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45";
 
 export const ICON_BUTTON =
-  "grid size-[22px] flex-none place-items-center rounded-[6px] text-ink-muted transition-colors hover:bg-tint hover:text-ink";
+  "grid size-[22px] flex-none place-items-center rounded-[2px] text-ink-muted transition-colors hover:bg-tint hover:text-ink";
 
 export const FIELD_INPUT =
-  "h-[26px] w-full rounded-[7px] border border-line bg-tint px-2 text-[11px] text-ink outline-none transition-colors focus:border-accent-line focus:bg-raised";
+  "h-[26px] w-full rounded-[2px] border border-line bg-transparent px-2 text-[11px] text-ink outline-none transition-colors focus:border-accent-line focus:bg-raised";
 
 export const SECONDARY_COPY =
-  "inline-flex h-[22px] items-center justify-center gap-1 rounded-[6px] text-[10px] font-semibold text-ink-soft transition-colors hover:bg-tint hover:text-ink";
+  "inline-flex h-[22px] items-center justify-center gap-1 rounded-[2px] text-[10px] font-semibold text-ink-soft transition-colors hover:bg-tint hover:text-ink";
 
 interface InfoNoteProps {
   icon?: ReactNode;
@@ -32,7 +32,7 @@ export function InfoNote({ icon, title, body, children }: InfoNoteProps) {
       : title;
 
   return (
-    <div className="flex items-start gap-2.5 rounded-lg border border-ink-muted/40 bg-tint px-2.5 py-2">
+    <div className="flex items-start gap-2.5 rounded-[2px] border border-l-2 border-l-line-strong border-line bg-transparent px-2.5 py-2">
       {icon ? (
         <span className="mt-0.5 shrink-0 text-ink-muted">{icon}</span>
       ) : null}
@@ -57,9 +57,10 @@ interface SectionLabelProps {
 
 export function SectionLabel({ children, trailing }: SectionLabelProps) {
   return (
-    <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-ink-muted">
+    <span className="flex items-center gap-1.5 font-mono text-[8px] font-semibold uppercase tracking-[0.18em] text-ink-muted">
+      <span aria-hidden="true" className="h-px w-2 flex-none bg-line-strong" />
       {children}
-      {trailing ? <span className="ml-2">{trailing}</span> : null}
+      {trailing ? <span className="ml-2 inline-flex tracking-normal">{trailing}</span> : null}
     </span>
   );
 }
@@ -112,7 +113,7 @@ export function LayerSwatch({
 }) {
   return (
     <span
-      className="shrink-0 rounded"
+      className="shrink-0 rounded-[2px]"
       style={{
         backgroundColor: color,
         width: size,
@@ -140,7 +141,7 @@ export function Switch({
       aria-checked={checked}
       aria-label={label}
       className={cx(
-        "relative h-4 w-7 flex-none rounded-[10px] border transition-colors",
+        "relative h-4 w-7 flex-none rounded-[2px] border transition-colors",
         checked ? "border-accent bg-accent" : "border-line bg-tint",
       )}
       onClick={onChange}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
+import { MapPin, Search, X } from "lucide-react";
+import mgrs from "mgrs";
 import { GEOGRAPHIC_CRS, transformPosition } from "../../lib/gis/crs";
 import { visibleFeatures } from "../../lib/gis/filter";
 import { displayValue, geometryCentroid, searchableText } from "../../lib/gis/geometry";
@@ -24,6 +25,58 @@ interface Result {
   lat: number;
 }
 
+function parseCoordinateQuery(query: string): { lon: number; lat: number } | null {
+  const q = query.trim();
+  if (!q) return null;
+
+  // Try MGRS first (space or no-space)
+  try {
+    const result = (mgrs as any).inverse(q.replace(/\s+/g, ""));
+    if (Array.isArray(result) && result.length === 2 && Number.isFinite(result[0]) && Number.isFinite(result[1])) {
+      return { lon: result[0], lat: result[1] };
+    }
+    if (result && typeof result === "object" && Array.isArray((result as any))) {
+      const arr = result as any;
+      if (arr.length === 2) return { lon: arr[0], lat: arr[1] };
+    }
+    if (result && typeof result === "object" && "lon" in result && "lat" in result) {
+      return { lon: (result as any).lon, lat: (result as any).lat };
+    }
+  } catch {
+    // fall through
+  }
+  try {
+    const result = (mgrs as any).inverse(q.toUpperCase());
+    if (Array.isArray(result) && result.length === 2 && Number.isFinite(result[0]) && Number.isFinite(result[1])) {
+      return { lon: result[0], lat: result[1] };
+    }
+    if (result && typeof result === "object" && "lon" in result && "lat" in result) {
+      return { lon: (result as any).lon, lat: (result as any).lat };
+    }
+  } catch {
+    // fall through
+  }
+
+  // Try decimal lat,lon or lon,lat
+  const parts = q.split(/[\s,]+/).filter(Boolean);
+  if (parts.length === 2) {
+    const a = parseFloat(parts[0]);
+    const b = parseFloat(parts[1]);
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      // Assume lat,lon if |a| <= 90
+      if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
+        return { lat: a, lon: b };
+      }
+      // Assume lon,lat
+      if (Math.abs(a) <= 180 && Math.abs(b) <= 90) {
+        return { lon: a, lat: b };
+      }
+    }
+  }
+
+  return null;
+}
+
 export function SearchPanel() {
   const closePanel = useUiStore((state) => state.closePanel);
   const select = useProjectStore((state) => state.select);
@@ -35,6 +88,8 @@ export function SearchPanel() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  const coordGoto = useMemo(() => parseCoordinateQuery(query), [query]);
 
   /** A lowercase copy of every feature's attributes, rebuilt only when data changes. */
   const index = useMemo(
@@ -126,20 +181,24 @@ export function SearchPanel() {
         className="mb-1"
         onSubmit={(event) => {
           event.preventDefault();
+          if (coordGoto) {
+            flyTo(coordGoto.lon, coordGoto.lat, 14);
+            return;
+          }
           if (results[0]) {
             choose(results[0]);
           }
         }}
       >
-        <div className="flex h-[34px] items-center gap-2 rounded-lg border border-line bg-tint px-2.5 text-ink-muted transition-colors focus-within:border-accent-line focus-within:bg-raised">
+        <div className="flex h-[34px] items-center gap-2 rounded-[2px] border border-line bg-tint px-2.5 text-ink-muted transition-colors focus-within:border-accent-line focus-within:bg-raised">
           <Search size={15} strokeWidth={1.8} aria-hidden="true" />
           <input
             ref={inputRef}
             type="search"
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Search every field"
-            aria-label="Search features"
+            placeholder="Search features or go to lat,lon / MGRS"
+            aria-label="Search features or coordinates"
             autoComplete="off"
             spellCheck={false}
             className="h-full flex-1 appearance-none border-0 bg-transparent text-xs text-ink outline-none placeholder:text-ink-muted"
@@ -147,7 +206,7 @@ export function SearchPanel() {
           {query ? (
             <button
               type="button"
-              className="grid size-5 flex-none place-items-center rounded-[5px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
+              className="grid size-5 flex-none place-items-center rounded-[2px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
               aria-label="Clear search"
               onClick={() => {
                 setQuery("");
@@ -162,56 +221,80 @@ export function SearchPanel() {
         </div>
       </form>
 
-      <SectionLabel trailing={query ? `${results.length} shown` : "All features"}>
-        Matches
-      </SectionLabel>
-
-      {results.length ? (
-        <div className="flex flex-col gap-px">
-          {results.map((result) => (
-            <button
-              key={`${result.layerId}:${result.featureId}`}
-              type="button"
-              className="flex w-full items-center gap-2 rounded-[7px] px-1.5 py-[7px] text-left transition-colors hover:bg-tint"
-              onClick={() => choose(result)}
-            >
-              <LayerSwatch color={result.color} />
-              <span className="flex min-w-0 flex-1 flex-col gap-px">
-                <strong className="truncate text-[11.5px] font-semibold">
-                  {result.label}
-                </strong>
-                <span className="truncate text-[9.5px] text-ink-muted">
-                  {result.detail}
-                </span>
+      {coordGoto ? (
+        <>
+          <SectionLabel>Go to location</SectionLabel>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-[2px] px-1.5 py-[7px] text-left transition-colors hover:bg-tint"
+            onClick={() => {
+              flyTo(coordGoto.lon, coordGoto.lat, 14);
+            }}
+          >
+            <MapPin size={14} strokeWidth={1.8} className="text-accent" aria-hidden="true" />
+            <span className="flex min-w-0 flex-1 flex-col gap-px">
+              <strong className="truncate text-[11.5px] font-semibold">Fly to coordinates</strong>
+              <span className="truncate font-mono text-[9.5px] text-ink-muted">
+                {coordGoto.lat.toFixed(5)}, {coordGoto.lon.toFixed(5)}
               </span>
-              <span className="flex-none font-mono text-[9px] text-ink-soft">
-                {result.lat.toFixed(2)}, {result.lon.toFixed(2)}
-              </span>
-            </button>
-          ))}
-        </div>
+            </span>
+            <span className="flex-none text-[9px] text-ink-muted">Enter</span>
+          </button>
+        </>
       ) : (
-        <EmptyState
-          icon={<Search size={20} strokeWidth={1.4} aria-hidden="true" />}
-          title={
-            total
-              ? `Nothing matches “${query}”.`
-              : "Load a dataset to search its features."
-          }
-        >
-          {query ? (
-            <button
-              type="button"
-              className="text-[10px] font-semibold tracking-[0.02em] text-accent hover:underline"
-              onClick={() => {
-                setQuery("");
-                inputRef.current?.focus();
-              }}
+        <>
+          <SectionLabel trailing={query ? `${results.length} shown` : "All features"}>
+            Matches
+          </SectionLabel>
+
+          {results.length ? (
+            <div className="flex flex-col gap-px">
+              {results.map((result) => (
+                <button
+                  key={`${result.layerId}:${result.featureId}`}
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-[2px] px-1.5 py-[7px] text-left transition-colors hover:bg-tint"
+                  onClick={() => choose(result)}
+                >
+                  <LayerSwatch color={result.color} />
+                  <span className="flex min-w-0 flex-1 flex-col gap-px">
+                    <strong className="truncate text-[11.5px] font-semibold">
+                      {result.label}
+                    </strong>
+                    <span className="truncate text-[9.5px] text-ink-muted">
+                      {result.detail}
+                    </span>
+                  </span>
+                  <span className="flex-none font-mono text-[9px] text-ink-soft">
+                    {result.lat.toFixed(2)}, {result.lon.toFixed(2)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<Search size={20} strokeWidth={1.4} aria-hidden="true" />}
+              title={
+                total
+                  ? `Nothing matches “${query}”.`
+                  : "Load a dataset to search its features."
+              }
             >
-              Clear search
-            </button>
-          ) : null}
-        </EmptyState>
+              {query ? (
+                <button
+                  type="button"
+                  className="text-[10px] font-semibold tracking-[0.02em] text-accent hover:underline"
+                  onClick={() => {
+                    setQuery("");
+                    inputRef.current?.focus();
+                  }}
+                >
+                  Clear search
+                </button>
+              ) : null}
+            </EmptyState>
+          )}
+        </>
       )}
     </PanelShell>
   );

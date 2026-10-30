@@ -10,7 +10,7 @@ export function Toast() {
 
   return (
     <div
-      className="pointer-events-none absolute bottom-[calc(var(--footer-h)+10px)] left-1/2 z-[60] flex animate-toast items-center gap-[7px] rounded-[7px] border border-line bg-raised px-2.5 py-[7px] text-[10.5px] text-ink-soft shadow-panel backdrop-blur-[20px] backdrop-saturate-[1.2]"
+      className="pointer-events-none absolute bottom-[calc(var(--footer-h)+10px)] left-1/2 z-[60] flex animate-toast items-center gap-[7px] rounded-[2px] border border-line bg-solid px-2.5 py-[7px] text-[10.5px] text-ink-soft shadow-panel"
       role="status"
       aria-live="polite"
     >

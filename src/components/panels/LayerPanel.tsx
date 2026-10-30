@@ -156,7 +156,7 @@ function Facet({
   const listed = matching.slice(0, FACET_LIMIT);
 
   return (
-    <div className="rounded-[7px] border border-line bg-tint">
+    <div className="rounded-[2px] border border-line bg-tint">
       <div className="flex items-center gap-1 py-1 pl-2 pr-1">
         <span className="truncate font-mono text-[8px] uppercase tracking-[0.1em] text-ink-muted">
           {field}
@@ -181,7 +181,7 @@ function Facet({
           placeholder={`Search ${options.length} values`}
           aria-label={`Search ${field} values`}
           autoComplete="off"
-          className="mx-1.5 mb-1 h-[22px] w-[calc(100%-12px)] rounded-[5px] border border-line bg-raised px-1.5 text-[10px] text-ink outline-none placeholder:text-ink-muted focus:border-accent-line"
+          className="mx-1.5 mb-1 h-[22px] w-[calc(100%-12px)] rounded-[2px] border border-line bg-raised px-1.5 text-[10px] text-ink outline-none placeholder:text-ink-muted focus:border-accent-line"
           onChange={(event) => setQuery(event.currentTarget.value)}
         />
       ) : null}
@@ -190,7 +190,7 @@ function Facet({
         {listed.map((option) => (
           <label
             key={option.value}
-            className="flex cursor-pointer items-center gap-1.5 rounded-[5px] px-1 py-[2px] text-[10px] text-ink-soft hover:bg-raised"
+            className="flex cursor-pointer items-center gap-1.5 rounded-[2px] px-1 py-[2px] text-[10px] text-ink-soft hover:bg-raised"
           >
             <input
               type="checkbox"
@@ -559,7 +559,7 @@ export function LayerPanel() {
             type="button"
             aria-label={`Use ${color}`}
             aria-pressed={layer.style.color === color}
-            className="size-[17px] rounded-[5px] border transition-transform active:scale-95"
+            className="size-[17px] rounded-[2px] border transition-transform active:scale-95"
             style={{
               backgroundColor: color,
               borderColor:
@@ -623,7 +623,7 @@ export function LayerPanel() {
       </label>
 
       {isPointLayer && (
-        <div className="mt-3.5 flex flex-col gap-2 rounded-lg border border-line bg-tint/40 p-2.5">
+        <div className="mt-3.5 flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] font-semibold text-ink">
               H3 Hexagonal Binning
@@ -640,7 +640,7 @@ export function LayerPanel() {
               step={1}
               value={h3Resolution}
               onChange={(e) => setH3Resolution(parseInt(e.target.value, 10))}
-              className="h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-line accent-accent"
+              className="h-1.5 flex-1 cursor-pointer appearance-none rounded-[2px] bg-line accent-accent"
               aria-label="H3 resolution"
             />
             <span className="font-mono text-[10px] text-ink font-semibold w-5 text-right">

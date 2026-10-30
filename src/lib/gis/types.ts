@@ -282,6 +282,10 @@ export interface VesselTarget {
   destination: string;
   status: string;
   simulated: boolean;
+  /** Epoch seconds the fix was stamped at receipt. AIS reports are not
+   *  timestamped at source; the client stamps the moment it received them, so
+   *  replay covers what happened during the session, nothing before it. */
+  lastContactEpoch?: number | null;
 }
 
 

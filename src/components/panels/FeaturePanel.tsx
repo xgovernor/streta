@@ -259,7 +259,7 @@ function OnlineContext({
             </button>
           ) : loadedValue(osm) ? (
             <>
-              <div className="panel-scroll max-h-[150px] overflow-auto rounded-[6px] border border-line bg-tint px-1.5 py-1">
+              <div className="panel-scroll max-h-[150px] overflow-auto rounded-[2px] border border-line bg-tint px-1.5 py-1">
                 {loadedValue(osm)!.tags.map(([key, value]: [string, string]) => (
                   <div
                     key={key}
@@ -327,14 +327,14 @@ function CctvSnapshotViewer({ rawUrl }: { rawUrl: string }) {
   }, [isPaused, hasError, refresh]);
 
   return (
-    <div className="flex flex-col gap-2 rounded-[8px] border border-line bg-tint/60 p-2.5">
+    <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-muted">
           <Camera size={11} strokeWidth={2} aria-hidden="true" />
           <span>Live Snapshot</span>
           <span
             className={`inline-block size-1.5 rounded-full ${
-              hasError ? "bg-amber-500" : isPaused ? "bg-ink-muted" : "bg-emerald-500 animate-pulse"
+              hasError ? "bg-warn" : isPaused ? "bg-ink-muted" : "bg-ok animate-pulse"
             }`}
           />
         </div>
@@ -344,7 +344,7 @@ function CctvSnapshotViewer({ rawUrl }: { rawUrl: string }) {
       </div>
 
       {hasError ? (
-        <div className="flex flex-col items-center justify-center gap-1.5 rounded-[6px] border border-line/60 bg-surface/50 py-4 text-center">
+        <div className="flex flex-col items-center justify-center gap-1.5 rounded-[2px] border border-line bg-surface py-4 text-center">
           <p className="m-0 text-[10.5px] text-ink-muted">Snapshot unavailable or blocked by CORS.</p>
           <button
             type="button"
@@ -356,7 +356,7 @@ function CctvSnapshotViewer({ rawUrl }: { rawUrl: string }) {
           </button>
         </div>
       ) : (
-        <div className="relative overflow-hidden rounded-[6px] border border-line bg-black/80">
+        <div className="relative overflow-hidden rounded-[2px] border border-line bg-black">
           <img
             src={src}
             alt="CCTV snapshot"

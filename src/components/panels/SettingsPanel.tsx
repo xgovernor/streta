@@ -8,7 +8,7 @@ import { Kbd } from "../Kbd";
 import { PanelShell } from "../PanelShell";
 
 const SEGMENT_BUTTON =
-  "flex h-[26px] items-center justify-center gap-[5px] rounded-md text-[10.5px] font-semibold transition-colors";
+  "flex h-[26px] items-center justify-center gap-[5px] rounded-[2px] text-[10.5px] font-semibold transition-colors";
 
 const SHORTCUTS: { label: string; keys: string[] }[] = [
   { label: "Zoom in / out", keys: ["+", "−"] },
@@ -55,7 +55,7 @@ export function SettingsPanel() {
           <span>Interface</span>
           <span>Theme</span>
         </div>
-        <div className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-lg border border-line bg-tint p-0.5">
+        <div className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-[2px] border border-line bg-tint p-0.5">
           {themes.map((item) => {
             const Icon = item.icon;
             const active = theme === item.id;
@@ -84,7 +84,7 @@ export function SettingsPanel() {
           <span>Readout</span>
           <span>{formats.find((item) => item.id === coordFormat)?.hint}</span>
         </div>
-        <div className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-lg border border-line bg-tint p-0.5">
+        <div className="grid auto-cols-fr grid-flow-col gap-0.5 rounded-[2px] border border-line bg-tint p-0.5">
           {formats.map((item) => {
             const active = coordFormat === item.id;
 

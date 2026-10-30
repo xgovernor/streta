@@ -83,6 +83,41 @@ const GRATICULE_Z = 5;
 
 let activeMap: OlMap | null = null;
 let activeTeardown: (() => void) | null = null;
+
+/**
+ * Captures the current map view as a PNG data URL. Returns null if no map
+ * is active or capture fails.
+ */
+export function captureMapAsPng(): string | null {
+  if (!activeMap) return null;
+  try {
+    const mapCanvas = activeMap.getViewport()?.querySelector("canvas");
+    if (!(mapCanvas instanceof HTMLCanvasElement)) return null;
+    // Force render if possible
+    if (typeof (activeMap as any).renderSync === "function") {
+      (activeMap as any).renderSync();
+    }
+    return mapCanvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
+
+export function downloadMapCapture(filename = "strata-map.png"): boolean {
+  const dataUrl = captureMapAsPng();
+  if (!dataUrl) return false;
+  try {
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    return true;
+  } catch {
+    return false;
+  }
+}
 let activeMeasureClear: (() => void) | null = null;
 let activeAnalysisSource: VectorSource | null = null;
 let activeBufferPicker: ((coord: [number, number]) => void) | null = null;
@@ -227,7 +262,7 @@ function graticuleStyle(feature: FeatureLike): Style {
 
   return new Style({
     stroke: new Stroke({
-      color: major ? "rgba(110,132,150,.62)" : "rgba(110,132,150,.32)",
+      color: major ? "rgba(255,255,255,.55)" : "rgba(255,255,255,.28)",
       width: major ? 1.1 : 1,
       lineDash: major ? undefined : [3, 6],
     }),
@@ -990,19 +1025,29 @@ export function mountMap(target: HTMLElement): () => void {
   emitCamera();
 
   const telemetryUnsubscribe = useTelemetryStore.subscribe((state, previous) => {
-    if (state.flights !== previous.flights) {
+    // When the operator lifts off “live” onto a replayed instant, the map
+    // draws the interpolated history snapshot instead of the fresh feed.
+    if (state.displayedFlights !== previous.displayedFlights) {
+      updateFlightFeatures(state.displayedFlights ?? state.flights);
+    } else if (state.flights !== previous.flights && state.displayedFlights === null) {
       updateFlightFeatures(state.flights);
     }
-    if (state.earthquakes !== previous.earthquakes) {
+    if (state.displayedEarthquakes !== previous.displayedEarthquakes) {
+      updateEarthquakeFeatures(state.displayedEarthquakes ?? state.earthquakes);
+    } else if (state.earthquakes !== previous.earthquakes && state.displayedEarthquakes === null) {
       updateEarthquakeFeatures(state.earthquakes);
     }
     if (state.satellites !== previous.satellites) {
       updateSatelliteFeatures(state.satellites);
     }
-    if (state.fires !== previous.fires) {
+    if (state.displayedFires !== previous.displayedFires) {
+      updateFireFeatures(state.displayedFires ?? state.fires);
+    } else if (state.fires !== previous.fires && state.displayedFires === null) {
       updateFireFeatures(state.fires);
     }
-    if (state.vessels !== previous.vessels) {
+    if (state.displayedVessels !== previous.displayedVessels) {
+      updateVesselFeatures(state.displayedVessels ?? state.vessels);
+    } else if (state.vessels !== previous.vessels && state.displayedVessels === null) {
       updateVesselFeatures(state.vessels);
     }
     if (state.flightsEnabled !== previous.flightsEnabled) {
@@ -1036,11 +1081,13 @@ export function mountMap(target: HTMLElement): () => void {
   });
 
   const initTelemetry = useTelemetryStore.getState();
-  if (initTelemetry.flights.length > 0) updateFlightFeatures(initTelemetry.flights);
-  if (initTelemetry.earthquakes.length > 0) updateEarthquakeFeatures(initTelemetry.earthquakes);
-  if (initTelemetry.satellites.length > 0) updateSatelliteFeatures(initTelemetry.satellites);
-  if (initTelemetry.fires.length > 0) updateFireFeatures(initTelemetry.fires);
-  if (initTelemetry.vessels.length > 0) updateVesselFeatures(initTelemetry.vessels);
+  updateFlightFeatures(initTelemetry.displayedFlights ?? initTelemetry.flights);
+  updateEarthquakeFeatures(initTelemetry.displayedEarthquakes ?? initTelemetry.earthquakes);
+  if (initTelemetry.satellites.length > 0) {
+    updateSatelliteFeatures(initTelemetry.satellites);
+  }
+  updateFireFeatures(initTelemetry.displayedFires ?? initTelemetry.fires);
+  updateVesselFeatures(initTelemetry.displayedVessels ?? initTelemetry.vessels);
   if (
     initTelemetry.flights.length === 0 &&
     initTelemetry.earthquakes.length === 0 &&
@@ -1249,7 +1296,7 @@ function summarizeGeometry(
 
 const SEGMENT_LABEL = new Text({
   font: '600 10.5px "IBM Plex Mono", monospace',
-  fill: new Fill({ color: "#101820" }),
+  fill: new Fill({ color: "#0a0a0a" }),
   stroke: new Stroke({ color: "rgba(255,255,255,.94)", width: 3 }),
   overflow: true,
 });
@@ -1639,7 +1686,7 @@ function analysisStyle(feature: FeatureLike): Style | Style[] {
               text: label,
               font: '600 11px "IBM Plex Mono", monospace',
               fill: new Fill({ color: "#06b6d4" }),
-              stroke: new Stroke({ color: "#101820", width: 3 }),
+              stroke: new Stroke({ color: "#0a0a0a", width: 3 }),
               offsetY: -16,
             })
           : undefined,

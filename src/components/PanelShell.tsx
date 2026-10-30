@@ -35,19 +35,19 @@ export function PanelShell({
   return (
     <section
       className={cx(
-        "glass pointer-events-auto absolute z-30 flex flex-col overflow-hidden rounded-xl border border-line shadow-panel",
+        "pointer-events-auto absolute z-30 flex flex-col overflow-hidden border border-line bg-solid",
         side === "bottom"
-          ? "bottom-[calc(var(--footer-h)+6px)] left-[52px] right-[52px] h-[min(480px,46vh)] animate-panel-bottom compact:left-2 compact:right-2"
+          ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] left-2 right-2 h-[min(480px,46vh)] animate-panel-bottom"
           : side === "left"
-            ? "bottom-[calc(var(--footer-h)+8px)] left-14 top-16 animate-panel-left compact:top-2.5 short:top-2.5"
-            : "bottom-[calc(var(--footer-h)+8px)] right-14 top-2.5 animate-panel-right",
+            ? "bottom-[calc(var(--footer-h)+8px)] left-2 top-[calc(var(--commandbar-h)+6px)] animate-panel-left short:top-[calc(var(--commandbar-h)+4px)]"
+            : "bottom-[calc(var(--footer-h)+8px)] right-2 top-[calc(var(--commandbar-h)+6px)] animate-panel-right",
         side === "bottom"
           ? ""
           : wide
-            ? "w-[min(640px,calc(100vw-112px))]"
+            ? "w-[min(640px,calc(100vw-24px))]"
             : side === "left"
-              ? "w-[296px] compact:w-[calc(100vw-112px)]"
-              : "w-[300px] compact:w-[calc(100vw-112px)]",
+              ? "w-[min(296px,calc(100vw-24px))]"
+              : "w-[min(300px,calc(100vw-24px))]",
         className,
       )}
       role="dialog"
@@ -57,12 +57,12 @@ export function PanelShell({
       <header className="flex flex-none items-center justify-between gap-2.5 border-b border-line px-3 pb-2.5 pl-3.5 pt-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-accent">
+            <span className="font-mono text-[7.5px] uppercase tracking-[0.2em] text-ink-muted">
               {eyebrow}
             </span>
             <h2
               id={titleId}
-              className="m-0 truncate text-sm font-semibold tracking-[-0.015em]"
+              className="m-0 truncate font-mono text-[11px] font-semibold uppercase tracking-[0.08em]"
             >
               {title}
             </h2>
@@ -77,7 +77,7 @@ export function PanelShell({
           {headerTrailing}
           <button
             type="button"
-            className="grid size-6 flex-none place-items-center rounded-md text-ink-muted transition-colors hover:bg-tint hover:text-ink"
+            className="grid size-6 flex-none place-items-center rounded-[2px] text-ink-muted transition-colors hover:bg-tint hover:text-ink"
             onClick={onClose}
             aria-label={`Close ${title}`}
           >

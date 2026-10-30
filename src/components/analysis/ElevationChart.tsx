@@ -111,9 +111,9 @@ export function ElevationChart({ data }: ElevationChartProps) {
       : 0;
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-line bg-tint/60 p-2.5">
+    <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
       {/* Metric summary banner */}
-      <div className="grid grid-cols-4 gap-1 rounded-md bg-solid/80 p-1.5 text-[10.5px]">
+      <div className="grid grid-cols-4 gap-1 rounded-[2px] bg-solid p-1.5 text-[10.5px]">
         <div className="flex flex-col items-center">
           <span className="text-[9px] uppercase tracking-wider text-ink-muted">Min</span>
           <span className="font-mono font-semibold text-ink">
@@ -128,24 +128,24 @@ export function ElevationChart({ data }: ElevationChartProps) {
         </div>
         <div className="flex flex-col items-center">
           <span className="flex items-center gap-0.5 text-[9px] uppercase tracking-wider text-ink-muted">
-            <ArrowUpRight size={10} className="text-emerald-400" /> Gain
+            <ArrowUpRight size={10} className="text-ok" /> Gain
           </span>
-          <span className="font-mono font-semibold text-emerald-400">
+          <span className="font-mono font-semibold text-ok">
             +{Math.round(data.elevation_gain_m)}m
           </span>
         </div>
         <div className="flex flex-col items-center">
           <span className="flex items-center gap-0.5 text-[9px] uppercase tracking-wider text-ink-muted">
-            <ArrowDownRight size={10} className="text-rose-400" /> Loss
+            <ArrowDownRight size={10} className="text-critical" /> Loss
           </span>
-          <span className="font-mono font-semibold text-rose-400">
+          <span className="font-mono font-semibold text-critical">
             -{Math.round(data.elevation_loss_m)}m
           </span>
         </div>
       </div>
 
       {/* SVG Elevation Cross-Section */}
-      <div className="relative overflow-hidden rounded-md border border-line/60 bg-black/40">
+      <div className="relative overflow-hidden rounded-[2px] border border-line bg-black">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
@@ -155,9 +155,9 @@ export function ElevationChart({ data }: ElevationChartProps) {
         >
           <defs>
             <linearGradient id="strata-elev-grad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.45" />
-              <stop offset="60%" stopColor="#06b6d4" stopOpacity="0.12" />
-              <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
+              <stop offset="0%" style={{ stopColor: "var(--accent)", stopOpacity: 0.45 }} />
+              <stop offset="60%" style={{ stopColor: "var(--accent)", stopOpacity: 0.12 }} />
+              <stop offset="100%" style={{ stopColor: "var(--accent)", stopOpacity: 0 }} />
             </linearGradient>
           </defs>
 
@@ -192,7 +192,7 @@ export function ElevationChart({ data }: ElevationChartProps) {
             y={margin.top + 3}
             fontSize="8.5"
             textAnchor="end"
-            fill="var(--ink-muted, #94a3b8)"
+            style={{ fill: "var(--text-muted)" }}
             fontFamily="monospace"
           >
             {maxElev}m
@@ -202,7 +202,7 @@ export function ElevationChart({ data }: ElevationChartProps) {
             y={margin.top + chartH + 3}
             fontSize="8.5"
             textAnchor="end"
-            fill="var(--ink-muted, #94a3b8)"
+            style={{ fill: "var(--text-muted)" }}
             fontFamily="monospace"
           >
             {minElev}m
@@ -214,7 +214,7 @@ export function ElevationChart({ data }: ElevationChartProps) {
             y={margin.top + chartH + 15}
             fontSize="8.5"
             textAnchor="start"
-            fill="var(--ink-muted, #94a3b8)"
+            style={{ fill: "var(--text-muted)" }}
             fontFamily="monospace"
           >
             0 km
@@ -224,7 +224,7 @@ export function ElevationChart({ data }: ElevationChartProps) {
             y={margin.top + chartH + 15}
             fontSize="8.5"
             textAnchor="end"
-            fill="var(--ink-muted, #94a3b8)"
+            style={{ fill: "var(--text-muted)" }}
             fontFamily="monospace"
           >
             {(totalDist / 1000).toFixed(1)} km
@@ -232,7 +232,7 @@ export function ElevationChart({ data }: ElevationChartProps) {
 
           {/* Shaded Area and Profile Line */}
           <path d={areaPath} fill="url(#strata-elev-grad)" />
-          <path d={linePath} fill="none" stroke="#06b6d4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={linePath} fill="none" style={{ stroke: "var(--accent)" }} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
           {/* Hover Crosshair and Cursor */}
           {activeSample && (
@@ -242,17 +242,21 @@ export function ElevationChart({ data }: ElevationChartProps) {
                 y1={margin.top}
                 x2={activeX}
                 y2={margin.top + chartH}
-                stroke="#06b6d4"
-                strokeWidth="1.2"
-                strokeDasharray="3 3"
+                style={{
+                  stroke: "var(--accent)",
+                  strokeWidth: 1.2,
+                  strokeDasharray: "3 3",
+                }}
               />
               <circle
                 cx={activeX}
                 cy={activeY}
                 r={4}
-                fill="#ffffff"
-                stroke="#06b6d4"
-                strokeWidth="2"
+                style={{
+                  fill: "var(--surface)",
+                  stroke: "var(--accent)",
+                  strokeWidth: 2,
+                }}
               />
             </g>
           )}
@@ -264,16 +268,16 @@ export function ElevationChart({ data }: ElevationChartProps) {
         {activeSample ? (
           <>
             <span className="flex items-center gap-1 text-ink-muted">
-              <Ruler size={11} className="text-cyan-400" />
+              <Ruler size={11} className="text-ink-soft" />
               <span>Dist:</span>
               <strong className="font-mono text-ink">
                 {(activeSample.distance_m / 1000).toFixed(2)} km
               </strong>
             </span>
             <span className="flex items-center gap-1 text-ink-muted">
-              <Mountain size={11} className="text-cyan-400" />
+              <Mountain size={11} className="text-ink-soft" />
               <span>Elev:</span>
-              <strong className="font-mono text-cyan-400">
+              <strong className="font-mono text-ink">
                 {Math.round(activeSample.elevation_m)} m
               </strong>
             </span>

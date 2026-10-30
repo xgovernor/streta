@@ -103,7 +103,7 @@ export function BasemapsPanel() {
                   key={item.id}
                   type="button"
                   className={cx(
-                    "rounded-[9px] border p-1 text-left transition-[border-color,background-color,transform] active:scale-[0.985]",
+                    "rounded-[2px] border p-1 text-left transition-[border-color,background-color,transform] active:scale-[0.985]",
                     selected
                       ? "border-accent bg-accent-soft"
                       : "border-line bg-tint hover:border-line-strong hover:bg-raised",
@@ -112,7 +112,7 @@ export function BasemapsPanel() {
                   onClick={() => setBasemap(item.id)}
                 >
                   <span
-                    className="relative mb-[5px] block h-[60px] overflow-hidden rounded-md border border-line"
+                    className="relative mb-[5px] block h-[60px] overflow-hidden rounded-[2px] border border-line"
                     style={PREVIEWS[item.id]}
                   >
                     {selected ? (

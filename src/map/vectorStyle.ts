@@ -3,8 +3,8 @@ import type { Geometry } from "ol/geom";
 import { Circle as CircleStyle, Fill, Icon, Stroke, Style, Text } from "ol/style";
 import type { DatasetLayer, LayerStyle } from "../lib/gis/types";
 
-const SELECTION_COLOR = "#ff8a4d";
-const LABEL_COLOR = "#101820";
+const SELECTION_COLOR = "#ffffff";
+const LABEL_COLOR = "#0a0a0a";
 const LABEL_HALO = "rgba(255,255,255,.94)";
 
 const cameraIconCache = new Map<string, Style>();
