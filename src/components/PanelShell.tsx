@@ -8,6 +8,10 @@ interface PanelShellProps {
   side?: "left" | "right" | "bottom";
   /** Wide panels are used for tabular content that needs columns. */
   wide?: boolean;
+  /** Fit panel height dynamically to contents up to max available viewport height */
+  autoHeight?: boolean;
+  /** Zero-padding body for flush Carbon-style layouts */
+  flush?: boolean;
   className?: string;
   bodyClassName?: string;
   headerControls?: ReactNode;
@@ -22,6 +26,8 @@ export function PanelShell({
   eyebrow,
   side = "left",
   wide = false,
+  autoHeight = false,
+  flush = false,
   className,
   bodyClassName,
   headerControls,
@@ -38,9 +44,16 @@ export function PanelShell({
         "pointer-events-auto absolute z-30 flex flex-col overflow-hidden border border-line bg-solid",
         side === "bottom"
           ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] left-[calc(var(--ribbon-w)+8px)] right-[calc(var(--ribbon-w)+8px)] h-[min(480px,46vh)] animate-panel-bottom"
-          : side === "left"
-            ? "bottom-[calc(var(--footer-h)+8px)] left-[calc(var(--ribbon-w)+8px)] top-[calc(var(--commandbar-h)+6px)] animate-panel-left short:top-[calc(var(--commandbar-h)+4px)]"
-            : "bottom-[calc(var(--footer-h)+8px)] right-[calc(var(--ribbon-w)+8px)] top-[calc(var(--commandbar-h)+6px)] animate-panel-right",
+          : autoHeight
+            ? cx(
+                "top-[calc(var(--commandbar-h)+6px)] max-h-[calc(100vh-var(--commandbar-h)-var(--footer-h)-16px)] h-fit shadow-panel",
+                side === "left"
+                  ? "left-[calc(var(--ribbon-w)+8px)] animate-panel-left"
+                  : "right-[calc(var(--ribbon-w)+8px)] animate-panel-right",
+              )
+            : side === "left"
+              ? "bottom-[calc(var(--footer-h)+8px)] left-[calc(var(--ribbon-w)+8px)] top-[calc(var(--commandbar-h)+6px)] animate-panel-left short:top-[calc(var(--commandbar-h)+4px)]"
+              : "bottom-[calc(var(--footer-h)+8px)] right-[calc(var(--ribbon-w)+8px)] top-[calc(var(--commandbar-h)+6px)] animate-panel-right",
         side === "bottom"
           ? ""
           : wide
@@ -88,7 +101,8 @@ export function PanelShell({
 
       <div
         className={cx(
-          "panel-scroll min-h-0 flex-1 px-3.5 pb-3.5 pt-3",
+          "panel-scroll min-h-0 flex-1",
+          flush ? "p-0" : "px-3.5 pb-3.5 pt-3",
           bodyClassName ?? "overflow-y-auto",
         )}
       >
