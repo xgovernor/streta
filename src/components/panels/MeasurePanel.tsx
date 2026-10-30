@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
-  Compass,
   Copy,
   Crosshair,
   Eraser,
@@ -11,7 +10,6 @@ import {
   MapPin,
   Mountain,
   Radar,
-  Ruler,
   TrendingUp,
   Zap,
 } from "lucide-react";
@@ -57,7 +55,6 @@ import {
 import { ElevationChart } from "../analysis/ElevationChart";
 
 const MODES = [
-  { id: "distance" as const, label: "Dist", icon: Ruler },
   { id: "area" as const, label: "Area", icon: Hexagon },
   { id: "elevation" as const, label: "Elev", icon: Mountain },
   { id: "buffer" as const, label: "Buffer", icon: Radar },
@@ -88,6 +85,12 @@ export function MeasurePanel() {
 
   const activeTab = useUiStore((state) => state.analysisTab);
   const setActiveTab = useUiStore((state) => state.setAnalysisTab);
+
+  useEffect(() => {
+    if (activeTab === "distance") {
+      setActiveTab("area");
+    }
+  }, [activeTab, setActiveTab]);
 
   // Elevation Profile state
   const [elevationResult, setElevationResult] = useState<ElevationProfileResult | null>(null);
@@ -429,11 +432,10 @@ export function MeasurePanel() {
     >
       {/* Tab Switcher */}
       <SectionLabel>Analytical Tool</SectionLabel>
-      <div className="grid grid-cols-6 gap-0.5 rounded-[2px] border border-line bg-tint p-0.5">
+      <div className="grid grid-cols-5 gap-0.5 rounded-[2px] border border-line bg-tint p-0.5">
         {MODES.map((mode) => {
           const Icon = mode.icon;
           const active = activeTab === mode.id;
-
 
           return (
             <button
@@ -454,129 +456,6 @@ export function MeasurePanel() {
           );
         })}
       </div>
-
-      {/* ==================================================================== */}
-      {/* 1. DISTANCE TAB */}
-      {/* ==================================================================== */}
-      {activeTab === "distance" && (
-        <div className="flex flex-col gap-3">
-          <SectionLabel>Ellipsoidal Metrics</SectionLabel>
-          <div className="flex flex-col gap-[6px] rounded-[2px] border border-line bg-tint p-2.5">
-            <KeyValue
-              label="Total Distance"
-              value={
-                details ? (
-                  <span className="font-mono font-semibold text-ink">
-                    {details.total_distance_km.toFixed(3)} km
-                  </span>
-                ) : summary ? (
-                  formatDistance(summary.distance)
-                ) : (
-                  "—"
-                )
-              }
-            />
-            {details && (
-              <>
-                <KeyValue
-                  label="Statute Miles"
-                  value={
-                    <span className="font-mono text-ink">
-                      {details.total_distance_miles.toFixed(2)} mi
-                    </span>
-                  }
-                />
-                <KeyValue
-                  label="Nautical Miles"
-                  value={
-                    <span className="font-mono text-ink">
-                      {details.total_distance_nmi.toFixed(2)} nmi
-                    </span>
-                  }
-                />
-              </>
-            )}
-            <KeyValue
-              label="Vertices"
-              value={summary ? `${summary.vertices}` : "—"}
-            />
-          </div>
-
-          {/* Segment Azimuth Bearings */}
-          {details && details.segments.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <SectionLabel trailing={<span className="text-[9px] lowercase font-normal">({details.segments.length} legs)</span>}>
-                Segment Bearings (Karney Geodesic)
-              </SectionLabel>
-              <div className="max-h-[140px] overflow-y-auto rounded-[2px] border border-line bg-tint p-1.5 flex flex-col gap-1">
-                {details.segments.map((seg, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between rounded-[2px] bg-solid px-2 py-1 text-[10px]"
-                  >
-                    <span className="font-mono text-ink-muted">#{idx + 1}</span>
-                    <span className="font-mono text-ink">
-                      {formatDistance(seg.distance_m)}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="flex items-center gap-0.5 rounded-[2px] bg-tint px-1 py-0.5 font-mono text-[9.5px] font-medium text-ink border border-line">
-                        <Compass size={10} className="text-ink-soft" />
-                        {seg.forward_bearing_deg.toFixed(0)}° {bearingToDirection(seg.forward_bearing_deg)}
-                      </span>
-                      <span className="font-mono text-[9px] text-ink-muted" title="Reverse Back-Bearing">
-                        ↩ {seg.reverse_bearing_deg.toFixed(0)}°
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              onClick={() => void copyVertices()}
-            >
-              <Copy size={13} strokeWidth={1.9} aria-hidden="true" />
-              Copy points
-            </button>
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              onClick={() => {
-                clearMeasureSketch();
-                notify("Measurement cleared");
-              }}
-            >
-              <Eraser size={13} strokeWidth={1.9} aria-hidden="true" />
-              Clear
-            </button>
-          </div>
-
-          {summary && summary.vertices >= 2 && (
-            <button
-              type="button"
-              className={cx(PRIMARY_BUTTON, "w-full gap-2")}
-              onClick={handleSliceElevation}
-              disabled={elevationLoading}
-            >
-              {elevationLoading ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Mountain size={13} strokeWidth={2} />
-              )}
-              Slice Elevation Profile
-            </button>
-          )}
-
-          <InfoNote>
-            Click the map to add vertices; double-click to finish. All lengths and bearings are solved via Charles Karney's exact geodesic algorithms on the WGS 84 ellipsoid.
-          </InfoNote>
-        </div>
-      )}
 
       {/* ==================================================================== */}
       {/* 2. AREA TAB */}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, History } from "lucide-react";
+import { AlertTriangle, History, X } from "lucide-react";
 import { crsName, GEOGRAPHIC_CRS, transformPosition, VIEW_CRS } from "../lib/gis/crs";
 import { formatMGRS } from "../lib/gis/mgrs";
+import { clearMeasurement } from "../map/mapController";
 import { cx } from "../lib/cx";
 import {
   formatArea,
@@ -143,17 +144,52 @@ export function StatusBar() {
         </span>
       ) : null}
 
-      {measureMode !== "off" && measureSummary ? (
-        <span className={cx(ITEM, "gap-2 text-accent")} title="Current measurement">
-          <span className={LABEL}>Measure</span>
-          {measureSummary.mode === "area" && (
-            <span className="[font-variant-numeric:tabular-nums]">
-              {formatArea(measureSummary.area)}
+      {measureSummary || measureMode !== "off" ? (
+        <span
+          className={cx(
+            ITEM,
+            "gap-2",
+            measureMode !== "off" ? "text-accent" : "text-ink-soft",
+          )}
+          title={
+            measureMode !== "off"
+              ? "Measurement tool active — click map to measure, right-click line for options"
+              : "Measurements on map — click M to add more, right-click line for options"
+          }
+        >
+          <span className={LABEL}>
+            Measure
+            {measureSummary?.lineCount && measureSummary.lineCount > 1
+              ? ` (${measureSummary.lineCount} lines)`
+              : ""}
+          </span>
+          {measureSummary ? (
+            <>
+              {measureSummary.mode === "area" && (
+                <span className="[font-variant-numeric:tabular-nums]">
+                  {formatArea(measureSummary.area)}
+                </span>
+              )}
+              <span className="[font-variant-numeric:tabular-nums]">
+                {formatDistance(measureSummary.distance)}
+              </span>
+              <button
+                type="button"
+                className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded-[2px] text-ink-muted hover:bg-tint hover:text-ink transition-colors cursor-pointer"
+                title="Clear all measurements"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearMeasurement();
+                }}
+              >
+                <X size={10} strokeWidth={2.2} />
+              </button>
+            </>
+          ) : (
+            <span className="text-accent/80 animate-pulse text-[10.5px]">
+              Click map to measure
             </span>
           )}
-          <span className="[font-variant-numeric:tabular-nums]">
-            {formatDistance(measureSummary.distance)}
-          </span>
         </span>
       ) : null}
 

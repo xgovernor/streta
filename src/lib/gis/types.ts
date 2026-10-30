@@ -217,6 +217,7 @@ export interface MeasureSummary {
   /** Geodesic area in square metres (area mode only). */
   area: number;
   vertices: number;
+  lineCount?: number;
   geodesicDetails?: import("./tiledBackend").GeodesicMeasurementResult;
 }
 

@@ -362,11 +362,11 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
   },
 
   setMeasureMode(mode: "off" | "distance" | "area") {
-    set({ measureMode: mode, measureSummary: mode === "off" ? null : get().measureSummary });
+    set({ measureMode: mode });
   },
 
   setMeasureSummary(summary: MeasureSummary | null) {
-    set({ measureSummary: summary, dirty: true });
+    set({ measureSummary: summary });
   },
 
   select(selection: Selection) {

@@ -13,6 +13,7 @@ import { RightRibbon } from "./components/ribbons/RightRibbon";
 import { FloatingCanvasControls } from "./components/FloatingCanvasControls";
 import { RegionSnipOverlay } from "./components/RegionSnipOverlay";
 import { HorizontalBasemapTray } from "./components/panels/HorizontalBasemapTray";
+import { MeasureContextMenu } from "./components/MeasureContextMenu";
 import { useProjectStore } from "./state/projectStore";
 import { useUiStore } from "./state/uiStore";
 import type { PanelId } from "./lib/gis/types";
@@ -21,7 +22,6 @@ const PANEL_KEYS: Record<string, PanelId> = {
   d: "data",
   l: "data",
   t: "table",
-  m: "measure",
   a: "measure",
   b: "bookmarks",
 };
@@ -122,6 +122,22 @@ function App() {
         return;
       }
 
+      if (event.key.toLowerCase() === "m") {
+        event.preventDefault();
+        const currentMode = useProjectStore.getState().measureMode;
+        const nextMode = currentMode === "distance" ? "off" : "distance";
+        useProjectStore.getState().setMeasureMode(nextMode);
+        if (ui.rightPanel === "measure") {
+          ui.closePanel();
+        }
+        ui.notify(
+          nextMode === "distance"
+            ? "Measurement tool active: click map to measure"
+            : "Measurement tool paused",
+        );
+        return;
+      }
+
       const panel = PANEL_KEYS[event.key.toLowerCase()];
 
       if (panel) {
@@ -144,6 +160,7 @@ function App() {
         <FloatingCanvasControls />
         <FeaturePopup />
         <TelemetryHoverPopup />
+        <MeasureContextMenu />
         <PanelHost />
         <MapAttribution />
         <StatusBar />

@@ -273,6 +273,11 @@ describe("project store", () => {
     expect(useProjectStore.getState().measureSummary?.area).toBe(10_000);
 
     useProjectStore.getState().setMeasureMode("off");
+    expect(useProjectStore.getState().measureMode).toBe("off");
+    // Summary is preserved on pause so measurements stay visible
+    expect(useProjectStore.getState().measureSummary?.area).toBe(10_000);
+
+    useProjectStore.getState().setMeasureSummary(null);
     expect(useProjectStore.getState().measureSummary).toBeNull();
   });
 });

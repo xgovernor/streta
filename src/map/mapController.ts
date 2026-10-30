@@ -1,8 +1,10 @@
 import Feature, { type FeatureLike } from "ol/Feature";
 import Draw from "ol/interaction/Draw";
+import Modify from "ol/interaction/Modify";
 import {
   Circle as OlCircle,
   LineString,
+  MultiPoint,
   Point,
   Polygon,
   type Geometry as OlGeometry,
@@ -25,6 +27,7 @@ import { Circle as CircleStyle, Fill, Stroke, Style, Text } from "ol/style";
 import type { StyleFunction } from "ol/style/Style";
 import { apply } from "ol-mapbox-style";
 import type { EventsKey } from "ol/events";
+import { primaryAction } from "ol/events/condition";
 import WebGLTileLayer from "ol/layer/WebGLTile";
 import type GeoTIFF from "ol/source/GeoTIFF";
 import {
@@ -201,6 +204,8 @@ export async function copyMapRegionToClipboard(
   }
 }
 let activeMeasureClear: (() => void) | null = null;
+let activeMeasureSource: VectorSource | null = null;
+let activeDrawInteraction: Draw | null = null;
 let activeAnalysisSource: VectorSource | null = null;
 let activeLocationSource: VectorSource | null = null;
 let activeBufferPicker: ((coord: [number, number]) => void) | null = null;
@@ -953,8 +958,19 @@ export function mountMap(target: HTMLElement): () => void {
 
     const element = map.getTargetElement();
     if (element) {
+      const isMeasureActive = useProjectStore.getState().measureMode !== "off";
+      const isMeasureHover =
+        Boolean(
+          map.forEachFeatureAtPixel(
+            event.pixel,
+            (_f, l) => l === measureLayer,
+            { hitTolerance: 8, layerFilter: (l) => l === measureLayer },
+          ),
+        );
+
       element.style.cursor =
-        useProjectStore.getState().measureMode !== "off" ? "crosshair"
+        isMeasureHover ? "pointer"
+        : isMeasureActive ? "crosshair"
         : (hover || telem) ? "pointer"
         : "";
     }
@@ -1044,6 +1060,102 @@ export function mountMap(target: HTMLElement): () => void {
 
   target.addEventListener("pointerleave", handlePointerLeave);
 
+  const handleContextMenu = (event: MouseEvent) => {
+    const pixel = map.getEventPixel(event);
+    const hit = map.forEachFeatureAtPixel(
+      pixel,
+      (feature, layer) => {
+        if (layer === measureLayer) {
+          return feature;
+        }
+        return undefined;
+      },
+      {
+        hitTolerance: 10,
+        layerFilter: (layer) => layer === measureLayer,
+      },
+    );
+
+    if (hit) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const geom = hit.getGeometry() as OlGeometry | undefined;
+      if (!geom) return;
+
+      let coords: [number, number][] = [];
+      const geomType = geom.getType();
+      if (geomType === "LineString") {
+        const olCoords = (geom as LineString).getCoordinates();
+        coords = olCoords.map((c) => {
+          const lonLat = transform(c, VIEW_CRS, GEOGRAPHIC_CRS);
+          return [lonLat[0], lonLat[1]] as [number, number];
+        });
+      } else if (geomType === "Polygon") {
+        const rings = (geom as Polygon).getCoordinates();
+        if (rings.length > 0) {
+          coords = rings[0].map((c) => {
+            const lonLat = transform(c, VIEW_CRS, GEOGRAPHIC_CRS);
+            return [lonLat[0], lonLat[1]] as [number, number];
+          });
+        }
+      }
+
+      let featureId = hit.getId() as string | undefined;
+      if (!featureId) {
+        featureId = `measure-line-${Date.now()}`;
+        if (typeof (hit as Feature).setId === "function") {
+          (hit as Feature).setId(featureId);
+        }
+      }
+      const allFeatures = measureSource.getFeatures();
+      const lineIndex = allFeatures.findIndex((f) => f.getId() === featureId);
+
+      // Compute individual metrics for the right-clicked measurement line
+      const geographic = toGeographic(geom);
+      const distMeters = geographic ? geometryLength(geographic) : 0;
+      const areaSqMeters =
+        geographic && geomType === "Polygon" ? geometryArea(geographic) : 0;
+      const nmi = distMeters / 1852;
+      const mi = distMeters / 1609.344;
+
+      useMapStore.getState().setMeasureContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        featureId,
+        lineIndex: lineIndex >= 0 ? lineIndex + 1 : 1,
+        totalLinesCount: allFeatures.length,
+        coords,
+        geomType: geomType === "Polygon" ? "Polygon" : "LineString",
+        distanceMeters: distMeters,
+        formattedDistance: formatDistance(distMeters),
+        formattedNauticalMiles: `${nmi.toFixed(2)} NM`,
+        formattedMiles: `${mi.toFixed(2)} mi`,
+        formattedArea: areaSqMeters ? formatArea(areaSqMeters) : undefined,
+        vertexCount: coords.length,
+      });
+
+      if (coords.length >= 2) {
+        measureGeodesic(coords, geomType === "Polygon").then((res) => {
+          if (!res) return;
+          const current = useMapStore.getState().measureContextMenu;
+          if (current && current.featureId === featureId) {
+            useMapStore.getState().setMeasureContextMenu({
+              ...current,
+              distanceMeters: res.total_distance_m,
+              formattedDistance: formatDistance(res.total_distance_m),
+              formattedNauticalMiles: `${res.total_distance_nmi.toFixed(2)} NM`,
+              formattedMiles: `${res.total_distance_miles.toFixed(2)} mi`,
+              formattedArea: res.area_sq_m ? formatArea(res.area_sq_m) : current.formattedArea,
+            });
+          }
+        });
+      }
+    }
+  };
+
+  target.addEventListener("contextmenu", handleContextMenu);
+
   const dragKey = map.on("pointerdrag", () => {
     if (hoverTimer) {
       clearTimeout(hoverTimer);
@@ -1055,6 +1167,7 @@ export function mountMap(target: HTMLElement): () => void {
     }
     hoveredTarget = null;
     useMapStore.getState().setActiveFeature(null);
+    useMapStore.getState().setMeasureContextMenu(null);
   });
 
   const clickKey = map.on("singleclick", (event) => {
@@ -1136,17 +1249,33 @@ export function mountMap(target: HTMLElement): () => void {
   });
 
   let draw: Draw | null = null;
+  let modify: Modify | null = null;
   let sketchKey: EventsKey | null = null;
+  let featureChangeKey: EventsKey | null = null;
 
   const clearMeasureSketch = () => {
     measureSource.clear();
     useProjectStore.getState().setMeasureSummary(null);
+    useMapStore.getState().setMeasureContextMenu(null);
+    if (draw) {
+      draw.setActive(true);
+    }
   };
 
   const applyMeasureMode = (mode: MeasureMode) => {
     if (draw) {
+      try {
+        draw.abortDrawing();
+      } catch {
+        // safely ignore if draw was not in progress
+      }
       map.removeInteraction(draw);
       draw = null;
+    }
+
+    if (modify) {
+      map.removeInteraction(modify);
+      modify = null;
     }
 
     if (sketchKey) {
@@ -1154,23 +1283,60 @@ export function mountMap(target: HTMLElement): () => void {
       sketchKey = null;
     }
 
+    if (featureChangeKey) {
+      unByKey(featureChangeKey);
+      featureChangeKey = null;
+    }
+
     if (mode !== "distance" && mode !== "area") {
-      clearMeasureSketch();
+      activeDrawInteraction = null;
+      useProjectStore
+        .getState()
+        .setMeasureSummary(summarizeAllMeasurements(measureSource, "distance"));
       return;
     }
 
-    clearMeasureSketch();
+    let lineCounter = 1;
 
-    const interaction = new Draw({
+    const drawInteraction = new Draw({
       source: measureSource,
       type: mode === "area" ? "Polygon" : "LineString",
       style: measureSketchStyle as StyleFunction,
+      // Left click ONLY: prevents right-click from inserting points
+      condition: primaryAction,
     });
 
-    interaction.on("drawstart", (event) => {
-      measureSource.clear();
-      const geometry = event.feature.getGeometry();
+    const modifyInteraction = new Modify({
+      source: measureSource,
+      // Left click ONLY: allows inserting midpoints and moving vertices
+      condition: primaryAction,
+      style: new Style({
+        image: new CircleStyle({
+          radius: 6,
+          fill: new Fill({ color: "#ffffff" }),
+          stroke: new Stroke({ color: "#00e5ff", width: 2.5 }),
+        }),
+      }),
+    });
 
+    modifyInteraction.on("modifyend", () => {
+      useProjectStore
+        .getState()
+        .setMeasureSummary(summarizeAllMeasurements(measureSource, mode));
+    });
+
+    drawInteraction.on("drawstart", (event) => {
+      // Allow multiple lines: do NOT clear measureSource!
+      const feature = event.feature;
+      const featureId = `measure-line-${Date.now()}-${lineCounter++}`;
+      feature.setId(featureId);
+
+      if (sketchKey) {
+        unByKey(sketchKey);
+        sketchKey = null;
+      }
+
+      const geometry = feature.getGeometry();
       if (!geometry) {
         return;
       }
@@ -1178,32 +1344,53 @@ export function mountMap(target: HTMLElement): () => void {
       const update = () =>
         useProjectStore
           .getState()
-          .setMeasureSummary(summarizeGeometry(geometry, mode));
+          .setMeasureSummary(
+            summarizeAllMeasurements(measureSource, mode, feature as Feature),
+          );
 
       update();
       sketchKey = geometry.on("change", update);
     });
 
-    interaction.on("drawend", (event) => {
+    drawInteraction.on("drawend", (event) => {
       if (sketchKey) {
         unByKey(sketchKey);
         sketchKey = null;
       }
 
-      const geometry = event.feature.getGeometry();
+      const feature = event.feature;
+      const geometry = feature.getGeometry();
 
       if (geometry) {
-        useProjectStore
-          .getState()
-          .setMeasureSummary(summarizeGeometry(geometry, mode));
+        geometry.on("change", () => {
+          useProjectStore
+            .getState()
+            .setMeasureSummary(summarizeAllMeasurements(measureSource, "distance"));
+        });
       }
+
+      useProjectStore
+        .getState()
+        .setMeasureSummary(
+          summarizeAllMeasurements(measureSource, mode, feature as Feature),
+        );
+
+      // Once a measurement is complete, pause the measurement tool.
+      // If user wants to put another measurement, they enable it again (e.g. click M).
+      setTimeout(() => {
+        useProjectStore.getState().setMeasureMode("off");
+      }, 0);
     });
 
-    map.addInteraction(interaction);
-    draw = interaction;
+    map.addInteraction(drawInteraction);
+    map.addInteraction(modifyInteraction);
+    draw = drawInteraction;
+    modify = modifyInteraction;
+    activeDrawInteraction = drawInteraction;
   };
 
   activeMeasureClear = clearMeasureSketch;
+  activeMeasureSource = measureSource;
 
   const projectUnsubscribe = useProjectStore.subscribe((state, previous) => {
     if (
@@ -1441,6 +1628,7 @@ export function mountMap(target: HTMLElement): () => void {
     hoveredTarget = null;
     isOverPopup = false;
     target.removeEventListener("pointerleave", handlePointerLeave);
+    target.removeEventListener("contextmenu", handleContextMenu);
     unByKey(cameraKeys);
     unByKey(pointerKey);
     unByKey(dragKey);
@@ -1451,6 +1639,9 @@ export function mountMap(target: HTMLElement): () => void {
 
     if (sketchKey) {
       unByKey(sketchKey);
+    }
+    if (featureChangeKey) {
+      unByKey(featureChangeKey);
     }
 
     projectUnsubscribe();
@@ -1470,6 +1661,8 @@ export function mountMap(target: HTMLElement): () => void {
     activeAnalysisSource = null;
     activeLocationSource = null;
     activeBufferPicker = null;
+    activeMeasureSource = null;
+    activeDrawInteraction = null;
 
     if (activeMap === map) {
       activeMap = null;
@@ -1499,48 +1692,82 @@ function toGeographic(geometry: OlGeometry): Geometry | null {
   return null;
 }
 
-function summarizeGeometry(
-  geometry: OlGeometry,
+/** Summarizes all measurement lines in the source (plus any actively sketching feature). */
+function summarizeAllMeasurements(
+  source: VectorSource,
   mode: "distance" | "area",
+  sketchFeature?: Feature,
 ): MeasureSummary | null {
-  const geographic = toGeographic(geometry);
-
-  if (!geographic) {
+  const features = [...source.getFeatures()];
+  if (sketchFeature && !features.includes(sketchFeature)) {
+    features.push(sketchFeature);
+  }
+  if (features.length === 0) {
     return null;
   }
 
-  let vertices = 0;
-  eachPosition(geographic, () => {
-    vertices += 1;
-  });
+  let totalDistance = 0;
+  let totalArea = 0;
+  let totalVertices = 0;
 
-  const coords: [number, number][] =
-    geographic.type === "LineString"
-      ? (geographic.coordinates as [number, number][])
-      : ((geographic.coordinates as [number, number][][])[0] ?? []);
+  for (const feature of features) {
+    const geom = feature.getGeometry();
+    if (!geom) continue;
+    const geographic = toGeographic(geom);
+    if (!geographic) continue;
 
-  if (coords && coords.length >= 2) {
-    measureGeodesic(coords, mode === "area").then((details) => {
-      if (details) {
-        const current = useProjectStore.getState().measureSummary;
-        if (current && current.mode === mode) {
-          useProjectStore.getState().setMeasureSummary({
-            ...current,
-            distance: details.total_distance_m,
-            area: details.area_sq_m ?? current.area,
-            geodesicDetails: details,
+    eachPosition(geographic, () => {
+      totalVertices += 1;
+    });
+
+    totalDistance += geometryLength(geographic);
+    if (mode === "area") {
+      totalArea += geometryArea(geographic);
+    }
+  }
+
+  const summary: MeasureSummary = {
+    mode,
+    distance: totalDistance,
+    area: totalArea,
+    vertices: totalVertices,
+    lineCount: features.length,
+  };
+
+  // If there is only 1 line, fetch high-precision geodesic details
+  if (features.length === 1) {
+    const geom = features[0].getGeometry();
+    if (geom) {
+      const geographic = toGeographic(geom);
+      if (geographic) {
+        const coords: [number, number][] =
+          geographic.type === "LineString"
+            ? (geographic.coordinates as [number, number][])
+            : ((geographic.coordinates as [number, number][][])[0] ?? []);
+        if (coords && coords.length >= 2) {
+          measureGeodesic(coords, mode === "area").then((details) => {
+            if (details) {
+              const current = useProjectStore.getState().measureSummary;
+              if (
+                current &&
+                current.mode === mode &&
+                (current.lineCount ?? 1) === 1
+              ) {
+                useProjectStore.getState().setMeasureSummary({
+                  ...current,
+                  distance: details.total_distance_m,
+                  area: details.area_sq_m ?? current.area,
+                  geodesicDetails: details,
+                });
+              }
+            }
           });
         }
       }
-    });
+    }
   }
 
-  return {
-    mode,
-    distance: geometryLength(geographic),
-    area: mode === "area" ? geometryArea(geographic) : 0,
-    vertices,
-  };
+  return summary;
 }
 
 
@@ -1565,6 +1792,21 @@ function measureSketchStyle(feature: FeatureLike, resolution: number): Style[] {
 
   if (shape.getType() === "LineString") {
     const coordinates = (shape as LineString).getCoordinates();
+
+    // Render interactive vertex grips at all vertices so user can readjust vertices and insert points
+    if (coordinates.length > 0) {
+      styles.push(
+        new Style({
+          geometry: new MultiPoint(coordinates),
+          image: new CircleStyle({
+            radius: 4.5,
+            fill: new Fill({ color: "#00e5ff" }),
+            stroke: new Stroke({ color: "#090d16", width: 2 }),
+          }),
+          zIndex: 25,
+        }),
+      );
+    }
 
     for (let index = 1; index < coordinates.length; index += 1) {
       const from = coordinates[index - 1];
@@ -1597,6 +1839,21 @@ function measureSketchStyle(feature: FeatureLike, resolution: number): Style[] {
   }
 
   if (shape.getType() === "Polygon") {
+    const rings = (shape as Polygon).getCoordinates();
+    if (rings.length > 0) {
+      styles.push(
+        new Style({
+          geometry: new MultiPoint(rings[0]),
+          image: new CircleStyle({
+            radius: 4.5,
+            fill: new Fill({ color: "#00e5ff" }),
+            stroke: new Stroke({ color: "#090d16", width: 2 }),
+          }),
+          zIndex: 25,
+        }),
+      );
+    }
+
     const geographic = toGeographic(shape);
     const area = geographic ? geometryArea(geographic) : 0;
 
@@ -1838,51 +2095,150 @@ export function zoomToSelection(): void {
   });
 }
 
-/** WGS 84 vertices of the current measurement, for copying out of the panel. */
-export function measureCoordinates(): [number, number][] {
-  const map = activeMap;
+/** WGS 84 vertices of the measurement, for copying out of the panel or context menu. */
+export function measureCoordinates(featureId?: string): [number, number][] {
+  if (!activeMeasureSource) return [];
+  const features = activeMeasureSource.getFeatures();
+  if (features.length === 0) return [];
 
-  if (!map) {
-    return [];
+  const target = featureId
+    ? (features.find((f) => f.getId() === featureId) ?? features[0])
+    : features[0];
+
+  const geometry = target.getGeometry();
+  if (!geometry) return [];
+
+  let coords: [number, number][] = [];
+  if (geometry.getType() === "LineString") {
+    coords = (geometry as LineString).getCoordinates() as [number, number][];
+  } else if (geometry.getType() === "Polygon") {
+    coords = (geometry as Polygon).getCoordinates()[0] as [number, number][];
   }
 
-  const rings: [number, number][][] = [];
-
-  map.getLayers().forEach((layer) => {
-    if (layer.get("id") !== "measure") {
-      return;
-    }
-
-    const geometry = (layer as VectorLayer<VectorSource>)
-      .getSource()
-      ?.getFeatures()[0]
-      ?.getGeometry();
-
-    if (!geometry) {
-      return;
-    }
-
-    if (geometry.getType() === "LineString") {
-      rings.push(
-        (geometry as LineString).getCoordinates() as [number, number][],
-      );
-    } else if (geometry.getType() === "Polygon") {
-      rings.push(
-        (geometry as Polygon).getCoordinates()[0] as [number, number][],
-      );
-    }
-  });
-
-  return (rings[0] ?? []).map((coordinate) => {
+  return coords.map((coordinate) => {
     const [lon, lat] = transform(coordinate, VIEW_CRS, GEOGRAPHIC_CRS);
     return [lon, lat] as [number, number];
   });
 }
 
-/** Removes the measurement sketch; wired up by the mounted map. */
+/** Removes all measurement sketches; wired up by the mounted map. */
 export function clearMeasureSketch(): void {
   activeMeasureClear?.();
 }
+
+/** Reverses the direction of the specified measurement line (swaps start and end). */
+export function reverseMeasurement(featureId?: string): boolean {
+  if (!activeMeasureSource) return false;
+  const features = activeMeasureSource.getFeatures();
+  if (features.length === 0) return false;
+
+  const target = featureId
+    ? (features.find((f) => f.getId() === featureId) ?? features[0])
+    : features[0];
+
+  const geom = target.getGeometry();
+  if (!geom || geom.getType() !== "LineString") return false;
+
+  const line = geom as LineString;
+  const coords = line.getCoordinates();
+  coords.reverse();
+  line.setCoordinates(coords);
+
+  const mode = useProjectStore.getState().measureMode;
+  useProjectStore
+    .getState()
+    .setMeasureSummary(
+      summarizeAllMeasurements(activeMeasureSource, mode !== "off" ? mode : "distance"),
+    );
+  return true;
+}
+
+/** Fits the camera view to the specified measurement bounds (or all measurements). */
+export function zoomToMeasurement(featureId?: string): void {
+  if (!activeMap || !activeMeasureSource) return;
+  const features = activeMeasureSource.getFeatures();
+  if (features.length === 0) return;
+
+  const target = featureId
+    ? features.find((f) => f.getId() === featureId)
+    : null;
+
+  if (target) {
+    const geom = target.getGeometry();
+    if (geom) {
+      activeMap.getView().fit(geom.getExtent(), {
+        padding: [100, 100, 100, 100],
+        duration: 500,
+        maxZoom: 18,
+      });
+      return;
+    }
+  }
+
+  const extent = activeMeasureSource.getExtent();
+  if (extent && !extent.some(isNaN)) {
+    activeMap.getView().fit(extent, {
+      padding: [100, 100, 100, 100],
+      duration: 500,
+      maxZoom: 18,
+    });
+  }
+}
+
+/** Deletes a specific measurement feature, or clears all if none specified. */
+export function deleteMeasurementFeature(featureId?: string): void {
+  if (!activeMeasureSource) return;
+  const features = activeMeasureSource.getFeatures();
+  if (features.length === 0) return;
+
+  if (featureId) {
+    const target = features.find((f) => f.getId() === featureId);
+    if (target) {
+      activeMeasureSource.removeFeature(target);
+    }
+  } else {
+    const target = features[features.length - 1];
+    if (target) {
+      activeMeasureSource.removeFeature(target);
+    }
+  }
+
+  const remaining = activeMeasureSource.getFeatures();
+  const mode = useProjectStore.getState().measureMode;
+  if (remaining.length === 0) {
+    useProjectStore.getState().setMeasureSummary(null);
+  } else {
+    useProjectStore
+      .getState()
+      .setMeasureSummary(
+        summarizeAllMeasurements(activeMeasureSource, mode !== "off" ? mode : "distance"),
+      );
+  }
+
+  if (activeDrawInteraction) {
+    activeDrawInteraction.setActive(true);
+  }
+  useMapStore.getState().setMeasureContextMenu(null);
+}
+
+/** Clears all measurement lines and reactivates the drawing tool. */
+export function clearMeasurement(): void {
+  activeMeasureClear?.();
+  if (activeDrawInteraction) {
+    activeDrawInteraction.setActive(true);
+  }
+  useMapStore.getState().setMeasureContextMenu(null);
+}
+
+/** Resumes or ensures drawing tool is active to draw additional measurement lines. */
+export function resumeMeasurement(): void {
+  useProjectStore.getState().setMeasureMode("distance");
+  if (activeDrawInteraction) {
+    activeDrawInteraction.setActive(true);
+  }
+  useMapStore.getState().setMeasureContextMenu(null);
+}
+
 
 /**
  * Analytical overlay styling for geodesic buffer polygons and profile hover markers.

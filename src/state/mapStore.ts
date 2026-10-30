@@ -14,6 +14,22 @@ export interface MapPopup {
   properties?: Record<string, unknown>;
 }
 
+export interface MeasureContextMenuState {
+  x: number;
+  y: number;
+  featureId?: string;
+  lineIndex?: number;
+  totalLinesCount?: number;
+  coords: [number, number][]; // [lon, lat][]
+  geomType: "LineString" | "Polygon";
+  distanceMeters: number;
+  formattedDistance: string;
+  formattedNauticalMiles?: string;
+  formattedMiles?: string;
+  formattedArea?: string;
+  vertexCount: number;
+}
+
 interface MapState {
   ready: boolean;
   camera: CameraState;
@@ -27,9 +43,12 @@ interface MapState {
   popup: MapPopup | null;
   /** The hovered feature, used only to keep one feature’s card on screen. */
   activeFeature: MapPopup | null;
+  /** Active measurement context menu, if opened via right-click on a line. */
+  measureContextMenu: MeasureContextMenuState | null;
   setReady: (ready: boolean) => void;
   setPopup: (popup: MapPopup | null) => void;
   setActiveFeature: (feature: MapPopup | null) => void;
+  setMeasureContextMenu: (menu: MeasureContextMenuState | null) => void;
   setCamera: (camera: CameraState) => void;
   setPointer: (
     pointer: { lon: number; lat: number } | null,
@@ -52,11 +71,14 @@ export const useMapStore = create<MapState>((set) => ({
   hoverLabel: null,
   popup: null,
   activeFeature: null,
+  measureContextMenu: null,
 
   setReady: (ready) => set({ ready }),
   setPopup: (popup) => set({ popup }),
   setActiveFeature: (activeFeature) => set({ activeFeature }),
+  setMeasureContextMenu: (measureContextMenu) => set({ measureContextMenu }),
   setCamera: (camera) => set({ camera }),
   setPointer: (pointer, view = null) => set({ pointer, pointerView: view }),
   setHoverLabel: (hoverLabel) => set({ hoverLabel }),
 }));
+

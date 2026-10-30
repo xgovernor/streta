@@ -24,8 +24,10 @@ export function RightRibbon() {
   const rightPanel = useUiStore((state) => state.rightPanel);
   const leftPanel = useUiStore((state) => state.leftPanel);
   const togglePanel = useUiStore((state) => state.togglePanel);
+  const closePanel = useUiStore((state) => state.closePanel);
   const analysisTab = useUiStore((state) => state.analysisTab);
   const openAnalysisTab = useUiStore((state) => state.openAnalysisTab);
+  const measureMode = useProjectStore((state) => state.measureMode);
   const setMeasureModeDispatch = useProjectStore((state) => state.setMeasureMode);
 
   const handleTool = (tab: AnalysisTab, measure?: "distance" | "area") => {
@@ -39,14 +41,25 @@ export function RightRibbon() {
     else setMeasureModeDispatch("off");
   };
 
+  const handleDistanceTool = () => {
+    if (measureMode === "distance") {
+      setMeasureModeDispatch("off");
+    } else {
+      setMeasureModeDispatch("distance");
+      if (rightPanel === "measure") {
+        closePanel();
+      }
+    }
+  };
+
   const ASSISTING_TOOLS: ToolItem[] = [
     {
       id: "distance",
       label: "Geodesic Distance",
       icon: Ruler,
       shortcut: "M",
-      isActive: rightPanel === "measure" && analysisTab === "distance",
-      action: () => handleTool("distance", "distance"),
+      isActive: measureMode === "distance",
+      action: handleDistanceTool,
     },
     {
       id: "area",
