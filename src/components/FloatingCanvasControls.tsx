@@ -27,6 +27,7 @@ export function FloatingCanvasControls() {
   const flash = useUiStore((state) => state.flash);
   const basemapTrayOpen = useUiStore((state) => state.basemapTrayOpen);
   const toggleBasemapTray = useUiStore((state) => state.toggleBasemapTray);
+  const rightPanel = useUiStore((state) => state.rightPanel);
   const [locating, setLocating] = useState(false);
 
   const locate = async () => {
@@ -55,7 +56,10 @@ export function FloatingCanvasControls() {
   return (
     <div
       className={cx(
-        "pointer-events-auto absolute right-[calc(var(--ribbon-w)+12px)] z-40 flex flex-col items-center gap-1 select-none transition-[bottom] duration-200 ease-out",
+        "pointer-events-auto absolute z-40 flex flex-col items-center gap-1 select-none transition-[right,bottom] duration-200 ease-out",
+        rightPanel
+          ? "right-[calc(var(--ribbon-w)+300px+12px)]"
+          : "right-[calc(var(--ribbon-w)+12px)]",
         basemapTrayOpen
           ? "bottom-[calc(var(--footer-h)+108px)]"
           : "bottom-[calc(var(--footer-h)+12px)]"

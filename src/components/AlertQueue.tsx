@@ -22,6 +22,7 @@ export function AlertQueue() {
   const alertsOpen = useUiStore((state) => state.alertsOpen);
   const setAlertsOpen = useUiStore((state) => state.setAlertsOpen);
   const openPanel = useUiStore((state) => state.openPanel);
+  const rightPanel = useUiStore((state) => state.rightPanel);
   const flash = useUiStore((state) => state.flash);
   const alerts = useTelemetryStore((state) => state.alerts);
   const acknowledgeAlert = useTelemetryStore((state) => state.acknowledgeAlert);
@@ -53,7 +54,10 @@ export function AlertQueue() {
 
   return (
     <section
-      className="pointer-events-auto absolute right-2 top-[calc(var(--commandbar-h)+6px)] z-[30] flex max-h-[46vh] w-[min(344px,calc(100vw-16px))] flex-col overflow-hidden border border-line bg-solid shadow-panel"
+      className={cx(
+        "pointer-events-auto absolute top-[calc(var(--commandbar-h)+6px)] z-[30] flex max-h-[46vh] w-[min(344px,calc(100vw-16px))] flex-col overflow-hidden border border-line bg-solid shadow-panel transition-[right] duration-200 ease-out",
+        rightPanel ? "right-[calc(var(--ribbon-w)+300px+12px)]" : "right-[calc(var(--ribbon-w)+12px)]"
+      )}
       style={{ bottom: "calc(var(--footer-h) + var(--timeline-h) + 8px)" }}
       aria-label="Alert queue"
     >        <header className="flex flex-none items-center gap-2 border-b border-line px-3 py-2">

@@ -221,14 +221,14 @@
 @keyframes panel-in-left {
   from {
     opacity: 0;
-    transform: translate3d(-8px, 0, 0) scale(0.99);
+    transform: translate3d(-10px, 0, 0);
   }
 }
 
 @keyframes panel-in-right {
   from {
     opacity: 0;
-    transform: translate3d(8px, 0, 0) scale(0.99);
+    transform: translate3d(10px, 0, 0);
   }
 }
 

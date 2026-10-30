@@ -41,26 +41,24 @@ export function PanelShell({
   return (
     <section
       className={cx(
-        "pointer-events-auto absolute z-30 flex flex-col overflow-hidden border border-line bg-solid",
+        "pointer-events-auto absolute z-30 flex flex-col overflow-hidden bg-solid",
         side === "bottom"
-          ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] left-[calc(var(--ribbon-w)+8px)] right-[calc(var(--ribbon-w)+8px)] h-[min(480px,46vh)] animate-panel-bottom"
-          : autoHeight
+          ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] left-[calc(var(--ribbon-w)+8px)] right-[calc(var(--ribbon-w)+8px)] h-[min(480px,46vh)] border border-line animate-panel-bottom"
+          : autoHeight && side !== "left"
             ? cx(
-                "top-[calc(var(--commandbar-h)+6px)] max-h-[calc(100vh-var(--commandbar-h)-var(--footer-h)-16px)] h-fit shadow-panel",
-                side === "left"
-                  ? "left-[calc(var(--ribbon-w)+8px)] animate-panel-left"
-                  : "right-[calc(var(--ribbon-w)+8px)] animate-panel-right",
+                "top-[calc(var(--commandbar-h)+6px)] max-h-[calc(100vh-var(--commandbar-h)-var(--footer-h)-16px)] h-fit border border-line shadow-panel",
+                side === "right" ? "right-[calc(var(--ribbon-w)+8px)] animate-panel-right" : "",
               )
             : side === "left"
-              ? "bottom-[calc(var(--footer-h)+8px)] left-[calc(var(--ribbon-w)+8px)] top-[calc(var(--commandbar-h)+6px)] animate-panel-left short:top-[calc(var(--commandbar-h)+4px)]"
-              : "bottom-[calc(var(--footer-h)+8px)] right-[calc(var(--ribbon-w)+8px)] top-[calc(var(--commandbar-h)+6px)] animate-panel-right",
+              ? "top-[var(--commandbar-h)] bottom-[calc(var(--footer-h)+var(--timeline-h))] left-[var(--ribbon-w)] border-r border-line animate-panel-left"
+              : "top-[var(--commandbar-h)] bottom-[calc(var(--footer-h)+var(--timeline-h))] right-[var(--ribbon-w)] border-l border-line animate-panel-right",
         side === "bottom"
           ? ""
           : wide
-            ? "w-[min(640px,calc(100vw-24px))]"
+            ? "w-[min(640px,calc(100vw-var(--ribbon-w)))]"
             : side === "left"
-              ? "w-[min(296px,calc(100vw-24px))]"
-              : "w-[min(300px,calc(100vw-24px))]",
+              ? "w-[min(300px,calc(100vw-var(--ribbon-w)))]"
+              : "w-[min(300px,calc(100vw-var(--ribbon-w)))]",
         className,
       )}
       role="dialog"

@@ -151,6 +151,8 @@ export function HorizontalBasemapTray() {
   const setGraticule = useUiStore((state) => state.setGraticule);
   const trafficFlow = useUiStore((state) => state.trafficFlow);
   const setTrafficFlow = useUiStore((state) => state.setTrafficFlow);
+  const leftPanel = useUiStore((state) => state.leftPanel);
+  const rightPanel = useUiStore((state) => state.rightPanel);
 
   const [overlaysPopoverOpen, setOverlaysPopoverOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -182,7 +184,11 @@ export function HorizontalBasemapTray() {
   return (
     <div
       ref={trayRef}
-      className="pointer-events-auto absolute left-[var(--ribbon-w)] right-[var(--ribbon-w)] bottom-[var(--footer-h)] z-30 flex h-[98px] items-center border-t border-line bg-solid/95 px-2 py-1.5 shadow-panel backdrop-blur-md animate-panel-bottom select-none"
+      className={cx(
+        "pointer-events-auto absolute bottom-[var(--footer-h)] z-30 flex h-[98px] items-center border-t border-line bg-solid/95 px-2 py-1.5 shadow-panel backdrop-blur-md animate-panel-bottom select-none transition-[left,right] duration-200 ease-out",
+        leftPanel ? "left-[calc(var(--ribbon-w)+300px)]" : "left-[var(--ribbon-w)]",
+        rightPanel ? "right-[calc(var(--ribbon-w)+300px)]" : "right-[var(--ribbon-w)]"
+      )}
       role="region"
       aria-label="Basemaps and Cartography Tray"
     >

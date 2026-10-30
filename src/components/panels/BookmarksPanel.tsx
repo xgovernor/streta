@@ -90,7 +90,6 @@ export function BookmarksPanel() {
       eyebrow="Intelligence Record"
       side="left"
       flush={true}
-      autoHeight={true}
       onClose={() => closePanel("left")}
       footer={
         <>
