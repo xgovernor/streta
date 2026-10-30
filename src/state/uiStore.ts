@@ -20,6 +20,7 @@ const PANEL_DOCK: Record<PanelId, "left" | "right"> = {
   join: "left",
   basemaps: "left",
   settings: "left",
+  bookmarks: "left",
   feature: "right",
   layer: "right",
   measure: "right",
@@ -44,6 +45,8 @@ interface UiState {
   graticule: boolean;
   trafficFlow: boolean;
   toast: string | null;
+  snipMode: boolean;
+  setSnipMode: (active: boolean) => void;
   openPanel: (panel: PanelId) => void;
   togglePanel: (panel: PanelId) => void;
   closePanel: (side?: "left" | "right") => void;
@@ -135,6 +138,8 @@ export const useUiStore = create<UiState>()(
       analysisTab: "distance",
       ...DEFAULT_PREFERENCES,
       toast: null,
+      snipMode: false,
+      setSnipMode: (snipMode) => set({ snipMode }),
 
       openPanel: (panel) =>
         set(() => {

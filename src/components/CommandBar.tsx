@@ -1,99 +1,72 @@
 import { useEffect, useState } from "react";
 import {
   BellRing,
-  Camera,
-  Database,
-  Frame,
-  GitMerge,
-  Globe,
-  Hexagon,
   History,
-  LocateFixed,
   Maximize2,
   Minimize2,
-  Mountain,
-  Radar,
-  Ruler,
+  Plane,
+  Satellite,
   Search,
-  Settings2,
-  Table,
+  Ship,
 } from "lucide-react";
-import type { PanelId } from "../lib/gis/types";
-import { downloadMapCapture, fitToData, flyTo, resetNorth } from "../map/mapController";
-import { useMapStore } from "../state/mapStore";
 import { useProjectStore } from "../state/projectStore";
 import { useTelemetryStore } from "../state/telemetryStore";
-import { useUiStore, type AnalysisTab } from "../state/uiStore";
+import { useUiStore } from "../state/uiStore";
 import { cx } from "../lib/cx";
-
-const SHELL_BUTTON =
-  "inline-flex h-[28px] items-center gap-1.5 rounded-[2px] px-2 text-[11.5px] font-semibold text-ink-soft transition-colors hover:bg-tint hover:text-ink focus-visible:outline-2";
-
-const SHELL_ACTIVE = "bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent";
-
-const ICON_CLUSTER_BUTTON =
-  "grid h-[28px] w-[28px] place-items-center rounded-[2px] text-ink-soft transition-colors hover:bg-tint hover:text-ink";
-
-interface WorkspaceTool {
-  id: PanelId;
-  label: string;
-  icon: typeof Search;
-  shortcut?: string;
-}
-
-const WORKSPACE_TOOLS: WorkspaceTool[] = [
-  { id: "search", label: "Search", icon: Search, shortcut: "/" },
-  { id: "data", label: "Data", icon: Database, shortcut: "D" },
-  { id: "table", label: "Table", icon: Table, shortcut: "T" },
-  { id: "project", label: "Project", icon: Frame },
-  { id: "join", label: "Join", icon: GitMerge },
-  { id: "basemaps", label: "Basemap", icon: Globe },
-];
-
-const ANALYSIS_TOOLS: {
-  tab: AnalysisTab;
-  label: string;
-  icon: typeof Search;
-  measure?: "distance" | "area";
-  shortcut?: string;
-}[] = [
-  { tab: "distance", label: "Measure distance", icon: Ruler, measure: "distance", shortcut: "M" },
-  { tab: "area", label: "Measure area", icon: Hexagon, measure: "area", shortcut: "A" },
-  { tab: "elevation", label: "Elevation profile", icon: Mountain },
-  { tab: "buffer", label: "Proximity buffer", icon: Radar },
-  { tab: "knn", label: "k-Nearest neighbors", icon: LocateFixed },
-];
 
 function BrandMark() {
   return (
     <span
       aria-hidden="true"
-      className="grid size-[28px] shrink-0 place-items-center rounded-[2px] bg-accent-soft"
+      className="grid size-[26px] shrink-0 place-items-center rounded-[2px] bg-accent-soft"
     >
-      <svg viewBox="0 0 28 28" className="size-[28px]">
-        <circle cx="14" cy="14" r="7" fill="none" stroke="var(--accent)" strokeWidth="1" />
-        <path d="M14 5v18M5 14h18" stroke="var(--accent)" strokeWidth="1" />
+      <svg viewBox="0 0 28 28" className="size-[24px]">
+        <circle cx="14" cy="14" r="7" fill="none" stroke="var(--accent)" strokeWidth="1.2" />
+        <path d="M14 5v18M5 14h18" stroke="var(--accent)" strokeWidth="1.2" />
         <circle cx="14" cy="14" r="1.5" fill="var(--accent)" />
       </svg>
     </span>
   );
 }
 
+function LiveClock() {
+  const [time, setTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const utcStr = time.toISOString().slice(11, 19) + "Z";
+  const localStr = time.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <div className="flex items-center gap-2 font-mono text-[10px] text-ink-muted">
+      <span className="flex items-center gap-1 font-bold text-ink">
+        <span className="text-[8px] uppercase tracking-wider text-ink-muted">UTC</span>
+        {utcStr}
+      </span>
+      <span className="hidden mid:inline text-ink-soft">
+        <span className="text-[8px] uppercase tracking-wider text-ink-muted mr-1">LOC</span>
+        {localStr}
+      </span>
+    </div>
+  );
+}
+
 export function CommandBar() {
-  const leftPanel = useUiStore((state) => state.leftPanel);
-  const rightPanel = useUiStore((state) => state.rightPanel);
   const togglePanel = useUiStore((state) => state.togglePanel);
-  const analysisTab = useUiStore((state) => state.analysisTab);
-  const openAnalysisTab = useUiStore((state) => state.openAnalysisTab);
   const timelineOpen = useUiStore((state) => state.timelineOpen);
   const toggleTimeline = useUiStore((state) => state.toggleTimeline);
   const setAlertsOpen = useUiStore((state) => state.setAlertsOpen);
-  const setMeasureModeDispatch = useProjectStore((state) => state.setMeasureMode);
-  const layerCount = useProjectStore((state) => state.layers.length);
-  const rotation = useMapStore((state) => state.camera.rotation);
-  const openAlerts = useTelemetryStore((state) => state.openAlerts);
+  const projectName = useProjectStore((state) => state.projectName);
+  const dirty = useProjectStore((state) => state.dirty);
 
-  const [toolsOpen, setToolsOpen] = useState(false);
+  const openAlerts = useTelemetryStore((state) => state.openAlerts);
+  const flights = useTelemetryStore((state) => state.flights);
+  const vessels = useTelemetryStore((state) => state.vessels);
+  const satellites = useTelemetryStore((state) => state.satellites);
+
   const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
@@ -103,35 +76,6 @@ export function CommandBar() {
     document.addEventListener("fullscreenchange", handleFullscreen);
     return () => document.removeEventListener("fullscreenchange", handleFullscreen);
   }, []);
-
-  const toggleTool = (tab: AnalysisTab, measure?: "distance" | "area") => {
-    setToolsOpen(false);
-    if (rightPanel === "measure" && analysisTab === tab) {
-      togglePanel("measure");
-      return;
-    }
-    openAnalysisTab(tab);
-    if (measure) setMeasureModeDispatch(measure);
-    else setMeasureModeDispatch("off");
-  };
-
-  const locate = () => {
-    if (!("geolocation" in navigator)) {
-      useUiStore.getState().flash("Location is not available in this window.");
-      return;
-    }
-    useUiStore.getState().flash("Finding your position…");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        flyTo(position.coords.longitude, position.coords.latitude, 11);
-        useUiStore.getState().flash("Centered on your location");
-      },
-      () => {
-        useUiStore.getState().flash("Location permission denied or unavailable.");
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
-    );
-  };
 
   const toggleFullscreen = async () => {
     try {
@@ -145,185 +89,136 @@ export function CommandBar() {
     }
   };
 
-  const toggleFit = () => {
-    fitToData();
-    if (!layerCount) {
-      useUiStore.getState().flash("No datasets are loaded yet.");
-    }
-  };
-
-  const measureActive = rightPanel === "measure";
-  const toolsButtonActive = measureActive || toolsOpen;
-
   return (
     <header
-      className="pointer-events-auto absolute inset-x-0 top-0 z-[30] flex h-[var(--commandbar-h)] items-center gap-1 border-b border-line bg-solid px-2"
+      className="pointer-events-auto absolute inset-x-0 top-0 z-[30] flex h-[var(--commandbar-h)] items-center justify-between border-b border-line bg-solid px-2.5 select-none"
       aria-label="Command bar"
     >
-      <BrandMark />
-      <span className="mr-2 select-none px-1 text-[12.5px] font-bold tracking-[0.02em] text-ink">
-        Strata
-      </span>
-
-      {WORKSPACE_TOOLS.map((tool) => (
-        <button
-          key={tool.id}
-          type="button"
-          className={cx(SHELL_BUTTON, styledActive(leftPanel, tool.id))}
-          title={tool.shortcut ? `${tool.label} (${tool.shortcut})` : tool.label}
-          onClick={() => togglePanel(tool.id)}
-        >
-          <tool.icon size={13} strokeWidth={2} aria-hidden="true" />
-          {tool.label}
-        </button>
-      ))}
-
-      <button
-        type="button"
-        className="inline-flex h-[28px] items-center gap-1.5 rounded-[2px] px-2 text-[11.5px] font-semibold text-ink-muted transition-colors hover:text-ink"
-        title="Settings"
-        onClick={() => togglePanel("settings")}
-      >
-        <Settings2 size={13} strokeWidth={2} aria-hidden="true" />
-        <span className="hidden compact:inline">Settings</span>
-      </button>
-
-      <span className="mx-1.5 h-[18px] w-px bg-line" aria-hidden="true" />
-
-      {/* Measure & analysis dropdown, replacing the second icon rail */}
-      <div className="relative">
+      {/* Left: Brand & Mission Workspace Breadcrumb */}
+      <div className="flex items-center gap-2">
+        <BrandMark />
+        <span className="select-none font-sans text-[13px] font-bold tracking-[0.02em] text-ink">
+          Strata
+        </span>
+        <span className="text-ink-muted text-xs">/</span>
         <button
           type="button"
-          aria-haspopup="true"
-          aria-expanded={toolsOpen}
-          className={cx(SHELL_BUTTON, toolsButtonActive && SHELL_ACTIVE)}
-          onClick={() => setToolsOpen((open) => !open)}
+          onClick={() => togglePanel("project")}
+          className="flex items-center gap-1.5 rounded-[2px] px-1.5 py-0.5 font-mono text-[11px] text-ink-soft transition-colors hover:bg-tint hover:text-ink"
+          title="Open Project Workspace (P)"
         >
-          <Ruler size={13} strokeWidth={2} aria-hidden="true" />
-          Measure&nbsp;&amp;&nbsp;analyze
+          <span className="max-w-[130px] truncate font-medium">{projectName || "Untitled"}</span>
+          {dirty && <span className="size-1.5 rounded-full bg-warn" title="Unsaved changes" />}
         </button>
 
-        {toolsOpen && (
-          <>
-            <button
-              type="button"
-              className="fixed inset-0 z-10 cursor-default"
-              aria-hidden="true"
-              tabIndex={-1}
-              onClick={() => setToolsOpen(false)}
-            />
-            <div
-              role="menu"
-              aria-label="Measure and analysis tools"
-              className="absolute left-0 top-[calc(100%+4px)] z-20 w-[228px] rounded-[2px] border border-line bg-solid p-1 shadow-panel"
-            >
-              {ANALYSIS_TOOLS.map((tool) => (
-                <button
-                  key={tool.tab}
-                  type="button"
-                  role="menuitem"
-                  className="flex h-[30px] w-full items-center gap-2 rounded-[2px] px-2.5 text-left text-[11.5px] font-semibold text-ink-soft transition-colors hover:bg-tint hover:text-ink"
-                  onClick={() => toggleTool(tool.tab, tool.measure)}
-                >
-                  <tool.icon size={13} strokeWidth={2} aria-hidden="true" />
-                  {tool.label}
-                  {tool.shortcut ? (
-                    <span className="ml-auto font-mono text-[9.5px] text-ink-muted">
-                      {tool.shortcut}
-                    </span>
-                  ) : null}
-                  {measureActive && analysisTab === tool.tab ? (
-                    <span className="ml-1 size-1.5 rounded-full bg-accent" aria-hidden="true" />
-                  ) : null}
-                </button>
-              ))}
-            </div>
-          </>
+        {/* Quick Search Omnibar Trigger */}
+        <button
+          type="button"
+          onClick={() => togglePanel("search")}
+          className="ml-2 flex h-[26px] items-center gap-2 rounded-[2px] border border-line bg-tint/60 px-2.5 font-sans text-[11px] text-ink-muted transition-colors hover:border-line-strong hover:text-ink w-[180px] mid:w-[130px] compact:hidden"
+          title="Search places, coordinates, or entities (/)"
+        >
+          <Search size={12} />
+          <span className="flex-1 text-left truncate text-[10.5px]">Search & find...</span>
+          <kbd className="font-mono text-[8.5px] text-ink-muted bg-solid/80 px-1 py-0.5 rounded border border-line">
+            /
+          </kbd>
+        </button>
+      </div>
+
+      {/* Center: Tactical Live Telemetry Feed Badges */}
+      <div className="flex items-center gap-1.5 compact:hidden">
+        {flights.length > 0 && (
+          <button
+            type="button"
+            onClick={() => togglePanel("telemetry")}
+            className="flex items-center gap-1.5 rounded-[2px] border border-line bg-tint/60 px-2 py-0.5 font-mono text-[10px] text-ink-soft hover:text-ink hover:bg-tint"
+            title="Active ADS-B Airborne Flights"
+          >
+            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <Plane size={11} className="rotate-[-45deg] text-accent" />
+            <span className="font-bold text-ink">{flights.length}</span>
+            <span className="text-[8px] text-ink-muted uppercase">Air</span>
+          </button>
+        )}
+
+        {vessels.length > 0 && (
+          <button
+            type="button"
+            onClick={() => togglePanel("telemetry")}
+            className="flex items-center gap-1.5 rounded-[2px] border border-line bg-tint/60 px-2 py-0.5 font-mono text-[10px] text-ink-soft hover:text-ink hover:bg-tint"
+            title="Active AIS Maritime Vessels"
+          >
+            <span className="size-1.5 rounded-full bg-cyan-400" />
+            <Ship size={11} className="text-cyan-400" />
+            <span className="font-bold text-ink">{vessels.length}</span>
+            <span className="text-[8px] text-ink-muted uppercase">Sea</span>
+          </button>
+        )}
+
+        {satellites.length > 0 && (
+          <button
+            type="button"
+            onClick={() => togglePanel("telemetry")}
+            className="flex items-center gap-1.5 rounded-[2px] border border-line bg-tint/60 px-2 py-0.5 font-mono text-[10px] text-ink-soft hover:text-ink hover:bg-tint"
+            title="Tracked Orbital Satellites"
+          >
+            <span className="size-1.5 rounded-full bg-purple-400" />
+            <Satellite size={11} className="text-purple-400" />
+            <span className="font-bold text-ink">{satellites.length}</span>
+            <span className="text-[8px] text-ink-muted uppercase">Space</span>
+          </button>
         )}
       </div>
 
-      <div className="flex-1" />
+      {/* Right: Clock & Global Mission Controls */}
+      <div className="flex items-center gap-2">
+        <LiveClock />
 
-      {/* Camera and window controls — small, labelled on hover, but grouped and ordered */}
-      <button type="button" className={ICON_CLUSTER_BUTTON} title="Reset north (0)" onClick={resetNorth}>
-        <span
-          aria-hidden="true"
-          className="relative block size-[16px] rounded-full border border-current before:absolute before:-top-[2px] before:left-1/2 before:h-[3px] before:w-px before:-translate-x-1/2 before:bg-current"
+        <span className="mx-1 h-[18px] w-px bg-line" aria-hidden="true" />
+
+        {/* 4D Timeline scrubber toggle */}
+        <button
+          type="button"
+          className={cx(
+            "grid size-[28px] place-items-center rounded-[2px] text-ink-soft transition-colors hover:bg-tint hover:text-ink",
+            timelineOpen && "bg-accent-soft text-accent"
+          )}
+          title={timelineOpen ? "Close 4D Timeline" : "Open 4D Replay Timeline"}
+          aria-pressed={timelineOpen}
+          onClick={toggleTimeline}
         >
-          <span
-            className="absolute inset-0.5 origin-center transition-transform duration-75 ease-linear"
-            style={{ transform: `rotate(${-rotation}rad)` }}
-          >
-            <span className="absolute left-1/2 top-0 h-1 w-[3px] -translate-x-1/2 rounded-t-[2px] bg-accent" />
-          </span>
-        </span>
-      </button>
-      <button type="button" className={ICON_CLUSTER_BUTTON} title="Fit to data extent" onClick={toggleFit}>
-        <Frame size={14} strokeWidth={2} aria-hidden="true" />
-      </button>
-      <button type="button" className={ICON_CLUSTER_BUTTON} title="Find my location" onClick={locate}>
-        <LocateFixed size={14} strokeWidth={2} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        className={ICON_CLUSTER_BUTTON}
-        title="Capture map as PNG"
-        onClick={() => {
-          const ok = downloadMapCapture();
-          if (ok) {
-            useUiStore.getState().flash("Map captured as PNG");
-          } else {
-            useUiStore.getState().flash("Map capture not available");
-          }
-        }}
-      >
-        <Camera size={14} strokeWidth={2} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        className={ICON_CLUSTER_BUTTON}
-        title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-        onClick={toggleFullscreen}
-      >
-        {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-      </button>
+          <History size={14} strokeWidth={2} />
+        </button>
 
-      <span className="mx-1.5 h-[18px] w-px bg-line" aria-hidden="true" />
+        {/* Tactical Alert Queue with unacknowledged count */}
+        <button
+          type="button"
+          className={cx(
+            "relative grid size-[28px] place-items-center rounded-[2px] text-ink-soft transition-colors hover:bg-tint hover:text-ink",
+            openAlerts > 0 && "bg-warn-10 text-warn"
+          )}
+          title={openAlerts ? `${openAlerts} open alerts` : "Alerts — none open"}
+          onClick={() => setAlertsOpen(true)}
+        >
+          <BellRing size={14} strokeWidth={2} />
+          {openAlerts > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 grid min-w-[14px] place-items-center rounded-full bg-warn px-[3px] font-mono text-[8.5px] font-bold text-shell">
+              {openAlerts}
+            </span>
+          )}
+        </button>
 
-      {/* Timeline dock toggle */}
-      <button
-        type="button"
-        className={cx(ICON_CLUSTER_BUTTON, timelineOpen && "bg-accent-soft text-accent")}
-        title={timelineOpen ? "Close timeline" : "Open timeline — scrub recorded positions"}
-        aria-pressed={timelineOpen}
-        onClick={toggleTimeline}
-      >
-        <History size={14} strokeWidth={2} aria-hidden="true" />
-      </button>
-
-      {/* Alert queue toggle with open-alert count */}
-      <button
-        type="button"
-        className={cx(
-          ICON_CLUSTER_BUTTON,
-          "relative",
-          openAlerts > 0 && "bg-warn-10 text-warn",
-        )}
-        title={openAlerts ? `${openAlerts} open alert${openAlerts === 1 ? "" : "s"}` : "Alerts — none open"}
-        aria-label={`Alerts, ${openAlerts} open`}
-        onClick={() => setAlertsOpen(true)}
-      >
-        <BellRing size={14} strokeWidth={2} aria-hidden="true" />
-        {openAlerts > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 grid min-w-[14px] place-items-center rounded-full bg-warn px-[3px] font-mono text-[8.5px] font-bold text-shell">
-            {openAlerts}
-          </span>
-        )}
-      </button>
+        {/* Fullscreen toggle */}
+        <button
+          type="button"
+          className="grid size-[28px] place-items-center rounded-[2px] text-ink-soft transition-colors hover:bg-tint hover:text-ink"
+          title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+          onClick={toggleFullscreen}
+        >
+          {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
+      </div>
     </header>
   );
-}
-
-function styledActive(leftPanel: PanelId | null, id: PanelId): string {
-  return leftPanel === id ? SHELL_ACTIVE : "";
 }

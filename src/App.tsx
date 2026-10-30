@@ -8,15 +8,21 @@ import { TelemetryHoverPopup } from "./components/TelemetryHoverPopup";
 import { PanelHost } from "./components/PanelHost";
 import { StatusBar } from "./components/StatusBar";
 import { Toast } from "./components/Toast";
+import { LeftRibbon } from "./components/ribbons/LeftRibbon";
+import { RightRibbon } from "./components/ribbons/RightRibbon";
+import { FloatingCanvasControls } from "./components/FloatingCanvasControls";
+import { RegionSnipOverlay } from "./components/RegionSnipOverlay";
 import { useProjectStore } from "./state/projectStore";
 import { useUiStore } from "./state/uiStore";
+import type { PanelId } from "./lib/gis/types";
 
-const PANEL_KEYS: Record<string, "data" | "table" | "measure"> = {
+const PANEL_KEYS: Record<string, PanelId> = {
   d: "data",
   l: "data",
   t: "table",
   m: "measure",
   a: "measure",
+  b: "bookmarks",
 };
 
 function App() {
@@ -131,12 +137,16 @@ function App() {
       <MapCanvas />
       <div className="pointer-events-none absolute inset-0 z-10 [contain:layout_paint_style]">
         <CommandBar />
+        <LeftRibbon />
+        <RightRibbon />
+        <FloatingCanvasControls />
         <FeaturePopup />
         <TelemetryHoverPopup />
         <PanelHost />
         <MapAttribution />
         <StatusBar />
         <Toast />
+        <RegionSnipOverlay />
       </div>
     </main>
   );

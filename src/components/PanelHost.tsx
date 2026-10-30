@@ -12,6 +12,8 @@ import { SettingsPanel } from "./panels/SettingsPanel";
 import { TimeDock } from "./panels/TimeDock";
 import { AlertQueue } from "./AlertQueue";
 
+import { BookmarksPanel } from "./panels/BookmarksPanel";
+
 /**
  * Docks, not a single panel. The left and right columns are independent (a
  * dataset stack can stay open while an inspection runs); the timeline lives
@@ -25,6 +27,8 @@ function LeftDock() {
       return <SearchPanel />;
     case "project":
       return <ProjectPanel />;
+    case "bookmarks":
+      return <BookmarksPanel />;
     case "data":
     case "telemetry":
       return <DatasetsPanel />;

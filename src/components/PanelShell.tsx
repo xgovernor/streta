@@ -37,10 +37,10 @@ export function PanelShell({
       className={cx(
         "pointer-events-auto absolute z-30 flex flex-col overflow-hidden border border-line bg-solid",
         side === "bottom"
-          ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] left-2 right-2 h-[min(480px,46vh)] animate-panel-bottom"
+          ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] left-[calc(var(--ribbon-w)+8px)] right-[calc(var(--ribbon-w)+8px)] h-[min(480px,46vh)] animate-panel-bottom"
           : side === "left"
-            ? "bottom-[calc(var(--footer-h)+8px)] left-2 top-[calc(var(--commandbar-h)+6px)] animate-panel-left short:top-[calc(var(--commandbar-h)+4px)]"
-            : "bottom-[calc(var(--footer-h)+8px)] right-2 top-[calc(var(--commandbar-h)+6px)] animate-panel-right",
+            ? "bottom-[calc(var(--footer-h)+8px)] left-[calc(var(--ribbon-w)+8px)] top-[calc(var(--commandbar-h)+6px)] animate-panel-left short:top-[calc(var(--commandbar-h)+4px)]"
+            : "bottom-[calc(var(--footer-h)+8px)] right-[calc(var(--ribbon-w)+8px)] top-[calc(var(--commandbar-h)+6px)] animate-panel-right",
         side === "bottom"
           ? ""
           : wide

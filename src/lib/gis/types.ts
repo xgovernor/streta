@@ -20,7 +20,19 @@ export type PanelId =
   | "measure"
   | "join"
   | "project"
-  | "telemetry";
+  | "telemetry"
+  | "bookmarks";
+
+export interface Bookmark {
+  id: string;
+  title: string;
+  notes?: string;
+  lon: number;
+  lat: number;
+  zoom: number;
+  tags?: string[];
+  createdAt: number;
+}
 
 export type ThemeMode = "dark" | "light";
 

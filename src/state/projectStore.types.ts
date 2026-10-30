@@ -1,4 +1,4 @@
-import type { Dataset, DatasetLayer, LayerFilter, LayerStyle, MeasureSummary, Selection } from "../lib/gis/types";
+import type { Bookmark, Dataset, DatasetLayer, LayerFilter, LayerStyle, MeasureSummary, Selection } from "../lib/gis/types";
 
 export interface RecentEntry {
   name: string;
@@ -20,6 +20,11 @@ export interface ProjectStore {
   dirty: boolean;
   hydrationWarnings: string[];
   recent: RecentEntry[];
+  bookmarks: Bookmark[];
+
+  addBookmark: (bookmark: Omit<Bookmark, "id" | "createdAt">) => Bookmark;
+  removeBookmark: (id: string) => void;
+  updateBookmark: (id: string, updates: Partial<Bookmark>) => void;
 
   dismissHydrationWarnings: () => void;
   newProject: () => void;

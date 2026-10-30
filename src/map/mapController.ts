@@ -120,6 +120,84 @@ export function downloadMapCapture(filename = "strata-map.png"): boolean {
     return false;
   }
 }
+
+export function captureMapRegionAsPng(rect: { x: number; y: number; width: number; height: number }): string | null {
+  if (!activeMap) return null;
+  try {
+    const viewport = activeMap.getViewport();
+    if (!viewport) return null;
+    const mapCanvas = viewport.querySelector("canvas");
+    if (!(mapCanvas instanceof HTMLCanvasElement)) return null;
+    if (typeof (activeMap as any).renderSync === "function") {
+      (activeMap as any).renderSync();
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const vpRect = viewport.getBoundingClientRect();
+    const sourceX = Math.max(0, (rect.x - vpRect.left) * dpr);
+    const sourceY = Math.max(0, (rect.y - vpRect.top) * dpr);
+    const sourceW = Math.max(1, rect.width * dpr);
+    const sourceH = Math.max(1, rect.height * dpr);
+
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = sourceW;
+    cropCanvas.height = sourceH;
+    const ctx = cropCanvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.drawImage(
+      mapCanvas,
+      sourceX,
+      sourceY,
+      sourceW,
+      sourceH,
+      0,
+      0,
+      sourceW,
+      sourceH,
+    );
+
+    return cropCanvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
+
+export function downloadMapRegionCapture(
+  rect: { x: number; y: number; width: number; height: number },
+  filename = "strata-snip.png",
+): boolean {
+  const dataUrl = captureMapRegionAsPng(rect);
+  if (!dataUrl) return false;
+  try {
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function copyMapRegionToClipboard(
+  rect: { x: number; y: number; width: number; height: number },
+): Promise<boolean> {
+  const dataUrl = captureMapRegionAsPng(rect);
+  if (!dataUrl) return false;
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    await navigator.clipboard.write([
+      new ClipboardItem({ "image/png": blob }),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 let activeMeasureClear: (() => void) | null = null;
 let activeAnalysisSource: VectorSource | null = null;
 let activeBufferPicker: ((coord: [number, number]) => void) | null = null;

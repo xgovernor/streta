@@ -13,10 +13,30 @@ import {
   uniqueLayerName,
 } from "../lib/gis/layers";
 import { GEOGRAPHIC_CRS } from "../lib/gis/crs";
-import type { DatasetLayer, Dataset, LayerFilter, LayerStyle, MeasureSummary, Selection } from "../lib/gis/types";
+import type { Bookmark, DatasetLayer, Dataset, LayerFilter, LayerStyle, MeasureSummary, Selection } from "../lib/gis/types";
 import type { ProjectStore, RecentEntry } from "./projectStore.types";
 import type { FeatureRecord } from "../lib/gis/types";
 
+const BOOKMARKS_STORAGE_KEY = "strata.bookmarks";
+
+function loadStoredBookmarks(): Bookmark[] {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(BOOKMARKS_STORAGE_KEY) : null;
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredBookmarks(bookmarks: Bookmark[]) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(bookmarks));
+    }
+  } catch {}
+}
 
 export const useProjectStore = create<ProjectStore>()((set, get) => ({
   layers: [],
@@ -30,6 +50,37 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
   dirty: false,
   hydrationWarnings: [],
   recent: [],
+  bookmarks: loadStoredBookmarks(),
+
+  addBookmark(input) {
+    const newBookmark: Bookmark = {
+      ...input,
+      id: "bm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+      createdAt: Date.now(),
+    };
+    set((state) => {
+      const next = [newBookmark, ...state.bookmarks];
+      saveStoredBookmarks(next);
+      return { bookmarks: next };
+    });
+    return newBookmark;
+  },
+
+  removeBookmark(id) {
+    set((state) => {
+      const next = state.bookmarks.filter((b) => b.id !== id);
+      saveStoredBookmarks(next);
+      return { bookmarks: next };
+    });
+  },
+
+  updateBookmark(id, updates) {
+    set((state) => {
+      const next = state.bookmarks.map((b) => (b.id === id ? { ...b, ...updates } : b));
+      saveStoredBookmarks(next);
+      return { bookmarks: next };
+    });
+  },
 
   dismissHydrationWarnings() {
     set({ hydrationWarnings: [] });
