@@ -46,7 +46,10 @@ interface UiState {
   trafficFlow: boolean;
   toast: string | null;
   snipMode: boolean;
+  basemapTrayOpen: boolean;
   setSnipMode: (active: boolean) => void;
+  setBasemapTrayOpen: (open: boolean) => void;
+  toggleBasemapTray: () => void;
   openPanel: (panel: PanelId) => void;
   togglePanel: (panel: PanelId) => void;
   closePanel: (side?: "left" | "right") => void;
@@ -139,10 +142,17 @@ export const useUiStore = create<UiState>()(
       ...DEFAULT_PREFERENCES,
       toast: null,
       snipMode: false,
+      basemapTrayOpen: false,
       setSnipMode: (snipMode) => set({ snipMode }),
+      setBasemapTrayOpen: (basemapTrayOpen) => set({ basemapTrayOpen }),
+      toggleBasemapTray: () =>
+        set((state) => ({ basemapTrayOpen: !state.basemapTrayOpen })),
 
       openPanel: (panel) =>
         set(() => {
+          if (panel === "basemaps") {
+            return { basemapTrayOpen: true };
+          }
           const dock = PANEL_DOCK[panel];
           const update = dock === "left" ? { leftPanel: panel } : { rightPanel: panel };
           return { ...update, lastDock: dock };
@@ -150,6 +160,9 @@ export const useUiStore = create<UiState>()(
 
       togglePanel: (panel) =>
         set((state) => {
+          if (panel === "basemaps") {
+            return { basemapTrayOpen: !state.basemapTrayOpen };
+          }
           const dock = PANEL_DOCK[panel];
           const key = dock === "left" ? "leftPanel" : "rightPanel";
           const closing = state[key] === panel;

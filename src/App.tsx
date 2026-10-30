@@ -12,6 +12,7 @@ import { LeftRibbon } from "./components/ribbons/LeftRibbon";
 import { RightRibbon } from "./components/ribbons/RightRibbon";
 import { FloatingCanvasControls } from "./components/FloatingCanvasControls";
 import { RegionSnipOverlay } from "./components/RegionSnipOverlay";
+import { HorizontalBasemapTray } from "./components/panels/HorizontalBasemapTray";
 import { useProjectStore } from "./state/projectStore";
 import { useUiStore } from "./state/uiStore";
 import type { PanelId } from "./lib/gis/types";
@@ -59,8 +60,9 @@ function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const ui = useUiStore.getState();
       if (event.key === "Escape") {
-        // Closes the dock used most recently; independent otherwise.
-        if (ui.leftPanel || ui.rightPanel) {
+        if (ui.basemapTrayOpen) {
+          ui.setBasemapTrayOpen(false);
+        } else if (ui.leftPanel || ui.rightPanel) {
           ui.closePanel();
         } else if (ui.alertsOpen) {
           ui.setAlertsOpen(false);
@@ -146,6 +148,7 @@ function App() {
         <MapAttribution />
         <StatusBar />
         <Toast />
+        <HorizontalBasemapTray />
         <RegionSnipOverlay />
       </div>
     </main>

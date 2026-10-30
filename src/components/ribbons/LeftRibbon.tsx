@@ -2,7 +2,6 @@ import {
   Bookmark,
   Database,
   FolderGit2,
-  Globe,
   Radio,
   Search,
   Settings2,
@@ -29,7 +28,6 @@ export function LeftRibbon() {
     { id: "bookmarks", label: "Bookmarks & Notes", icon: Bookmark, shortcut: "B" },
     { id: "project", label: "Project & Workspace", icon: FolderGit2 },
     { id: "telemetry", label: "Live Telemetry Feeds", icon: Radio },
-    { id: "basemaps", label: "Basemaps & Charts", icon: Globe },
   ];
 
   return (
