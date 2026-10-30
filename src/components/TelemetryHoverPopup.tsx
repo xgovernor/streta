@@ -11,11 +11,10 @@ import {
 } from "lucide-react";
 import { useTelemetryStore } from "../state/telemetryStore";
 import { useUiStore } from "../state/uiStore";
-import { resolveVesselFlag } from "../lib/gis/telemetryExtendedDb";
+import { resolveVesselFlagDetails } from "../lib/gis/telemetryExtendedDb";
 import { computeVoyageRoute } from "../lib/gis/voyageRoute";
 
-const POPUP_WIDTH = 260;
-const POPUP_HEIGHT = 180;
+const POPUP_WIDTH = 270;
 const EDGE_PADDING = 12;
 
 function clamp(val: number, min: number, max: number): number {
@@ -40,24 +39,27 @@ export function TelemetryHoverPopup() {
   const stylePosition = useMemo(() => {
     if (!hoverPosition) return null;
     const windowWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
-    const windowHeight = typeof window !== "undefined" ? window.innerHeight : 800;
 
     // Feature-anchored: Center horizontally on the feature's screen pixel
     const idealLeft = hoverPosition.x - POPUP_WIDTH / 2;
     const left = clamp(idealLeft, EDGE_PADDING, windowWidth - POPUP_WIDTH - EDGE_PADDING);
 
-    // Position above feature by default, flip below if too close to the top viewport edge
-    let placedBelow = false;
-    let top = hoverPosition.y - POPUP_HEIGHT - 18;
+    // Dynamic vertical anchoring:
+    // When placed ABOVE (default):
+    // Setting top coordinate to `hoverPosition.y - 24` with `transform: translateY(-100%)`
+    // places the bottom edge of the popup box at `hoverPosition.y - 24`.
+    // The downward caret (-bottom-1.5 = 6px) has its tip pointing at `hoverPosition.y - 18`,
+    // touching right above the top boundary of the vessel/flight icon (ZERO gap!).
+    //
+    // When placed BELOW (if feature is within 220px of the top edge):
+    // Setting top coordinate to `hoverPosition.y + 28` with `transform: none`
+    // places the top edge of the popup box at `hoverPosition.y + 28`.
+    // The upward caret (-top-1.5 = 6px) has its tip pointing at `hoverPosition.y + 22`,
+    // touching right below the bottom of the vessel/flight icon.
+    const placedBelow = hoverPosition.y < 220;
+    const top = placedBelow ? hoverPosition.y + 28 : hoverPosition.y - 24;
 
-    if (top < EDGE_PADDING) {
-      top = hoverPosition.y + 22;
-      placedBelow = true;
-    } else if (top + POPUP_HEIGHT > windowHeight - EDGE_PADDING) {
-      top = windowHeight - POPUP_HEIGHT - EDGE_PADDING;
-    }
-
-    const arrowOffsetLeft = clamp(hoverPosition.x - left, 20, POPUP_WIDTH - 20);
+    const arrowOffsetLeft = clamp(hoverPosition.x - left, 18, POPUP_WIDTH - 18);
 
     return { left, top, placedBelow, arrowOffsetLeft };
   }, [hoverPosition]);
@@ -76,8 +78,12 @@ export function TelemetryHoverPopup() {
   return (
     <div
       onClick={handleClick}
-      style={{ left: stylePosition.left, top: stylePosition.top }}
-      className="pointer-events-auto absolute z-40 w-[260px] cursor-pointer overflow-visible rounded-none border border-line bg-solid p-3 font-sans text-ink shadow-panel transition-[left,top] duration-75 hover:border-line-strong"
+      style={{
+        left: stylePosition.left,
+        top: stylePosition.top,
+        transform: stylePosition.placedBelow ? "none" : "translateY(-100%)",
+      }}
+      className="pointer-events-auto absolute z-40 w-[270px] cursor-pointer overflow-visible rounded-[3px] border border-line bg-solid p-3 font-sans text-ink shadow-panel transition-[left,top] duration-75 hover:border-line-strong"
       title="Click to inspect extended details & track"
     >
       {/* Tactical target-lock pointer stem */}
@@ -92,12 +98,13 @@ export function TelemetryHoverPopup() {
           className="absolute -bottom-1.5 -translate-x-1/2 size-3 rotate-45 border-r border-b border-line bg-solid"
         />
       )}
+
       {/* 1. ADS-B Flight Target */}
       {type === "flight" && (
         <div className="space-y-2">
           <div className="flex items-center justify-between border-b border-line pb-2">
             <div className="flex items-center gap-2">
-              <div className="grid size-6 place-items-center rounded-[2px] bg-tint text-ink">
+              <div className="grid size-6 place-items-center rounded-[2px] bg-tint text-accent">
                 <Plane size={14} className="rotate-[-45deg]" />
               </div>
               <div>
@@ -109,15 +116,18 @@ export function TelemetryHoverPopup() {
                 </div>
               </div>
             </div>
-            {data.emergency && (
+            {data.emergency ? (
               <span className="flex items-center gap-1 rounded-[2px] bg-critical-20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-critical">
                 <AlertTriangle size={10} />
                 {data.emergency}
               </span>
-            )}
-            {!data.emergency && data.squawk && (
+            ) : data.squawk ? (
               <span className="rounded-[2px] bg-tint px-1.5 py-0.5 font-mono text-[9.5px] text-ink-muted">
                 SQK {data.squawk}
+              </span>
+            ) : (
+              <span className="rounded-[2px] bg-tint px-1.5 py-0.5 text-[9px] font-semibold text-ink-soft border border-line">
+                {data.categoryLabel || "Aircraft"}
               </span>
             )}
           </div>
@@ -158,6 +168,17 @@ export function TelemetryHoverPopup() {
               )}
             </div>
           </div>
+
+          <div className="mt-2 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
+            <div className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[8px] font-bold text-ink-soft tracking-wider">LIVE ADS-B</span>
+            </div>
+            <div className="flex items-center gap-1 text-ink font-semibold">
+              <span>INSPECT & TRACK</span>
+              <Navigation size={10} className="text-accent" />
+            </div>
+          </div>
         </div>
       )}
 
@@ -166,7 +187,7 @@ export function TelemetryHoverPopup() {
         <div className="space-y-2">
           <div className="flex items-center justify-between border-b border-line pb-2">
             <div className="flex items-center gap-2">
-              <div className="grid size-6 place-items-center rounded-[2px] bg-tint text-ink">
+              <div className="grid size-6 place-items-center rounded-[2px] bg-tint text-accent">
                 <Satellite size={14} />
               </div>
               <div>
@@ -204,81 +225,149 @@ export function TelemetryHoverPopup() {
               {data.latitude?.toFixed(2)}°, {data.longitude?.toFixed(2)}°
             </span>
           </div>
+
+          <div className="mt-2 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
+            <div className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-cyan-400" />
+              <span className="text-[8px] font-bold text-ink-soft tracking-wider">SGP4 ORBIT</span>
+            </div>
+            <div className="flex items-center gap-1 text-ink font-semibold">
+              <span>INSPECT & TRACK</span>
+              <Navigation size={10} className="text-accent" />
+            </div>
+          </div>
         </div>
       )}
 
-      {/* 3. AIS Vessel Target */}
-      {type === "vessel" && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between border-b border-line pb-2">
-            <div className="flex items-center gap-2">
-              <div className="grid size-6 place-items-center rounded-[2px] bg-tint text-ink">
-                <Ship size={14} />
-              </div>
-              <div>
-                <div className="font-mono text-xs font-bold text-ink truncate max-w-[140px]">
-                  {data.name || `MMSI ${data.mmsi}`}
-                </div>
-                <div className="text-[9.5px] text-ink-muted truncate max-w-[140px]">
-                  {resolveVesselFlag(data.mmsi)}
-                </div>
-              </div>
-            </div>
-            <span className="rounded-[2px] bg-tint px-1.5 py-0.5 text-[9px] font-semibold text-ink-soft border border-line">
-              {data.shipType || "Cargo"}
-            </span>
-          </div>
+      {/* 3. AIS Vessel Target (MarineTraffic & VesselFinder Standard) */}
+      {type === "vessel" && (() => {
+        const flagInfo = resolveVesselFlagDetails(data.mmsi);
+        const navStatus = data.status || "Under way";
+        const isUnderWay = /engine|sailing|under way/i.test(navStatus);
+        const isAnchor = /anchor/i.test(navStatus);
+        const isMoored = /moored/i.test(navStatus);
+        const statusDotClass = isUnderWay
+          ? "bg-emerald-500"
+          : isAnchor
+          ? "bg-amber-500"
+          : isMoored
+          ? "bg-cyan-500"
+          : "bg-neutral-400";
 
-          <div className="grid grid-cols-2 gap-2 text-[10.5px]">
-            <div className="rounded-[2px] bg-tint p-1.5">
-              <div className="text-[8.5px] uppercase tracking-wider text-ink-muted">Speed (SOG)</div>
-              <div className="font-mono font-semibold text-ink">
-                {(data.speedKnots || 0).toFixed(1)} kts
-              </div>
-            </div>
-            <div className="rounded-[2px] bg-tint p-1.5">
-              <div className="text-[8.5px] uppercase tracking-wider text-ink-muted">Course (COG)</div>
-              <div className="font-mono font-semibold text-ink">
-                {Math.round(data.courseDeg || 0)}° {toCompassHeading(data.courseDeg || 0)}
-              </div>
-            </div>
-          </div>
+        const voyage =
+          data.destination && data.lon != null && data.lat != null
+            ? computeVoyageRoute(data.lon, data.lat, data.destination, data.speedKnots || 0)
+            : null;
 
-          {data.destination && (() => {
-            const voyage =
-              data.lon != null && data.lat != null
-                ? computeVoyageRoute(data.lon, data.lat, data.destination, data.speedKnots || 0)
-                : null;
-            return (
+        return (
+          <div className="space-y-2">
+            {/* Header: Name, Flag, Type */}
+            <div className="flex items-center justify-between border-b border-line pb-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="grid size-6 shrink-0 place-items-center rounded-[2px] bg-tint text-accent">
+                  <Ship size={14} />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-mono text-xs font-bold text-ink truncate max-w-[155px]">
+                    {data.name || `MMSI ${data.mmsi}`}
+                  </div>
+                  <div className="flex items-center gap-1 text-[9.5px] text-ink-muted truncate max-w-[155px]">
+                    <span>{flagInfo.emoji}</span>
+                    <span className="truncate">{flagInfo.country}</span>
+                  </div>
+                </div>
+              </div>
+              <span className="shrink-0 rounded-[2px] bg-tint px-1.5 py-0.5 text-[9px] font-semibold text-ink-soft border border-line">
+                {data.shipType || "Cargo"}
+              </span>
+            </div>
+
+            {/* Navigational Status & Radio Identity */}
+            <div className="flex items-center justify-between text-[10px]">
+              <div className="flex items-center gap-1.5 truncate">
+                <span className={`size-1.5 shrink-0 rounded-full ${statusDotClass}`} />
+                <span className="font-medium text-ink truncate text-[9.5px]">{navStatus}</span>
+              </div>
+              <div className="font-mono text-[9px] text-ink-muted shrink-0">
+                MMSI {data.mmsi}{data.callsign ? ` · ${data.callsign}` : ""}
+              </div>
+            </div>
+
+            {/* Kinematics Grid: SOG, COG, Heading */}
+            <div className="grid grid-cols-2 gap-2 text-[10.5px]">
+              <div className="rounded-[2px] bg-tint p-1.5">
+                <div className="text-[8px] uppercase tracking-wider text-ink-muted">Speed (SOG)</div>
+                <div className="font-mono font-semibold text-ink">
+                  {(data.speedKnots || 0).toFixed(1)} kts
+                </div>
+                <div className="text-[8.5px] font-mono text-ink-muted">
+                  {((data.speedKnots || 0) * 1.852).toFixed(1)} km/h
+                </div>
+              </div>
+              <div className="rounded-[2px] bg-tint p-1.5">
+                <div className="text-[8px] uppercase tracking-wider text-ink-muted">Course (COG)</div>
+                <div className="font-mono font-semibold text-ink">
+                  {Math.round(data.courseDeg || 0)}° {toCompassHeading(data.courseDeg || 0)}
+                </div>
+                <div className="text-[8.5px] font-mono text-ink-muted">
+                  {data.headingDeg != null && data.headingDeg > 0 && data.headingDeg <= 360
+                    ? `HDG ${Math.round(data.headingDeg)}°`
+                    : "True Motion"}
+                </div>
+              </div>
+            </div>
+
+            {/* Destination & Voyage Summary */}
+            {data.destination ? (
               <div className="rounded-[2px] bg-tint p-1.5 text-[9.5px]">
                 <div className="flex items-center justify-between text-ink-soft">
                   <span className="text-ink-muted uppercase tracking-wider text-[8px]">Destination</span>
                   {voyage && (
-                    <span className="font-mono text-[8.5px] text-accent">
+                    <span className="font-mono text-[9px] font-bold text-accent">
                       {Math.round(voyage.distanceNm).toLocaleString()} NM
                     </span>
                   )}
                 </div>
-                <div className="font-medium text-ink truncate mt-0.5">
+                <div className="font-bold text-ink truncate mt-0.5">
                   {voyage?.label || data.destination}
                 </div>
                 {voyage && (
-                  <div className="text-[8.5px] font-mono text-ink-muted mt-0.5">
-                    ETA {voyage.etaDays < 1 ? `~${Math.max(1, Math.round(voyage.etaDays * 24))} H` : `~${voyage.etaDays.toFixed(1)} D`} · Great-Circle Route
+                  <div className="text-[8.5px] font-mono text-ink-muted mt-0.5 flex items-center justify-between">
+                    <span>
+                      ETA {voyage.etaDays < 1 ? `~${Math.max(1, Math.round(voyage.etaDays * 24))} H` : `~${voyage.etaDays.toFixed(1)} Days`}
+                    </span>
+                    <span className="text-[8px] uppercase tracking-wider text-ink-soft">Great-Circle</span>
                   </div>
                 )}
               </div>
-            );
-          })()}
-        </div>
-      )}
+            ) : (
+              <div className="flex items-center justify-between text-[9px] font-mono text-ink-muted bg-tint/60 px-2 py-1 rounded-[2px]">
+                <span>FIX {Math.abs(data.lat).toFixed(3)}°{data.lat >= 0 ? "N" : "S"}, {Math.abs(data.lon).toFixed(3)}°{data.lon >= 0 ? "E" : "W"}</span>
+                <span className="text-ink-soft">DEST UNREPORTED</span>
+              </div>
+            )}
+
+            {/* Bottom Live Feed Badge & Inspection Hint */}
+            <div className="mt-2.5 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
+              <div className="flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[8px] font-bold text-ink-soft tracking-wider">LIVE AIS STREAM</span>
+              </div>
+              <div className="flex items-center gap-1 text-ink font-semibold">
+                <span>INSPECT & TRACK</span>
+                <Navigation size={10} className="text-accent" />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 4. Earthquake Target */}
       {type === "earthquake" && (
         <div className="space-y-2">
           <div className="flex items-center justify-between border-b border-line pb-2">
             <div className="flex items-center gap-2">
-              <div className="grid size-6 place-items-center rounded-[2px] bg-tint text-ink">
+              <div className="grid size-6 place-items-center rounded-[2px] bg-tint text-critical">
                 <Activity size={14} />
               </div>
               <div>
@@ -290,9 +379,24 @@ export function TelemetryHoverPopup() {
                 </div>
               </div>
             </div>
+            {data.tsunami === 1 && (
+              <span className="rounded-[2px] bg-critical-20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-critical">
+                TSUNAMI
+              </span>
+            )}
           </div>
           <div className="text-[10px] text-ink-soft line-clamp-2">
             {data.place}
+          </div>
+          <div className="mt-2 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
+            <div className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-amber-500" />
+              <span className="text-[8px] font-bold text-ink-soft tracking-wider">USGS SEISMIC</span>
+            </div>
+            <div className="flex items-center gap-1 text-ink font-semibold">
+              <span>INSPECT & TRACK</span>
+              <Navigation size={10} className="text-accent" />
+            </div>
           </div>
         </div>
       )}
@@ -318,14 +422,18 @@ export function TelemetryHoverPopup() {
           <div className="text-[10px] text-ink-soft">
             Detected via NASA {data.satellite || "VIIRS"} · Conf: {data.confidence}
           </div>
+          <div className="mt-2 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
+            <div className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-orange-500" />
+              <span className="text-[8px] font-bold text-ink-soft tracking-wider">NASA FIRMS</span>
+            </div>
+            <div className="flex items-center gap-1 text-ink font-semibold">
+              <span>INSPECT & TRACK</span>
+              <Navigation size={10} className="text-accent" />
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Bottom Hint */}
-      <div className="mt-2.5 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
-        <span>CLICK TO INSPECT & TRACK</span>
-        <Navigation size={10} className="text-ink-soft" />
-      </div>
     </div>
   );
 }

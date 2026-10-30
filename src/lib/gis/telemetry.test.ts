@@ -66,7 +66,7 @@ describe("Phase 4 Live Telemetry & Feeds", () => {
       expect(eq.longitude).toBeGreaterThanOrEqual(-180);
       expect(eq.longitude).toBeLessThanOrEqual(180);
     }
-  });
+  }, 15000);
 
   it("fetches orbital satellites with SGP4 calculated ground tracks", async () => {
     const satellites = await fetchLiveSatellites();
