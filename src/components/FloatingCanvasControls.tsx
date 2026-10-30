@@ -234,26 +234,27 @@ export function FloatingCanvasControls() {
       {/* Tactical separator between tool buttons and camera stack */}
       <div className="my-0.5 h-px w-5 bg-line/80" />
 
-      {/* Camera Navigation Cluster */}
-      <button
-        type="button"
-        onClick={() => zoomBy(1)}
-        className={FLOATING_BTN}
-        title="Zoom In (+)"
-        aria-label="Zoom In"
-      >
-        <Plus size={15} strokeWidth={2.5} />
-      </button>
-
-      <button
-        type="button"
-        onClick={() => zoomBy(-1)}
-        className={FLOATING_BTN}
-        title="Zoom Out (−)"
-        aria-label="Zoom Out"
-      >
-        <Minus size={15} strokeWidth={2.5} />
-      </button>
+      {/* Zoom In/Out Split Button */}
+      <div className="flex flex-col overflow-hidden rounded-[2px] border border-line bg-solid/90 shadow-panel backdrop-blur-md">
+        <button
+          type="button"
+          onClick={() => zoomBy(1)}
+          className="grid size-8 place-items-center border-b border-line text-ink-soft transition-colors hover:bg-tint hover:text-ink focus-visible:outline-2"
+          title="Zoom In (+)"
+          aria-label="Zoom In"
+        >
+          <Plus size={15} strokeWidth={2.5} />
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomBy(-1)}
+          className="grid size-8 place-items-center text-ink-soft transition-colors hover:bg-tint hover:text-ink focus-visible:outline-2"
+          title="Zoom Out (−)"
+          aria-label="Zoom Out"
+        >
+          <Minus size={15} strokeWidth={2.5} />
+        </button>
+      </div>
 
       <button
         type="button"
