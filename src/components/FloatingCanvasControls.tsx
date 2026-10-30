@@ -1,17 +1,20 @@
+import { useState } from "react";
 import {
   Compass,
   Frame,
   Layers,
+  Loader2,
   LocateFixed,
   Minus,
   Plus,
 } from "lucide-react";
 import {
   fitToData,
-  flyTo,
   resetNorth,
+  setUserLocation,
   zoomBy,
 } from "../map/mapController";
+import { resolveCurrentLocation } from "../lib/gis/geolocation";
 import { useMapStore } from "../state/mapStore";
 import { useUiStore } from "../state/uiStore";
 import { cx } from "../lib/cx";
@@ -24,23 +27,30 @@ export function FloatingCanvasControls() {
   const flash = useUiStore((state) => state.flash);
   const basemapTrayOpen = useUiStore((state) => state.basemapTrayOpen);
   const toggleBasemapTray = useUiStore((state) => state.toggleBasemapTray);
+  const [locating, setLocating] = useState(false);
 
-  const locate = () => {
-    if (!("geolocation" in navigator)) {
-      flash("Location is not available in this window.");
-      return;
-    }
+  const locate = async () => {
+    if (locating) return;
+    setLocating(true);
     flash("Finding your position…");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        flyTo(pos.coords.longitude, pos.coords.latitude, 12);
-        flash("Centered on your location");
-      },
-      () => {
-        flash("Location permission denied or unavailable.");
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-    );
+
+    try {
+      const loc = await resolveCurrentLocation();
+      if (loc) {
+        setUserLocation(loc.longitude, loc.latitude, loc.accuracy);
+        if (loc.placeName) {
+          flash(`Located: ${loc.placeName}`);
+        } else {
+          flash("Centered on your location");
+        }
+      } else {
+        flash("Location unavailable or permission denied.");
+      }
+    } catch {
+      flash("Failed to determine location.");
+    } finally {
+      setLocating(false);
+    }
   };
   return (
     <div
@@ -118,11 +128,19 @@ export function FloatingCanvasControls() {
       <button
         type="button"
         onClick={locate}
-        className={FLOATING_BTN}
-        title="Find My Location"
+        disabled={locating}
+        className={cx(
+          FLOATING_BTN,
+          locating && "border-cyan-400 bg-cyan-950/30 text-cyan-400"
+        )}
+        title="Find My Location (GPS / Network)"
         aria-label="Find My Location"
       >
-        <LocateFixed size={14} strokeWidth={2} />
+        {locating ? (
+          <Loader2 size={14} className="animate-spin text-cyan-400" />
+        ) : (
+          <LocateFixed size={14} strokeWidth={2} />
+        )}
       </button>
     </div>
   );

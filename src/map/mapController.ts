@@ -1,6 +1,7 @@
 import Feature, { type FeatureLike } from "ol/Feature";
 import Draw from "ol/interaction/Draw";
 import {
+  Circle as OlCircle,
   LineString,
   Point,
   Polygon,
@@ -200,6 +201,7 @@ export async function copyMapRegionToClipboard(
 }
 let activeMeasureClear: (() => void) | null = null;
 let activeAnalysisSource: VectorSource | null = null;
+let activeLocationSource: VectorSource | null = null;
 let activeBufferPicker: ((coord: [number, number]) => void) | null = null;
 
 let activeRasterBinding: {
@@ -349,6 +351,27 @@ function graticuleStyle(feature: FeatureLike): Style {
   });
 }
 
+const userLocationStyle: StyleFunction = () => {
+  return [
+    new Style({
+      image: new CircleStyle({
+        radius: 14,
+        fill: new Fill({ color: "rgba(6, 182, 212, 0.2)" }),
+        stroke: new Stroke({ color: "rgba(6, 182, 212, 0.7)", width: 1.5 }),
+      }),
+      zIndex: 10001,
+    }),
+    new Style({
+      image: new CircleStyle({
+        radius: 6,
+        fill: new Fill({ color: "#06b6d4" }),
+        stroke: new Stroke({ color: "#ffffff", width: 2.5 }),
+      }),
+      zIndex: 10002,
+    }),
+  ];
+};
+
 /**
  * One basemap layer, ready to be switched on. Vector styles become a group of
  * layers driven by `ol-mapbox-style`; raster services become a single tiled
@@ -470,6 +493,15 @@ export function mountMap(target: HTMLElement): () => void {
     properties: { id: "traffic-flow", overlay: true },
   });
 
+  const locationSource = new VectorSource();
+  const locationLayer = new VectorLayer({
+    source: locationSource,
+    style: userLocationStyle,
+    zIndex: 9999,
+    properties: { id: "user-location", overlay: true },
+  });
+  activeLocationSource = locationSource;
+
   const map = new OlMap({
     target,
     view,
@@ -479,6 +511,7 @@ export function mountMap(target: HTMLElement): () => void {
       graticuleLayer,
       measureLayer,
       analysisLayer,
+      locationLayer,
     ],
     controls: [],
   });
@@ -1350,6 +1383,7 @@ export function mountMap(target: HTMLElement): () => void {
     }
 
     activeAnalysisSource = null;
+    activeLocationSource = null;
     activeBufferPicker = null;
 
     if (activeMap === map) {
@@ -2038,6 +2072,49 @@ export function flyToCoordinate(lon: number, lat: number, zoom = 14): void {
     zoom,
     duration: 500,
   });
+}
+
+/**
+ * Places a high-visibility tactical GPS / user location marker on the map
+ * and smoothly animates the camera to center on it.
+ */
+export function setUserLocation(lon: number, lat: number, accuracy?: number): void {
+  if (!activeLocationSource) return;
+  activeLocationSource.clear();
+
+  const coords = fromLonLat([lon, lat]);
+  const pointFeature = new Feature({
+    geometry: new Point(coords),
+    accuracy,
+    lon,
+    lat,
+  });
+
+  if (accuracy && accuracy > 30) {
+    const accuracyFeature = new Feature({
+      geometry: new OlCircle(coords, accuracy),
+    });
+    accuracyFeature.setStyle(
+      new Style({
+        fill: new Fill({ color: "rgba(6, 182, 212, 0.08)" }),
+        stroke: new Stroke({
+          color: "rgba(6, 182, 212, 0.4)",
+          width: 1,
+          lineDash: [4, 4],
+        }),
+        zIndex: 10000,
+      })
+    );
+    activeLocationSource.addFeature(accuracyFeature);
+  }
+
+  activeLocationSource.addFeature(pointFeature);
+
+  flyTo(lon, lat, accuracy && accuracy > 5000 ? 11 : 14);
+}
+
+export function clearUserLocation(): void {
+  activeLocationSource?.clear();
 }
 
 /**
