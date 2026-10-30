@@ -418,6 +418,8 @@ pub struct ElevationSample {
     pub lon: f64,
     pub lat: f64,
     pub elevation_m: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slope_pct: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -427,6 +429,16 @@ pub struct ElevationProfileResult {
     pub max_elevation_m: f64,
     pub elevation_gain_m: f64,
     pub elevation_loss_m: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub net_elevation_m: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_elevation_m: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_slope_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_slope_pct: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_distance_m: Option<f64>,
     pub samples: Vec<ElevationSample>,
 }
 
@@ -522,9 +534,14 @@ pub async fn compute_elevation_profile(
     let mut samples = Vec::with_capacity(sample_pts.len());
     let mut min_elev = f64::INFINITY;
     let mut max_elev = f64::NEG_INFINITY;
+    let mut peak_distance_m = 0.0;
     let mut elev_gain = 0.0;
     let mut elev_loss = 0.0;
+    let mut elev_sum = 0.0;
+    let mut max_slope: f64 = 0.0;
+    let mut slope_sum: f64 = 0.0;
     let mut prev_elev: Option<f64> = None;
+    let mut prev_dist: f64 = 0.0;
 
     for (i, &(dist, lon, lat)) in sample_pts.iter().enumerate() {
         let elev = parsed
@@ -534,7 +551,13 @@ pub async fn compute_elevation_profile(
             .unwrap_or(0.0);
 
         min_elev = min_elev.min(elev);
-        max_elev = max_elev.max(elev);
+        if elev > max_elev {
+            max_elev = elev;
+            peak_distance_m = dist;
+        }
+        elev_sum += elev;
+
+        let mut current_slope: Option<f64> = None;
 
         if let Some(prev) = prev_elev {
             let diff = elev - prev;
@@ -543,16 +566,30 @@ pub async fn compute_elevation_profile(
             } else {
                 elev_loss += diff.abs();
             }
+
+            let delta_d = dist - prev_dist;
+            if delta_d > 0.1 {
+                let slope = (diff / delta_d) * 100.0;
+                current_slope = Some((slope * 10.0).round() / 10.0);
+                max_slope = max_slope.max(slope.abs());
+                slope_sum += slope.abs();
+            }
         }
         prev_elev = Some(elev);
+        prev_dist = dist;
 
         samples.push(ElevationSample {
             distance_m: (dist * 10.0).round() / 10.0,
             lon: (lon * 100_000.0).round() / 100_000.0,
             lat: (lat * 100_000.0).round() / 100_000.0,
             elevation_m: (elev * 10.0).round() / 10.0,
+            slope_pct: current_slope,
         });
     }
+
+    let first_elev = samples.first().map(|s| s.elevation_m).unwrap_or(0.0);
+    let last_elev = samples.last().map(|s| s.elevation_m).unwrap_or(0.0);
+    let count = samples.len().max(1) as f64;
 
     Ok(ElevationProfileResult {
         total_distance_m: (total_dist * 10.0).round() / 10.0,
@@ -560,6 +597,15 @@ pub async fn compute_elevation_profile(
         max_elevation_m: if max_elev.is_infinite() { 0.0 } else { max_elev },
         elevation_gain_m: (elev_gain * 10.0).round() / 10.0,
         elevation_loss_m: (elev_loss * 10.0).round() / 10.0,
+        net_elevation_m: Some(((last_elev - first_elev) * 10.0).round() / 10.0),
+        avg_elevation_m: Some((elev_sum / count * 10.0).round() / 10.0),
+        max_slope_pct: Some((max_slope * 10.0).round() / 10.0),
+        avg_slope_pct: if count > 1.0 {
+            Some((slope_sum / (count - 1.0) * 10.0).round() / 10.0)
+        } else {
+            Some(0.0)
+        },
+        peak_distance_m: Some((peak_distance_m * 10.0).round() / 10.0),
         samples,
     })
 }

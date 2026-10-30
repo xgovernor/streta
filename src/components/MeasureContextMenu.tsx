@@ -7,6 +7,7 @@ import {
   FileCode,
   Hexagon,
   List,
+  Mountain,
   PlusCircle,
   Ruler,
   Trash2,
@@ -177,6 +178,13 @@ export function MeasureContextMenu() {
     setMenu(null);
   };
 
+  const handleSliceElevation = () => {
+    useMapStore.getState().setElevationSelectedFeatureId(menu.featureId ?? null);
+    useUiStore.getState().openAnalysisTab("elevation");
+    notify(`Elevation Workbench: slicing Line #${menu.lineIndex ?? 1}`);
+    setMenu(null);
+  };
+
   const handleInsertAnother = () => {
     resumeMeasurement(isPolygon ? "area" : "distance");
     notify(
@@ -328,6 +336,20 @@ export function MeasureContextMenu() {
         </button>
 
         <div className="my-1 border-t border-[#232733]" />
+
+        {/* Slice Elevation Cross-Section */}
+        {!isPolygon && (
+          <button
+            type="button"
+            role="menuitem"
+            className="flex items-center gap-2 rounded-[2px] px-2 py-1.5 text-left text-[10.5px] hover:bg-[#1e2330] hover:text-accent transition-colors"
+            onClick={handleSliceElevation}
+          >
+            <Mountain size={12} className="text-accent flex-none" />
+            <span className="flex-1 font-semibold text-accent">Elevation Profile</span>
+            <span className="text-[9px] text-accent/80 font-mono">DEM</span>
+          </button>
+        )}
 
         {/* Option to insert multiple measurement shapes */}
         <button

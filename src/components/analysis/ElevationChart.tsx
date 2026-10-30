@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import type { ElevationProfileResult, ElevationSample } from "../../lib/gis/tiledBackend";
 import { setProfileHoverCoord } from "../../map/mapController";
-import { ArrowDownRight, ArrowUpRight, Mountain, Ruler } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Mountain, Ruler, TrendingUp } from "lucide-react";
 
 interface ElevationChartProps {
   data: ElevationProfileResult;
@@ -35,6 +35,35 @@ export function ElevationChart({ data }: ElevationChartProps) {
       totalDist: data.total_distance_m || 1,
     };
   }, [data]);
+
+  const netElevation = useMemo(() => {
+    if (data.net_elevation_m != null) return data.net_elevation_m;
+    if (count > 1) {
+      return Math.round((samples[count - 1].elevation_m - samples[0].elevation_m) * 10) / 10;
+    }
+    return 0;
+  }, [data.net_elevation_m, samples, count]);
+
+  const avgElevation = useMemo(() => {
+    if (data.avg_elevation_m != null) return data.avg_elevation_m;
+    if (count > 0) {
+      return Math.round(samples.reduce((acc, s) => acc + s.elevation_m, 0) / count);
+    }
+    return 0;
+  }, [data.avg_elevation_m, samples, count]);
+
+  const maxSlope = useMemo(() => {
+    if (data.max_slope_pct != null) return data.max_slope_pct;
+    let max = 0;
+    for (let i = 1; i < count; i++) {
+      const dd = samples[i].distance_m - samples[i - 1].distance_m;
+      const dz = samples[i].elevation_m - samples[i - 1].elevation_m;
+      if (dd > 0.1) {
+        max = Math.max(max, Math.abs((dz / dd) * 100));
+      }
+    }
+    return Math.round(max * 10) / 10;
+  }, [data.max_slope_pct, samples, count]);
 
   const svgPaths = useMemo<{ linePath: string; areaPath: string }>((): { linePath: string; areaPath: string } => {
     if (!count) return { linePath: "", areaPath: "" };
@@ -73,7 +102,9 @@ export function ElevationChart({ data }: ElevationChartProps) {
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!svgRef.current || !count) return;
     const rect = svgRef.current.getBoundingClientRect();
-    const clientX = e.clientX - rect.left;
+    if (rect.width <= 0) return;
+    const scaleX = width / rect.width;
+    const clientX = (e.clientX - rect.left) * scaleX;
     const relX = clientX - margin.left;
 
     if (relX < 0 || relX > chartW) {
@@ -88,7 +119,7 @@ export function ElevationChart({ data }: ElevationChartProps) {
 
     const s = samples[idx];
     if (s) {
-      setProfileHoverCoord([s.lon, s.lat], s.elevation_m);
+      setProfileHoverCoord([s.lon, s.lat], s.elevation_m, s.slope_pct);
     }
   };
 
@@ -113,21 +144,21 @@ export function ElevationChart({ data }: ElevationChartProps) {
   return (
     <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
       {/* Metric summary banner */}
-      <div className="grid grid-cols-4 gap-1 rounded-[2px] bg-solid p-1.5 text-[10.5px]">
+      <div className="grid grid-cols-4 gap-1 rounded-[2px] bg-solid p-1.5 text-[10px]">
         <div className="flex flex-col items-center">
-          <span className="text-[9px] uppercase tracking-wider text-ink-muted">Min</span>
+          <span className="text-[8.5px] uppercase tracking-wider text-ink-muted">Min</span>
           <span className="font-mono font-semibold text-ink">
             {Math.round(data.min_elevation_m)}m
           </span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-[9px] uppercase tracking-wider text-ink-muted">Max</span>
+          <span className="text-[8.5px] uppercase tracking-wider text-ink-muted">Max</span>
           <span className="font-mono font-semibold text-ink">
             {Math.round(data.max_elevation_m)}m
           </span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="flex items-center gap-0.5 text-[9px] uppercase tracking-wider text-ink-muted">
+          <span className="flex items-center gap-0.5 text-[8.5px] uppercase tracking-wider text-ink-muted">
             <ArrowUpRight size={10} className="text-ok" /> Gain
           </span>
           <span className="font-mono font-semibold text-ok">
@@ -135,7 +166,7 @@ export function ElevationChart({ data }: ElevationChartProps) {
           </span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="flex items-center gap-0.5 text-[9px] uppercase tracking-wider text-ink-muted">
+          <span className="flex items-center gap-0.5 text-[8.5px] uppercase tracking-wider text-ink-muted">
             <ArrowDownRight size={10} className="text-critical" /> Loss
           </span>
           <span className="font-mono font-semibold text-critical">
@@ -144,8 +175,39 @@ export function ElevationChart({ data }: ElevationChartProps) {
         </div>
       </div>
 
+      {/* Secondary Topographic Stats */}
+      <div className="grid grid-cols-4 gap-1 rounded-[2px] border border-line/60 bg-solid/50 px-1.5 py-1 text-[9.5px]">
+        <div className="flex flex-col items-center">
+          <span className="text-[8px] uppercase tracking-wider text-ink-muted">Net Δ</span>
+          <span className="font-mono font-semibold text-ink">
+            {netElevation >= 0 ? "+" : ""}
+            {Math.round(netElevation)}m
+          </span>
+        </div>
+        <div className="flex flex-col items-center">
+          <span className="text-[8px] uppercase tracking-wider text-ink-muted">Avg Elev</span>
+          <span className="font-mono font-semibold text-ink">
+            {Math.round(avgElevation)}m
+          </span>
+        </div>
+        <div className="flex flex-col items-center">
+          <span className="text-[8px] uppercase tracking-wider text-ink-muted">Max Slope</span>
+          <span className="font-mono font-semibold text-ink">
+            {maxSlope != null ? `${maxSlope}%` : "—"}
+          </span>
+        </div>
+        <div className="flex flex-col items-center">
+          <span className="text-[8px] uppercase tracking-wider text-ink-muted">Peak Dist</span>
+          <span className="font-mono font-semibold text-ink">
+            {data.peak_distance_m != null
+              ? `${(data.peak_distance_m / 1000).toFixed(1)} km`
+              : "—"}
+          </span>
+        </div>
+      </div>
+
       {/* SVG Elevation Cross-Section */}
-      <div className="relative overflow-hidden rounded-[2px] border border-line bg-black">
+      <div className="relative overflow-hidden rounded-[2px] border border-line bg-solid/80">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
@@ -281,6 +343,24 @@ export function ElevationChart({ data }: ElevationChartProps) {
                 {Math.round(activeSample.elevation_m)} m
               </strong>
             </span>
+            {activeSample.slope_pct != null && (
+              <span className="flex items-center gap-1 text-ink-muted">
+                <TrendingUp size={11} className="text-ink-soft" />
+                <span>Grade:</span>
+                <strong
+                  className={
+                    Math.abs(activeSample.slope_pct) > 15
+                      ? "font-mono font-semibold text-critical"
+                      : Math.abs(activeSample.slope_pct) > 8
+                        ? "font-mono font-semibold text-amber-400"
+                        : "font-mono font-semibold text-ok"
+                  }
+                >
+                  {activeSample.slope_pct > 0 ? "+" : ""}
+                  {activeSample.slope_pct.toFixed(1)}%
+                </strong>
+              </span>
+            )}
           </>
         ) : (
           <span className="text-[10px] text-ink-muted/80">

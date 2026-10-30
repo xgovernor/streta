@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { CameraState } from "../lib/gis/types";
+import type { ElevationProfileResult } from "../lib/gis/tiledBackend";
 
 /**
  * The brief card shown at the point where a feature was hovered or clicked.
@@ -49,10 +50,16 @@ interface MapState {
   activeFeature: MapPopup | null;
   /** Active measurement context menu, if opened via right-click on a line. */
   measureContextMenu: MeasureContextMenuState | null;
+  /** Persisted elevation profile result sampled along a path. */
+  elevationResult: ElevationProfileResult | null;
+  /** Specific measurement feature ID being profiled. */
+  elevationSelectedFeatureId: string | null;
   setReady: (ready: boolean) => void;
   setPopup: (popup: MapPopup | null) => void;
   setActiveFeature: (feature: MapPopup | null) => void;
   setMeasureContextMenu: (menu: MeasureContextMenuState | null) => void;
+  setElevationResult: (result: ElevationProfileResult | null) => void;
+  setElevationSelectedFeatureId: (id: string | null) => void;
   setCamera: (camera: CameraState) => void;
   setPointer: (
     pointer: { lon: number; lat: number } | null,
@@ -76,11 +83,15 @@ export const useMapStore = create<MapState>((set) => ({
   popup: null,
   activeFeature: null,
   measureContextMenu: null,
+  elevationResult: null,
+  elevationSelectedFeatureId: null,
 
   setReady: (ready) => set({ ready }),
   setPopup: (popup) => set({ popup }),
   setActiveFeature: (activeFeature) => set({ activeFeature }),
   setMeasureContextMenu: (measureContextMenu) => set({ measureContextMenu }),
+  setElevationResult: (elevationResult) => set({ elevationResult }),
+  setElevationSelectedFeatureId: (elevationSelectedFeatureId) => set({ elevationSelectedFeatureId }),
   setCamera: (camera) => set({ camera }),
   setPointer: (pointer, view = null) => set({ pointer, pointerView: view }),
   setHoverLabel: (hoverLabel) => set({ hoverLabel }),

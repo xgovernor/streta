@@ -225,6 +225,7 @@ export interface ElevationSample {
   lon: number;
   lat: number;
   elevation_m: number;
+  slope_pct?: number;
 }
 
 export interface ElevationProfileResult {
@@ -233,6 +234,11 @@ export interface ElevationProfileResult {
   max_elevation_m: number;
   elevation_gain_m: number;
   elevation_loss_m: number;
+  net_elevation_m?: number;
+  avg_elevation_m?: number;
+  max_slope_pct?: number;
+  avg_slope_pct?: number;
+  peak_distance_m?: number;
   samples: ElevationSample[];
 }
 
@@ -427,27 +433,59 @@ async function computeClientElevationFallback(
   sampleCount: number,
 ): Promise<ElevationProfileResult> {
   const count = Math.min(Math.max(sampleCount, 10), 80);
-  const lats: number[] = [];
-  const lons: number[] = [];
-  const distances: number[] = [];
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371008.8; // WGS 84 mean radius
+
+  // Compute cumulative distances along vertices
+  const cumulativeDist: number[] = [0];
+  let totalDist = 0;
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+    const dLat = toRad(p2[1] - p1[1]);
+    const dLon = toRad(p2[0] - p1[0]);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(toRad(p1[1])) * Math.cos(toRad(p2[1]));
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    totalDist += R * c;
+    cumulativeDist.push(totalDist);
+  }
+
+  if (totalDist <= 0) {
+    totalDist = 1;
+  }
+
+  const step = totalDist / (count - 1);
+  const samplePts: { dist: number; lon: number; lat: number }[] = [];
 
   for (let i = 0; i < count; i++) {
-    const t = i / (count - 1);
-    const totalSegments = coords.length - 1;
-    const scaledT = t * totalSegments;
-    const segIdx = Math.min(Math.floor(scaledT), totalSegments - 1);
-    const segT = scaledT - segIdx;
+    const targetD = Math.min(i * step, totalDist);
+    let segIdx = cumulativeDist.findIndex((d) => d >= targetD);
+    if (segIdx === -1) segIdx = cumulativeDist.length - 1;
+    segIdx = segIdx === 0 ? 0 : segIdx - 1;
+
+    const dStart = cumulativeDist[segIdx];
+    const dEnd = cumulativeDist[segIdx + 1] ?? totalDist;
+    const segLen = dEnd - dStart;
+    const t = segLen > 1e-6 ? (targetD - dStart) / segLen : 0;
 
     const p1 = coords[segIdx];
-    const p2 = coords[segIdx + 1];
+    const p2 = coords[Math.min(segIdx + 1, coords.length - 1)];
 
-    const lon = p1[0] + (p2[0] - p1[0]) * segT;
-    const lat = p1[1] + (p2[1] - p1[1]) * segT;
+    const lon = p1[0] + (p2[0] - p1[0]) * t;
+    const lat = p1[1] + (p2[1] - p1[1]) * t;
 
-    lons.push(Number(lon.toFixed(5)));
-    lats.push(Number(lat.toFixed(5)));
-    distances.push(i * 100); // approximate
+    samplePts.push({
+      dist: Math.round(targetD * 10) / 10,
+      lon: Number(lon.toFixed(5)),
+      lat: Number(lat.toFixed(5)),
+    });
   }
+
+  const lats = samplePts.map((s) => s.lat);
+  const lons = samplePts.map((s) => s.lon);
 
   const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats.join(",")}&longitude=${lons.join(",")}`;
   const resp = await fetch(url);
@@ -457,36 +495,65 @@ async function computeClientElevationFallback(
   const samples: ElevationSample[] = [];
   let minElev = Infinity;
   let maxElev = -Infinity;
+  let peakDist = 0;
   let gain = 0;
   let loss = 0;
+  let elevSum = 0;
+  let maxSlope = 0;
+  let slopeSum = 0;
   let prevElev: number | null = null;
+  let prevDist = 0;
 
   for (let i = 0; i < count; i++) {
     const e = elevs[i] ?? 0;
     minElev = Math.min(minElev, e);
-    maxElev = Math.max(maxElev, e);
+    if (e > maxElev) {
+      maxElev = e;
+      peakDist = samplePts[i].dist;
+    }
+    elevSum += e;
+
+    let currentSlope: number | undefined = undefined;
 
     if (prevElev !== null) {
       const diff = e - prevElev;
       if (diff > 0) gain += diff;
       else loss += Math.abs(diff);
+
+      const deltaD = samplePts[i].dist - prevDist;
+      if (deltaD > 0.1) {
+        const slope = (diff / deltaD) * 100;
+        currentSlope = Math.round(slope * 10) / 10;
+        maxSlope = Math.max(maxSlope, Math.abs(slope));
+        slopeSum += Math.abs(slope);
+      }
     }
     prevElev = e;
+    prevDist = samplePts[i].dist;
 
     samples.push({
-      distance_m: distances[i],
-      lon: lons[i],
-      lat: lats[i],
-      elevation_m: e,
+      distance_m: samplePts[i].dist,
+      lon: samplePts[i].lon,
+      lat: samplePts[i].lat,
+      elevation_m: Math.round(e * 10) / 10,
+      slope_pct: currentSlope,
     });
   }
 
+  const firstElev = samples[0]?.elevation_m ?? 0;
+  const lastElev = samples[samples.length - 1]?.elevation_m ?? 0;
+
   return {
-    total_distance_m: distances[distances.length - 1] || 0,
-    min_elevation_m: minElev === Infinity ? 0 : minElev,
-    max_elevation_m: maxElev === -Infinity ? 0 : maxElev,
-    elevation_gain_m: gain,
-    elevation_loss_m: loss,
+    total_distance_m: Math.round(totalDist * 10) / 10,
+    min_elevation_m: minElev === Infinity ? 0 : Math.round(minElev * 10) / 10,
+    max_elevation_m: maxElev === -Infinity ? 0 : Math.round(maxElev * 10) / 10,
+    elevation_gain_m: Math.round(gain * 10) / 10,
+    elevation_loss_m: Math.round(loss * 10) / 10,
+    net_elevation_m: Math.round((lastElev - firstElev) * 10) / 10,
+    avg_elevation_m: Math.round((elevSum / count) * 10) / 10,
+    max_slope_pct: Math.round(maxSlope * 10) / 10,
+    avg_slope_pct: count > 1 ? Math.round((slopeSum / (count - 1)) * 10) / 10 : 0,
+    peak_distance_m: Math.round(peakDist * 10) / 10,
     samples,
   };
 }

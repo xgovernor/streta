@@ -2199,6 +2199,53 @@ export function measureCoordinates(featureId?: string): [number, number][] {
   });
 }
 
+export interface MeasurementLineInfo {
+  id: string;
+  index: number;
+  type: "LineString" | "Polygon";
+  distanceMeters: number;
+  formattedDistance: string;
+  vertexCount: number;
+  coords: [number, number][];
+}
+
+/** Returns summary info for all active measurement lines on the canvas. */
+export function getMeasurementLines(): MeasurementLineInfo[] {
+  if (!activeMeasureSource) return [];
+  const features = activeMeasureSource.getFeatures();
+  return features.map((f, i) => {
+    const geom = f.getGeometry();
+    const type = (geom?.getType() === "Polygon" ? "Polygon" : "LineString") as "LineString" | "Polygon";
+    const geographic = geom ? toGeographic(geom) : null;
+    const distanceMeters = geographic ? geometryLength(geographic) : 0;
+    const id = (f.getId() as string) || `measure-${i + 1}`;
+    let coords: [number, number][] = [];
+    if (geom?.getType() === "LineString") {
+      coords = (geom as LineString).getCoordinates().map((c) => {
+        const [lon, lat] = transform(c, VIEW_CRS, GEOGRAPHIC_CRS);
+        return [lon, lat] as [number, number];
+      });
+    } else if (geom?.getType() === "Polygon") {
+      const rings = (geom as Polygon).getCoordinates();
+      if (rings.length > 0) {
+        coords = rings[0].map((c) => {
+          const [lon, lat] = transform(c, VIEW_CRS, GEOGRAPHIC_CRS);
+          return [lon, lat] as [number, number];
+        });
+      }
+    }
+    return {
+      id,
+      index: i + 1,
+      type,
+      distanceMeters,
+      formattedDistance: formatDistance(distanceMeters),
+      vertexCount: coords.length,
+      coords,
+    };
+  });
+}
+
 /** Removes all measurement sketches; wired up by the mounted map. */
 export function clearMeasureSketch(): void {
   activeMeasureClear?.();
@@ -2363,7 +2410,11 @@ function analysisStyle(feature: FeatureLike): Style | Style[] {
 
   if (type === "profileHover") {
     const elevation = feature.get("elevationM");
-    const label = elevation != null ? `${Math.round(elevation)}m` : "";
+    const slope = feature.get("slopePct");
+    let label = elevation != null ? `${Math.round(elevation)}m` : "";
+    if (slope != null && Number.isFinite(slope)) {
+      label += ` (${slope > 0 ? "+" : ""}${slope.toFixed(0)}%)`;
+    }
     return [
       new Style({
         image: new CircleStyle({
@@ -2560,6 +2611,7 @@ export function clearBufferOverlay(): void {
 export function setProfileHoverCoord(
   coord: [number, number] | null,
   elevationM?: number,
+  slopePct?: number,
 ): void {
   if (!activeAnalysisSource) return;
 
@@ -2574,6 +2626,7 @@ export function setProfileHoverCoord(
     });
     hoverFeature.set("analysisType", "profileHover");
     hoverFeature.set("elevationM", elevationM);
+    hoverFeature.set("slopePct", slopePct);
     activeAnalysisSource.addFeature(hoverFeature);
   }
 }
