@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { geometryArea } from "./geometry";
 import type { FeatureRecord, FlightTarget, EarthquakeTarget, SatelliteTarget, DatasetLayer } from "./types";
 
 export interface DatasetManifestEntry {
@@ -223,6 +224,9 @@ export interface SpatialQueryResult {
   total_hits: number;
   buffer_geojson: any;
   hits: SpatialQueryHit[];
+  area_sq_meters?: number;
+  area_sq_km?: number;
+  area_acres?: number;
 }
 
 export interface SectorBufferParams {
@@ -1176,6 +1180,10 @@ export function computeClientBufferFallback(
   const totalHits = hits.length;
   const finalHits = hits.slice(0, maxResults);
 
+  const areaSqM = bufferGeoJson?.geometry ? Math.round(geometryArea(bufferGeoJson.geometry) * 10) / 10 : 0;
+  const areaSqKm = Math.round((areaSqM / 1_000_000) * 1000) / 1000;
+  const areaAcres = Math.round((areaSqM / 4046.8564224) * 100) / 100;
+
   return {
     center_lon: centerLon,
     center_lat: centerLat,
@@ -1186,9 +1194,15 @@ export function computeClientBufferFallback(
       properties: {
         ...bufferGeoJson.properties,
         total_hits: totalHits,
+        area_sq_meters: areaSqM,
+        area_sq_km: areaSqKm,
+        area_acres: areaAcres,
       },
     },
     hits: finalHits,
+    area_sq_meters: areaSqM,
+    area_sq_km: areaSqKm,
+    area_acres: areaAcres,
   };
 }
 

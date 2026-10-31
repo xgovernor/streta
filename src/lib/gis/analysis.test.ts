@@ -413,4 +413,19 @@ describe("Phase 3 Geodesic Analysis Engine", () => {
     expect(flatRing[0][0]).toBeCloseTo(flatRing[flatRing.length - 1][0], 5);
     expect(flatRing[0][1]).toBeCloseTo(flatRing[flatRing.length - 1][1], 5);
   });
+
+  it("computes accurate geodesic coverage area and density metrics for spatial buffer queries", async () => {
+    // 5 km buffer at (0, 0) -> Area = pi * 5000^2 ~ 78.54 km^2
+    const result = await spatialBufferQuery(0, 0, 5000);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.area_sq_meters).toBeDefined();
+    expect(result.area_sq_km).toBeDefined();
+    expect(result.area_acres).toBeDefined();
+
+    expect(result.area_sq_km!).toBeGreaterThan(75);
+    expect(result.area_sq_km!).toBeLessThan(82);
+    expect(result.buffer_geojson.properties.area_sq_km).toBeCloseTo(result.area_sq_km!, 2);
+  });
 });

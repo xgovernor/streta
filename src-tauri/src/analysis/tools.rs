@@ -83,7 +83,7 @@ pub fn measure_geodesic(coords: &[(f64, f64)], is_polygon: bool) -> Result<Geode
         }
 
         let poly = Polygon::new(LineString::new(ring_coords), vec![]);
-        let area = poly.geodesic_area_unsigned();
+        let area = poly.geodesic_area_signed().abs();
         let perim = poly.geodesic_perimeter();
 
         area_sq_m = Some((area * 10.0).round() / 10.0);
@@ -145,6 +145,12 @@ pub struct SpatialQueryResult {
     pub total_hits: usize,
     pub buffer_geojson: Value,
     pub hits: Vec<SpatialQueryHit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub area_sq_meters: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub area_sq_km: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub area_acres: Option<f64>,
 }
 
 pub fn create_geodesic_buffer_polygon(center_lon: f64, center_lat: f64, radius_meters: f64, segments: usize) -> Polygon<f64> {
@@ -452,6 +458,11 @@ pub fn spatial_buffer_query(
         .map(|c| vec![(c.x * 1_000_000.0).round() / 1_000_000.0, (c.y * 1_000_000.0).round() / 1_000_000.0])
         .collect();
 
+    let area_m2 = buffer_poly.geodesic_area_signed().abs();
+    let area_sq_meters = Some((area_m2 * 10.0).round() / 10.0);
+    let area_sq_km = Some(((area_m2 / 1_000_000.0) * 1000.0).round() / 1000.0);
+    let area_acres = Some(((area_m2 / 4046.8564224) * 100.0).round() / 100.0);
+
     let buffer_geojson = serde_json::json!({
         "type": "Feature",
         "geometry": {
@@ -462,7 +473,10 @@ pub fn spatial_buffer_query(
             "center_lon": center_lon,
             "center_lat": center_lat,
             "radius_meters": radius_meters,
-            "total_hits": total_hits
+            "total_hits": total_hits,
+            "area_sq_meters": area_sq_meters,
+            "area_sq_km": area_sq_km,
+            "area_acres": area_acres
         }
     });
 
@@ -473,6 +487,9 @@ pub fn spatial_buffer_query(
         total_hits,
         buffer_geojson,
         hits,
+        area_sq_meters,
+        area_sq_km,
+        area_acres,
     })
 }
 
@@ -745,6 +762,14 @@ mod tests {
         // Doughnut / band sector with inner radius
         let doughnut = create_geodesic_sector_polygon(0.0, 0.0, 5_000.0, 45.0, 105.0, 1_000.0, 64);
         assert!(doughnut.exterior().coords().count() >= 20);
+    }
+
+    #[test]
+    fn test_spatial_buffer_area_calculation() {
+        let poly = create_geodesic_buffer_polygon(0.0, 0.0, 1_000.0, 64);
+        let area = poly.geodesic_area_signed().abs();
+        // pi * 1000^2 ~ 3,141,592 m^2
+        assert!(area > 3.1e6 && area < 3.2e6, "Buffer area should be ~3.14e6, got {}", area);
     }
 }
 

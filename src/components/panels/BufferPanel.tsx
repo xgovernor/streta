@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Activity,
+  ArrowUpDown,
+  BarChart3,
   BookmarkPlus,
   CircleDot,
   Compass,
@@ -15,6 +17,7 @@ import {
   Radar,
   Radio,
   Route,
+  Search,
   Ship,
 } from "lucide-react";
 import {
@@ -27,7 +30,7 @@ import {
   type AdditionalBufferRing,
 } from "../../map/mapController";
 import { cx } from "../../lib/cx";
-import { formatDistance } from "../../lib/format";
+import { formatDistance, formatArea } from "../../lib/format";
 import {
   createGeodesicLineBuffer,
   createGeodesicPointBuffer,
@@ -124,6 +127,11 @@ export function BufferPanel() {
 
   // Phase 3: Interactive Rim Drag-Handle on OpenLayers Canvas
   const [enableDragHandle, setEnableDragHandle] = useState<boolean>(true);
+
+  // Phase 4: Intersect Analytics & Hit Filtering
+  const [hitSearchQuery, setHitSearchQuery] = useState<string>("");
+  const [selectedHitLayer, setSelectedHitLayer] = useState<string>("all");
+  const [hitSortOrder, setHitSortOrder] = useState<"distance-asc" | "distance-desc" | "azimuth" | "name">("distance-asc");
 
   // Current radius in active unit
   const displayRadius = radiusMeters / UNIT_MULTIPLIERS[unit];
@@ -688,6 +696,99 @@ export function BufferPanel() {
     }
   };
 
+  // Phase 4: Analytical metrics and breakdown
+  const layerDistribution = useMemo(() => {
+    if (!bufferResult || bufferResult.hits.length === 0) return [];
+    const counts: Record<string, { label: string; count: number; color: string; key: string }> = {};
+
+    bufferResult.hits.forEach((h) => {
+      let key = h.layer_id;
+      let label = h.layer_id;
+      let color = "#06b6d4";
+
+      if (h.is_telemetry) {
+        key = `telemetry:${h.telemetry_type}`;
+        if (h.telemetry_type === "flight") {
+          label = "ADS-B Flights";
+          color = "#fbbf24";
+        } else if (h.telemetry_type === "vessel") {
+          label = "AIS Vessels";
+          color = "#22d3ee";
+        } else if (h.telemetry_type === "earthquake") {
+          label = "USGS Quakes";
+          color = "#f43f5e";
+        }
+      } else {
+        const layer = layers.find((l) => l.id === h.layer_id);
+        if (layer) {
+          label = layer.name;
+          color = layer.style?.color || "#06b6d4";
+        }
+      }
+
+      if (!counts[key]) {
+        counts[key] = { label, count: 0, color, key };
+      }
+      counts[key].count += 1;
+    });
+
+    return Object.values(counts).sort((a, b) => b.count - a.count);
+  }, [bufferResult, layers]);
+
+  const nearestHit = useMemo(() => {
+    if (!bufferResult || bufferResult.hits.length === 0) return null;
+    return [...bufferResult.hits].sort((a, b) => a.distance_m - b.distance_m)[0];
+  }, [bufferResult]);
+
+  const furthestHit = useMemo(() => {
+    if (!bufferResult || bufferResult.hits.length === 0) return null;
+    return [...bufferResult.hits].sort((a, b) => b.distance_m - a.distance_m)[0];
+  }, [bufferResult]);
+
+  const filteredAndSortedHits = useMemo(() => {
+    if (!bufferResult) return [];
+    let list = [...bufferResult.hits];
+
+    if (selectedHitLayer !== "all") {
+      list = list.filter((h) => {
+        if (selectedHitLayer.startsWith("telemetry:")) {
+          const telType = selectedHitLayer.replace("telemetry:", "");
+          return h.is_telemetry && h.telemetry_type === telType;
+        }
+        return h.layer_id === selectedHitLayer;
+      });
+    }
+
+    if (hitSearchQuery.trim()) {
+      const q = hitSearchQuery.toLowerCase().trim();
+      list = list.filter((h) => {
+        const name = (
+          (h.properties?.name as string) ||
+          (h.properties?.callsign as string) ||
+          (h.properties?.title as string) ||
+          (h.properties?.place as string) ||
+          (h.properties?.id as string) ||
+          h.feature_id ||
+          ""
+        ).toLowerCase();
+        return name.includes(q) || h.layer_id.toLowerCase().includes(q);
+      });
+    }
+
+    list.sort((a, b) => {
+      if (hitSortOrder === "distance-desc") return b.distance_m - a.distance_m;
+      if (hitSortOrder === "azimuth") return a.bearing_deg - b.bearing_deg;
+      if (hitSortOrder === "name") {
+        const nameA = (a.properties?.name || a.properties?.callsign || a.feature_id || "") as string;
+        const nameB = (b.properties?.name || b.properties?.callsign || b.feature_id || "") as string;
+        return nameA.localeCompare(nameB);
+      }
+      return a.distance_m - b.distance_m;
+    });
+
+    return list;
+  }, [bufferResult, selectedHitLayer, hitSearchQuery, hitSortOrder]);
+
   const handleSaveAsLayer = () => {
     if (!bufferResult || !bufferResult.buffer_geojson) {
       notify("No buffer result to save");
@@ -736,6 +837,12 @@ export function BufferPanel() {
           center_lat: bufferResult.center_lat,
           radius_meters: bufferResult.radius_meters,
           total_hits: bufferResult.total_hits,
+          area_sq_meters: bufferResult.area_sq_meters ?? null,
+          area_sq_km: bufferResult.area_sq_km ?? null,
+          area_acres: bufferResult.area_acres ?? null,
+          density_per_sq_km: bufferResult.area_sq_km
+            ? Number((bufferResult.total_hits / bufferResult.area_sq_km).toFixed(2))
+            : 0,
           is_corridor: sourceType === "measurement",
           created_at: new Date().toISOString(),
         },
@@ -768,6 +875,68 @@ export function BufferPanel() {
       ],
     });
     notify(`Saved buffer zone as layer: "${layerName}"`);
+  };
+
+  const handleSaveHitsAsLayer = () => {
+    if (!bufferResult || bufferResult.hits.length === 0) {
+      notify("No intercepted hits to save");
+      return;
+    }
+
+    const projectStore = useProjectStore.getState();
+    const existingDatasetNames = projectStore.datasets.map((d) => d.name);
+    const title = `Buffer Targets (${bufferResult.hits.length} hits)`;
+    const datasetName = uniqueDatasetName(existingDatasetNames, title);
+
+    const features: FeatureRecord[] = bufferResult.hits.map((h, i) => {
+      const lon = Number(h.target_lon ?? h.properties?.longitude ?? h.properties?.lon ?? bufferResult.center_lon);
+      const lat = Number(h.target_lat ?? h.properties?.latitude ?? h.properties?.lat ?? bufferResult.center_lat);
+      return {
+        id: `hit_pt_${i + 1}_${Date.now()}`,
+        geometry: {
+          type: "Point",
+          coordinates: [lon, lat],
+        },
+        properties: {
+          ...h.properties,
+          buffer_rank: i + 1,
+          buffer_distance_m: h.distance_m,
+          buffer_distance_label: formatDistance(h.distance_m),
+          buffer_bearing_deg: h.bearing_deg,
+          buffer_direction: bearingToDirection(h.bearing_deg),
+          ring_band: h.ring_band ?? null,
+          source_layer: h.layer_id,
+          is_telemetry: h.is_telemetry || false,
+        },
+      };
+    });
+
+    const existingLayerNames = projectStore.layers.map((l) => l.name);
+    const layerName = uniqueLayerName(existingLayerNames, title);
+
+    projectStore.addDataset({
+      name: datasetName,
+      kind: "file",
+      source: "derived:buffer-hits",
+      layers: [
+        {
+          id: `hits_${Date.now().toString(36)}`,
+          name: layerName,
+          features,
+          crs: GEOGRAPHIC_CRS,
+          format: "geojson",
+          source: "derived:buffer-hits",
+          style: {
+            color: "#f59e0b",
+            fillOpacity: 0.9,
+            strokeWidth: 2,
+            pointRadius: 5,
+            labelField: null,
+          },
+        },
+      ],
+    });
+    notify(`Saved ${features.length} intercepted targets as layer: "${layerName}"`);
   };
 
   const handleExportCsv = async () => {
@@ -1584,45 +1753,244 @@ export function BufferPanel() {
           </button>
         </div>
 
+        {/* Phase 4: Spatial Coverage & Density KPI Card */}
+        {bufferResult && (
+          <div className="flex flex-col gap-1.5 rounded-[2px] border border-line bg-tint p-2.5">
+            <div className="flex items-center justify-between border-b border-line/60 pb-1.5">
+              <span className="text-[10.5px] font-semibold text-ink flex items-center gap-1.5">
+                <BarChart3 size={12} className="text-accent" />
+                Spatial Catchment Analytics
+              </span>
+              <span className="text-[9px] font-mono text-ink-muted">
+                WGS 84 Ellipsoid
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {/* Coverage Area */}
+              <div className="flex flex-col rounded-[2px] border border-line/80 bg-solid p-1.5">
+                <span className="text-[9px] text-ink-muted uppercase tracking-wider font-medium">
+                  Coverage Area
+                </span>
+                <span className="text-[12px] font-mono font-semibold text-ink mt-0.5">
+                  {formatArea(bufferResult.area_sq_meters || 0)}
+                </span>
+                <span className="text-[8.5px] text-ink-muted font-mono">
+                  {bufferResult.area_acres != null ? `${bufferResult.area_acres.toLocaleString()} acres` : "—"}
+                </span>
+              </div>
+
+              {/* Spatial Density */}
+              <div className="flex flex-col rounded-[2px] border border-line/80 bg-solid p-1.5">
+                <span className="text-[9px] text-ink-muted uppercase tracking-wider font-medium">
+                  Target Density
+                </span>
+                <span className="text-[12px] font-mono font-semibold text-accent mt-0.5">
+                  {bufferResult.area_sq_km && bufferResult.area_sq_km > 0
+                    ? `${(bufferResult.total_hits / bufferResult.area_sq_km).toFixed(2)} / km²`
+                    : "—"}
+                </span>
+                <span className="text-[8.5px] text-ink-muted font-mono">
+                  {bufferResult.total_hits} targets intercepted
+                </span>
+              </div>
+            </div>
+
+            {/* Nearest & Furthest Targets Highlight */}
+            {(nearestHit || furthestHit) && (
+              <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-line/50">
+                {nearestHit && (
+                  <div
+                    className="flex flex-col rounded-[2px] bg-solid/80 p-1.5 hover:border-line border border-transparent transition-colors cursor-pointer group"
+                    title="Click to fly to nearest target"
+                    onClick={() => {
+                      const lon = Number(
+                        nearestHit.target_lon ??
+                          nearestHit.properties?.longitude ??
+                          nearestHit.properties?.lon ??
+                          bufferResult.center_lon,
+                      );
+                      const lat = Number(
+                        nearestHit.target_lat ??
+                          nearestHit.properties?.latitude ??
+                          nearestHit.properties?.lat ??
+                          bufferResult.center_lat,
+                      );
+                      flyToCoordinate(lon, lat, 16);
+                    }}
+                  >
+                    <span className="text-[8.5px] text-emerald-400 font-semibold uppercase tracking-wider flex items-center gap-1">
+                      <span>●</span> Nearest Entity
+                    </span>
+                    <span className="text-[10px] font-semibold text-ink truncate mt-0.5">
+                      {(nearestHit.properties?.name as string) ||
+                        (nearestHit.properties?.callsign as string) ||
+                        nearestHit.feature_id ||
+                        "Target"}
+                    </span>
+                    <span className="text-[8.5px] font-mono text-ink-muted">
+                      {formatDistance(nearestHit.distance_m)} • {nearestHit.bearing_deg.toFixed(0)}°{" "}
+                      {bearingToDirection(nearestHit.bearing_deg)}
+                    </span>
+                  </div>
+                )}
+
+                {furthestHit && (
+                  <div
+                    className="flex flex-col rounded-[2px] bg-solid/80 p-1.5 hover:border-line border border-transparent transition-colors cursor-pointer group"
+                    title="Click to fly to furthest target"
+                    onClick={() => {
+                      const lon = Number(
+                        furthestHit.target_lon ??
+                          furthestHit.properties?.longitude ??
+                          furthestHit.properties?.lon ??
+                          bufferResult.center_lon,
+                      );
+                      const lat = Number(
+                        furthestHit.target_lat ??
+                          furthestHit.properties?.latitude ??
+                          furthestHit.properties?.lat ??
+                          bufferResult.center_lat,
+                      );
+                      flyToCoordinate(lon, lat, 16);
+                    }}
+                  >
+                    <span className="text-[8.5px] text-amber-400 font-semibold uppercase tracking-wider flex items-center gap-1">
+                      <span>●</span> Furthest Entity
+                    </span>
+                    <span className="text-[10px] font-semibold text-ink truncate mt-0.5">
+                      {(furthestHit.properties?.name as string) ||
+                        (furthestHit.properties?.callsign as string) ||
+                        furthestHit.feature_id ||
+                        "Target"}
+                    </span>
+                    <span className="text-[8.5px] font-mono text-ink-muted">
+                      {formatDistance(furthestHit.distance_m)} • {furthestHit.bearing_deg.toFixed(0)}°{" "}
+                      {bearingToDirection(furthestHit.bearing_deg)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Phase 4: Feed & Layer Distribution Breakdown */}
+        {bufferResult && layerDistribution.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[9.5px] text-ink-muted font-medium uppercase tracking-wider">
+                Intercepted Feed Breakdown
+              </span>
+              <span className="text-[9px] font-mono text-ink-muted">
+                {layerDistribution.length} distinct source{layerDistribution.length > 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* Multi-segment proportional bar */}
+            <div className="h-1.5 w-full rounded-full overflow-hidden flex bg-line">
+              {layerDistribution.map((dist) => {
+                const pct = (dist.count / bufferResult.total_hits) * 100;
+                return (
+                  <div
+                    key={dist.key}
+                    style={{ width: `${pct}%`, backgroundColor: dist.color }}
+                    title={`${dist.label}: ${dist.count} (${pct.toFixed(0)}%)`}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Quick Filter Tag Pills */}
+            <div className="flex items-center gap-1 flex-wrap pt-0.5">
+              <button
+                type="button"
+                className={cx(
+                  "px-1.5 py-0.5 rounded-[2px] text-[9px] font-mono border transition-colors",
+                  selectedHitLayer === "all"
+                    ? "bg-accent text-on-accent border-accent font-semibold"
+                    : "bg-solid text-ink-muted hover:text-ink border-line",
+                )}
+                onClick={() => setSelectedHitLayer("all")}
+              >
+                All ({bufferResult.total_hits})
+              </button>
+              {layerDistribution.map((dist) => {
+                const isSelected = selectedHitLayer === dist.key;
+                return (
+                  <button
+                    key={dist.key}
+                    type="button"
+                    className={cx(
+                      "px-1.5 py-0.5 rounded-[2px] text-[9px] border transition-colors flex items-center gap-1",
+                      isSelected
+                        ? "bg-accent text-on-accent border-accent font-semibold"
+                        : "bg-solid text-ink-muted hover:text-ink border-line",
+                    )}
+                    onClick={() => setSelectedHitLayer(isSelected ? "all" : dist.key)}
+                  >
+                    <span className="size-1.5 rounded-full" style={{ backgroundColor: dist.color }} />
+                    <span className="truncate max-w-[100px]">{dist.label}</span>
+                    <span className="font-mono text-[8.5px]">({dist.count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Save as Layer & Export Actions */}
         {bufferResult && (
           <div className="flex flex-col gap-1.5 border-t border-line pt-2">
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-4 gap-1">
               <button
                 type="button"
                 className={cx(
                   SECONDARY_BUTTON,
-                  "text-[9.5px] px-1.5 py-1 justify-center gap-1",
+                  "text-[9px] px-1 py-1 justify-center gap-1",
                 )}
                 onClick={handleSaveAsLayer}
-                title="Save buffer zone as a new layer in your project"
+                title="Save buffer polygon as a new layer in your project"
               >
-                <BookmarkPlus size={11} />
-                Save Layer
+                <BookmarkPlus size={10} />
+                Buffer Layer
               </button>
               <button
                 type="button"
                 className={cx(
                   SECONDARY_BUTTON,
-                  "text-[9.5px] px-1.5 py-1 justify-center gap-1",
+                  "text-[9px] px-1 py-1 justify-center gap-1",
+                )}
+                disabled={bufferResult.hits.length === 0}
+                onClick={handleSaveHitsAsLayer}
+                title="Save intercepted target points as a new layer with distances and bearings"
+              >
+                <Crosshair size={10} />
+                Targets Layer
+              </button>
+              <button
+                type="button"
+                className={cx(
+                  SECONDARY_BUTTON,
+                  "text-[9px] px-1 py-1 justify-center gap-1",
                 )}
                 disabled={bufferResult.hits.length === 0}
                 onClick={handleExportCsv}
-                title="Download CSV of intercepted features"
+                title="Download CSV table of all intercepted features"
               >
-                <FileSpreadsheet size={11} />
+                <FileSpreadsheet size={10} />
                 CSV
               </button>
               <button
                 type="button"
                 className={cx(
                   SECONDARY_BUTTON,
-                  "text-[9.5px] px-1.5 py-1 justify-center gap-1",
+                  "text-[9px] px-1 py-1 justify-center gap-1",
                 )}
                 onClick={handleExportGeoJson}
-                title="Download complete GeoJSON FeatureCollection"
+                title="Download complete GeoJSON FeatureCollection (Buffer + Targets)"
               >
-                <Download size={11} />
+                <Download size={10} />
                 GeoJSON
               </button>
             </div>
@@ -1632,22 +2000,65 @@ export function BufferPanel() {
         {/* Hit Results */}
         {bufferResult && (
           <div className="flex flex-col gap-1.5">
-            <SectionLabel
-              trailing={
-                <span className="text-ink font-mono font-semibold">
-                  ({bufferResult.total_hits} hits)
-                </span>
-              }
-            >
-              Ranked Spatial Intersections
-            </SectionLabel>
-            {bufferResult.hits.length === 0 ? (
+            <div className="flex items-center justify-between">
+              <SectionLabel
+                trailing={
+                  <span className="text-ink font-mono font-semibold">
+                    ({filteredAndSortedHits.length} of {bufferResult.total_hits})
+                  </span>
+                }
+              >
+                Ranked Spatial Intersections
+              </SectionLabel>
+
+              {/* Sort Selector */}
+              <div className="flex items-center gap-1">
+                <ArrowUpDown size={10} className="text-ink-muted" />
+                <select
+                  value={hitSortOrder}
+                  onChange={(e) => setHitSortOrder(e.target.value as any)}
+                  className="bg-solid border border-line text-ink rounded-[2px] px-1 py-0.5 text-[9px] font-mono focus:outline-none focus:border-accent"
+                >
+                  <option value="distance-asc">Distance (Near → Far)</option>
+                  <option value="distance-desc">Distance (Far → Near)</option>
+                  <option value="azimuth">Azimuth Bearing</option>
+                  <option value="name">Name / Callsign</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Filter Search Input */}
+            {bufferResult.hits.length > 3 && (
+              <div className="relative flex items-center">
+                <Search size={10} className="absolute left-2 text-ink-muted" />
+                <input
+                  type="text"
+                  placeholder="Filter by name, callsign, or layer..."
+                  value={hitSearchQuery}
+                  onChange={(e) => setHitSearchQuery(e.target.value)}
+                  className="w-full rounded-[2px] border border-line bg-solid py-1 pl-6 pr-2 text-[10px] text-ink placeholder:text-ink-muted/60 focus:border-accent focus:outline-none"
+                />
+                {hitSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setHitSearchQuery("")}
+                    className="absolute right-2 text-[9px] text-ink-muted hover:text-ink font-mono"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
+
+            {filteredAndSortedHits.length === 0 ? (
               <div className="rounded-[2px] border border-line bg-tint py-4 text-center text-[10.5px] text-ink-muted">
-                No features intercepted within this buffer envelope.
+                {bufferResult.hits.length === 0
+                  ? "No features intercepted within this buffer envelope."
+                  : "No targets match your search filter."}
               </div>
             ) : (
-              <div className="max-h-[240px] overflow-y-auto rounded-[2px] border border-line bg-tint p-1 flex flex-col gap-1">
-                {bufferResult.hits.map((hit, idx) => {
+              <div className="max-h-[260px] overflow-y-auto rounded-[2px] border border-line bg-tint p-1 flex flex-col gap-1">
+                {filteredAndSortedHits.map((hit, idx) => {
                   const layer = layers.find((l) => l.id === hit.layer_id);
                   const isTel = hit.is_telemetry;
                   const name =
