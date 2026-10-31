@@ -131,6 +131,10 @@ pub struct SpatialQueryHit {
     pub bearing_deg: f64,
     pub geometry_type: String,
     pub properties: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_lon: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_lat: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,6 +273,7 @@ pub fn spatial_buffer_query(
         let mut intersects = false;
         let mut min_distance = f64::INFINITY;
         let mut bearing_deg = 0.0;
+        let mut target_pt: Option<Point<f64>> = None;
 
         match &wgs_geom {
             geo::Geometry::Point(p) => {
@@ -278,6 +283,7 @@ pub fn spatial_buffer_query(
                     min_distance = dist;
                     let b = Geodesic.bearing(center_pt, *p);
                     bearing_deg = ((b % 360.0) + 360.0) % 360.0;
+                    target_pt = Some(*p);
                 }
             }
             geo::Geometry::MultiPoint(mp) => {
@@ -289,6 +295,7 @@ pub fn spatial_buffer_query(
                             min_distance = dist;
                             let b = Geodesic.bearing(center_pt, *p);
                             bearing_deg = ((b % 360.0) + 360.0) % 360.0;
+                            target_pt = Some(*p);
                         }
                     }
                 }
@@ -305,6 +312,7 @@ pub fn spatial_buffer_query(
                     if contains_center {
                         min_distance = 0.0;
                         bearing_deg = 0.0;
+                        target_pt = Some(center_pt);
                     } else {
                         let closest = match other {
                             geo::Geometry::LineString(ls) => ls.closest_point(&center_pt),
@@ -335,6 +343,7 @@ pub fn spatial_buffer_query(
                                 min_distance = Geodesic.distance(center_pt, pt);
                                 let b = Geodesic.bearing(center_pt, pt);
                                 bearing_deg = ((b % 360.0) + 360.0) % 360.0;
+                                target_pt = Some(pt);
                             }
                             Closest::Indeterminate => {
                                 if let Some(first_coord) = other.coords_iter().next() {
@@ -342,6 +351,7 @@ pub fn spatial_buffer_query(
                                     min_distance = Geodesic.distance(center_pt, pt);
                                     let b = Geodesic.bearing(center_pt, pt);
                                     bearing_deg = ((b % 360.0) + 360.0) % 360.0;
+                                    target_pt = Some(pt);
                                 }
                             }
                         }
@@ -367,6 +377,8 @@ pub fn spatial_buffer_query(
                 bearing_deg: (bearing_deg * 10.0).round() / 10.0,
                 geometry_type: geom_type.to_string(),
                 properties: Value::Object(feat.properties.clone()),
+                target_lon: target_pt.map(|p| (p.x() * 1_000_000.0).round() / 1_000_000.0),
+                target_lat: target_pt.map(|p| (p.y() * 1_000_000.0).round() / 1_000_000.0),
             });
         }
     }

@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { FeatureRecord, FlightTarget, EarthquakeTarget, SatelliteTarget } from "./types";
+import type { FeatureRecord, FlightTarget, EarthquakeTarget, SatelliteTarget, DatasetLayer } from "./types";
 
 export interface DatasetManifestEntry {
   id: string;
@@ -209,6 +209,8 @@ export interface SpatialQueryHit {
   bearing_deg: number;
   geometry_type: string;
   properties: Record<string, unknown>;
+  target_lon?: number;
+  target_lat?: number;
 }
 
 export interface SpatialQueryResult {
@@ -278,23 +280,41 @@ export async function spatialBufferQuery(
   radiusMeters: number,
   layerIds?: string[],
   maxResults: number = 100,
+  fallbackLayers?: DatasetLayer[],
 ): Promise<SpatialQueryResult | null> {
+  if (radiusMeters <= 0) return null;
+
   if (isTauriEnvironment()) {
     try {
-      return await invoke<SpatialQueryResult>("spatial_buffer_query", {
+      const res = await invoke<SpatialQueryResult>("spatial_buffer_query", {
         centerLon,
         centerLat,
         radiusMeters,
         layerIds: layerIds ?? null,
         maxResults,
       });
+      if (res && res.buffer_geojson) {
+        return res;
+      }
     } catch (err) {
-      console.error("spatial_buffer_query error:", err);
-      return null;
+      console.warn("Tauri spatial_buffer_query failed, falling back to client engine:", err);
     }
   }
 
-  return null;
+  // Client-side fallback engine
+  try {
+    return computeClientBufferFallback(
+      centerLon,
+      centerLat,
+      radiusMeters,
+      layerIds,
+      maxResults,
+      fallbackLayers,
+    );
+  } catch (err) {
+    console.error("Client buffer query fallback failed:", err);
+    return null;
+  }
 }
 
 /**
@@ -555,6 +575,248 @@ async function computeClientElevationFallback(
     avg_slope_pct: count > 1 ? Math.round((slopeSum / (count - 1)) * 10) / 10 : 0,
     peak_distance_m: Math.round(peakDist * 10) / 10,
     samples,
+  };
+}
+
+function geodesicDestination(
+  lon: number,
+  lat: number,
+  distanceMeters: number,
+  bearingDeg: number,
+): [number, number] {
+  const R = 6371008.8; // WGS 84 mean earth radius
+  const delta = distanceMeters / R;
+  const theta = (bearingDeg * Math.PI) / 180;
+  const phi1 = (lat * Math.PI) / 180;
+  const lambda1 = (lon * Math.PI) / 180;
+
+  const sinPhi2 =
+    Math.sin(phi1) * Math.cos(delta) +
+    Math.cos(phi1) * Math.sin(delta) * Math.cos(theta);
+  const phi2 = Math.asin(sinPhi2);
+  const y = Math.sin(theta) * Math.sin(delta) * Math.cos(phi1);
+  const x = Math.cos(delta) - Math.sin(phi1) * sinPhi2;
+  const lambda2 = lambda1 + Math.atan2(y, x);
+
+  const finalLon = ((((lambda2 * 180) / Math.PI + 540) % 360) - 180);
+  const finalLat = (phi2 * 180) / Math.PI;
+
+  return [
+    Math.round(finalLon * 1_000_000) / 1_000_000,
+    Math.round(finalLat * 1_000_000) / 1_000_000,
+  ];
+}
+
+function geodesicDistanceAndBearing(
+  lon1: number,
+  lat1: number,
+  lon2: number,
+  lat2: number,
+): { distanceM: number; bearingDeg: number } {
+  const R = 6371008.8;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const toDeg = (rad: number) => (rad * 180) / Math.PI;
+
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const deltaPhi = toRad(lat2 - lat1);
+  const deltaLambda = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distanceM = R * c;
+
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  const bearingDeg = ((toDeg(Math.atan2(y, x)) % 360) + 360) % 360;
+
+  return { distanceM, bearingDeg };
+}
+
+function pointInPolygonRing(point: [number, number], ring: [number, number][]): boolean {
+  let inside = false;
+  const [x, y] = point;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    const intersect =
+      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export function computeClientBufferFallback(
+  centerLon: number,
+  centerLat: number,
+  radiusMeters: number,
+  layerIds?: string[],
+  maxResults: number = 100,
+  fallbackLayers?: DatasetLayer[],
+): SpatialQueryResult {
+  // 1. Build 64-vertex geodesic buffer polygon on WGS 84
+  const segments = 64;
+  const bufferRing: [number, number][] = [];
+  for (let i = 0; i < segments; i++) {
+    const azimuth = (i * 360) / segments;
+    bufferRing.push(geodesicDestination(centerLon, centerLat, radiusMeters, azimuth));
+  }
+  bufferRing.push(bufferRing[0]); // close ring
+
+  const bufferGeoJson = {
+    type: "Feature",
+    geometry: {
+      type: "Polygon",
+      coordinates: [bufferRing],
+    },
+    properties: {
+      center_lon: centerLon,
+      center_lat: centerLat,
+      radius_meters: radiusMeters,
+    },
+  };
+
+  const hits: SpatialQueryHit[] = [];
+
+  if (fallbackLayers && fallbackLayers.length > 0) {
+    const targetLayers =
+      layerIds && layerIds.length > 0
+        ? fallbackLayers.filter((l) => layerIds.includes(l.id))
+        : fallbackLayers;
+
+    for (const layer of targetLayers) {
+      for (const feat of layer.features) {
+        const geom = feat.geometry;
+        if (!geom || !geom.coordinates) continue;
+
+        let intersects = false;
+        let minDistanceM = Infinity;
+        let bearingDeg = 0;
+        let targetCoord: [number, number] | null = null;
+
+        if (geom.type === "Point") {
+          const coord = geom.coordinates as [number, number];
+          const m = geodesicDistanceAndBearing(centerLon, centerLat, coord[0], coord[1]);
+          if (m.distanceM <= radiusMeters) {
+            intersects = true;
+            minDistanceM = m.distanceM;
+            bearingDeg = m.bearingDeg;
+            targetCoord = coord;
+          }
+        } else if (geom.type === "MultiPoint") {
+          const pts = geom.coordinates as [number, number][];
+          for (const pt of pts) {
+            const m = geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
+            if (m.distanceM <= radiusMeters && m.distanceM < minDistanceM) {
+              intersects = true;
+              minDistanceM = m.distanceM;
+              bearingDeg = m.bearingDeg;
+              targetCoord = pt;
+            }
+          }
+        } else if (geom.type === "LineString") {
+          const coords = geom.coordinates as [number, number][];
+          for (const pt of coords) {
+            const m = geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
+            if (m.distanceM < minDistanceM) {
+              minDistanceM = m.distanceM;
+              bearingDeg = m.bearingDeg;
+              targetCoord = pt;
+            }
+          }
+          if (minDistanceM <= radiusMeters) {
+            intersects = true;
+          }
+        } else if (geom.type === "Polygon") {
+          const rings = geom.coordinates as [number, number][][];
+          if (rings.length > 0) {
+            const extRing = rings[0];
+            const isInside = pointInPolygonRing([centerLon, centerLat], extRing);
+            if (isInside) {
+              intersects = true;
+              minDistanceM = 0;
+              bearingDeg = 0;
+              targetCoord = [centerLon, centerLat];
+            } else {
+              for (const pt of extRing) {
+                const m = geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
+                if (m.distanceM < minDistanceM) {
+                  minDistanceM = m.distanceM;
+                  bearingDeg = m.bearingDeg;
+                  targetCoord = pt;
+                }
+              }
+              if (minDistanceM <= radiusMeters) {
+                intersects = true;
+              }
+            }
+          }
+        } else if (geom.type === "MultiPolygon") {
+          const polys = geom.coordinates as [number, number][][][];
+          for (const poly of polys) {
+            if (poly.length > 0) {
+              const extRing = poly[0];
+              const isInside = pointInPolygonRing([centerLon, centerLat], extRing);
+              if (isInside) {
+                intersects = true;
+                minDistanceM = 0;
+                bearingDeg = 0;
+                targetCoord = [centerLon, centerLat];
+                break;
+              }
+              for (const pt of extRing) {
+                const m = geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
+                if (m.distanceM < minDistanceM) {
+                  minDistanceM = m.distanceM;
+                  bearingDeg = m.bearingDeg;
+                  targetCoord = pt;
+                }
+              }
+            }
+          }
+          if (minDistanceM <= radiusMeters) {
+            intersects = true;
+          }
+        }
+
+        if (intersects) {
+          hits.push({
+            layer_id: layer.id,
+            feature_id: feat.id,
+            distance_m: Math.round(minDistanceM * 10) / 10,
+            bearing_deg: Math.round(bearingDeg * 10) / 10,
+            geometry_type: geom.type,
+            properties: feat.properties || {},
+            target_lon: targetCoord ? Math.round(targetCoord[0] * 1_000_000) / 1_000_000 : undefined,
+            target_lat: targetCoord ? Math.round(targetCoord[1] * 1_000_000) / 1_000_000 : undefined,
+          });
+        }
+      }
+    }
+  }
+
+  hits.sort((a, b) => a.distance_m - b.distance_m);
+  const totalHits = hits.length;
+  const finalHits = hits.slice(0, maxResults);
+
+  return {
+    center_lon: centerLon,
+    center_lat: centerLat,
+    radius_meters: radiusMeters,
+    total_hits: totalHits,
+    buffer_geojson: {
+      ...bufferGeoJson,
+      properties: {
+        ...bufferGeoJson.properties,
+        total_hits: totalHits,
+      },
+    },
+    hits: finalHits,
   };
 }
 

@@ -2396,6 +2396,23 @@ function analysisStyle(feature: FeatureLike): Style | Style[] {
     });
   }
 
+  if (type === "bufferLabel") {
+    const label = feature.get("distanceLabel") || "";
+    return [
+      new Style({
+        text: new Text({
+          text: label,
+          font: '600 11px "IBM Plex Mono", monospace',
+          fill: new Fill({ color: "#06b6d4" }),
+          backgroundFill: new Fill({ color: "rgba(10, 10, 10, 0.88)" }),
+          backgroundStroke: new Stroke({ color: "#06b6d4", width: 1 }),
+          padding: [2, 6, 2, 6],
+          offsetY: -10,
+        }),
+      }),
+    ];
+  }
+
   if (type === "bufferCenter") {
     return [
       new Style({
@@ -2530,6 +2547,23 @@ export function renderBufferOverlay(
     });
     features.forEach((f) => f.set("analysisType", "buffer"));
     activeAnalysisSource.addFeatures(features);
+
+    if (radiusMeters && radiusMeters > 0) {
+      const coords = bufferGeoJson?.geometry?.coordinates?.[0];
+      if (coords && coords.length > 0) {
+        const apex = coords[0];
+        const labelFeature = new Feature({
+          geometry: new Point(fromLonLat(apex)),
+        });
+        labelFeature.set("analysisType", "bufferLabel");
+        const labelText =
+          radiusMeters >= 1000
+            ? `R = ${(radiusMeters / 1000).toFixed(1)} km`
+            : `R = ${Math.round(radiusMeters)} m`;
+        labelFeature.set("distanceLabel", labelText);
+        activeAnalysisSource.addFeature(labelFeature);
+      }
+    }
   }
 
   if (centerCoord) {
