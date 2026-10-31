@@ -140,4 +140,75 @@ describe("Phase 3 Geodesic Analysis Engine", () => {
     expect(await spatialBufferQuery(0, 0, 0)).toBeNull();
     expect(await spatialBufferQuery(0, 0, -100)).toBeNull();
   });
+
+  it("creates a geodesic corridor buffer polygon around a multi-segment route", async () => {
+    const { createGeodesicLineBuffer, distanceToLineString } = await import("./tiledBackend");
+
+    const route: [number, number][] = [
+      [0, 0],
+      [1, 0], // 1 degree East along equator (~111 km)
+    ];
+
+    const corridor = createGeodesicLineBuffer(route, 5000);
+    expect(corridor).not.toBeNull();
+    expect(corridor.geometry.type).toBe("Polygon");
+    const ring = corridor.geometry.coordinates[0];
+    expect(ring.length).toBeGreaterThan(20);
+    // Closed polygon
+    expect(ring[0][0]).toBeCloseTo(ring[ring.length - 1][0], 5);
+    expect(ring[0][1]).toBeCloseTo(ring[ring.length - 1][1], 5);
+
+    // Test distance to line corridor: point (0.5, 0.01) is ~1.11 km North of the middle of the segment
+    const distRes = distanceToLineString([0.5, 0.01], route);
+    expect(distRes.minDistanceM).toBeGreaterThan(1000);
+    expect(distRes.minDistanceM).toBeLessThan(1200);
+    expect(distRes.targetCoord[0]).toBeCloseTo(0.5, 2);
+    expect(distRes.targetCoord[1]).toBeCloseTo(0, 2);
+  });
+
+  it("classifies multi-ring buffer hits into concentric bands", async () => {
+    const mockLayers: DatasetLayer[] = [
+      {
+        id: "mock_targets",
+        datasetId: "ds_1",
+        name: "Targets",
+        crs: "EPSG:4326",
+        format: "geojson",
+        source: null,
+        geometryKind: "Point",
+        fields: [],
+        extent: null,
+        style: { color: "#06b6d4", strokeWidth: 2, pointRadius: 4, fillOpacity: 0.2, labelField: null },
+        filters: [],
+        visible: true,
+        opacity: 1,
+        order: 0,
+        createdAt: new Date().toISOString(),
+        features: [
+          // Target 1: ~1.11 km away (Band 1: <= 2000m)
+          { id: "t1", geometry: { type: "Point", coordinates: [0, 0.01] }, properties: {} },
+          // Target 2: ~3.33 km away (Band 2: 2000m - 5000m)
+          { id: "t2", geometry: { type: "Point", coordinates: [0, 0.03] }, properties: {} },
+          // Target 3: ~8.89 km away (Band 3: 5000m - 10000m)
+          { id: "t3", geometry: { type: "Point", coordinates: [0, 0.08] }, properties: {} },
+        ],
+      },
+    ];
+
+    const ringThresholds = [2000, 5000, 10000];
+    const result = await spatialBufferQuery(0, 0, 10000, undefined, 100, mockLayers, undefined, ringThresholds);
+
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.total_hits).toBe(3);
+    expect(result.hits[0].feature_id).toBe("t1");
+    expect(result.hits[0].ring_band).toBe(1);
+
+    expect(result.hits[1].feature_id).toBe("t2");
+    expect(result.hits[1].ring_band).toBe(2);
+
+    expect(result.hits[2].feature_id).toBe("t3");
+    expect(result.hits[2].ring_band).toBe(3);
+  });
 });

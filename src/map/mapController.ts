@@ -2396,6 +2396,35 @@ function analysisStyle(feature: FeatureLike): Style | Style[] {
     });
   }
 
+  if (type === "bufferRing") {
+    const ringIndex = (feature.get("ringIndex") as number) || 1;
+    const colors = ["#06b6d4", "#38bdf8", "#818cf8", "#a855f7", "#ec4899"];
+    const opacities = [0.10, 0.08, 0.06, 0.04, 0.03];
+    const color = colors[(ringIndex - 1) % colors.length];
+    const fillOpacity = opacities[(ringIndex - 1) % opacities.length];
+
+    return new Style({
+      stroke: new Stroke({
+        color,
+        width: 1.8,
+        lineDash: ringIndex === 1 ? [6, 4] : [4, 4],
+      }),
+      fill: new Fill({
+        color: `rgba(6, 182, 212, ${fillOpacity})`,
+      }),
+    });
+  }
+
+  if (type === "corridorSpine") {
+    return new Style({
+      stroke: new Stroke({
+        color: "#f59e0b",
+        width: 2.5,
+        lineDash: [4, 2],
+      }),
+    });
+  }
+
   if (type === "bufferLabel") {
     const label = feature.get("distanceLabel") || "";
     return [
@@ -2529,18 +2558,58 @@ function analysisStyle(feature: FeatureLike): Style | Style[] {
   return new Style();
 }
 
+export interface AdditionalBufferRing {
+  geojson: any;
+  radiusMeters: number;
+  label?: string;
+  ringIndex: number;
+}
+
 /**
- * Renders a geodesic buffer polygon and optional center marker on the analysis overlay layer.
+ * Renders a geodesic buffer polygon, optional multi-rings, corridor spine, and center marker on the analysis overlay layer.
  */
 export function renderBufferOverlay(
   bufferGeoJson: any,
   centerCoord?: [number, number],
   radiusMeters?: number,
+  additionalRings?: AdditionalBufferRing[],
+  spineCoords?: [number, number][],
 ): void {
   if (!activeAnalysisSource) return;
   activeAnalysisSource.clear();
 
-  if (bufferGeoJson) {
+  // Multi-ring rendering: render outer rings first so inner rings sit on top
+  if (additionalRings && additionalRings.length > 0) {
+    const sorted = [...additionalRings].sort((a, b) => b.radiusMeters - a.radiusMeters);
+    for (const ring of sorted) {
+      if (!ring.geojson) continue;
+      const features = geoJson.readFeatures(ring.geojson, {
+        dataProjection: GEOGRAPHIC_CRS,
+        featureProjection: VIEW_CRS,
+      });
+      features.forEach((f) => {
+        f.set("analysisType", "bufferRing");
+        f.set("ringIndex", ring.ringIndex);
+      });
+      activeAnalysisSource.addFeatures(features);
+
+      const coords = ring.geojson?.geometry?.coordinates?.[0];
+      if (coords && coords.length > 0) {
+        const apex = coords[0];
+        const labelFeature = new Feature({
+          geometry: new Point(fromLonLat(apex)),
+        });
+        labelFeature.set("analysisType", "bufferLabel");
+        const labelText =
+          ring.label ||
+          (ring.radiusMeters >= 1000
+            ? `R${ring.ringIndex} = ${(ring.radiusMeters / 1000).toFixed(1)} km`
+            : `R${ring.ringIndex} = ${Math.round(ring.radiusMeters)} m`);
+        labelFeature.set("distanceLabel", labelText);
+        activeAnalysisSource.addFeature(labelFeature);
+      }
+    }
+  } else if (bufferGeoJson) {
     const features = geoJson.readFeatures(bufferGeoJson, {
       dataProjection: GEOGRAPHIC_CRS,
       featureProjection: VIEW_CRS,
@@ -2564,6 +2633,15 @@ export function renderBufferOverlay(
         activeAnalysisSource.addFeature(labelFeature);
       }
     }
+  }
+
+  // If corridor spine provided, render it
+  if (spineCoords && spineCoords.length >= 2) {
+    const spineFeature = new Feature({
+      geometry: new LineString(spineCoords.map((c) => fromLonLat(c))),
+    });
+    spineFeature.set("analysisType", "corridorSpine");
+    activeAnalysisSource.addFeature(spineFeature);
   }
 
   if (centerCoord) {

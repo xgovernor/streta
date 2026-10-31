@@ -211,6 +211,9 @@ export interface SpatialQueryHit {
   properties: Record<string, unknown>;
   target_lon?: number;
   target_lat?: number;
+  ring_band?: number;
+  is_telemetry?: boolean;
+  telemetry_type?: "flight" | "vessel" | "earthquake";
 }
 
 export interface SpatialQueryResult {
@@ -281,8 +284,24 @@ export async function spatialBufferQuery(
   layerIds?: string[],
   maxResults: number = 100,
   fallbackLayers?: DatasetLayer[],
+  spineCoords?: [number, number][],
+  ringBandThresholds?: number[],
 ): Promise<SpatialQueryResult | null> {
   if (radiusMeters <= 0) return null;
+
+  // If corridor buffering along a spine, use client geodesic corridor engine
+  if (spineCoords && spineCoords.length >= 2) {
+    return computeClientBufferFallback(
+      centerLon,
+      centerLat,
+      radiusMeters,
+      layerIds,
+      maxResults,
+      fallbackLayers,
+      spineCoords,
+      ringBandThresholds,
+    );
+  }
 
   if (isTauriEnvironment()) {
     try {
@@ -294,6 +313,17 @@ export async function spatialBufferQuery(
         maxResults,
       });
       if (res && res.buffer_geojson) {
+        // If ring band thresholds provided, annotate hits with band index
+        if (ringBandThresholds && ringBandThresholds.length > 0) {
+          res.hits.forEach((h) => {
+            for (let b = 0; b < ringBandThresholds.length; b++) {
+              if (h.distance_m <= ringBandThresholds[b]) {
+                h.ring_band = b + 1;
+                break;
+              }
+            }
+          });
+        }
         return res;
       }
     } catch (err) {
@@ -310,6 +340,8 @@ export async function spatialBufferQuery(
       layerIds,
       maxResults,
       fallbackLayers,
+      undefined,
+      ringBandThresholds,
     );
   } catch (err) {
     console.error("Client buffer query fallback failed:", err);
@@ -651,28 +683,54 @@ function pointInPolygonRing(point: [number, number], ring: [number, number][]): 
   return inside;
 }
 
-export function computeClientBufferFallback(
+export function distanceToLineString(
+  point: [number, number],
+  coords: [number, number][],
+): { minDistanceM: number; bearingDeg: number; targetCoord: [number, number] } {
+  let minDistanceM = Infinity;
+  let bestBearingDeg = 0;
+  let targetCoord: [number, number] = coords[0];
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+
+    const samples = 8;
+    for (let s = 0; s <= samples; s++) {
+      const frac = s / samples;
+      const sampleLon = p1[0] + frac * (p2[0] - p1[0]);
+      const sampleLat = p1[1] + frac * (p2[1] - p1[1]);
+
+      const m = geodesicDistanceAndBearing(point[0], point[1], sampleLon, sampleLat);
+      if (m.distanceM < minDistanceM) {
+        minDistanceM = m.distanceM;
+        const rev = geodesicDistanceAndBearing(sampleLon, sampleLat, point[0], point[1]);
+        bestBearingDeg = rev.bearingDeg;
+        targetCoord = [sampleLon, sampleLat];
+      }
+    }
+  }
+
+  return { minDistanceM, bearingDeg: bestBearingDeg, targetCoord };
+}
+
+export function createGeodesicPointBuffer(
   centerLon: number,
   centerLat: number,
   radiusMeters: number,
-  layerIds?: string[],
-  maxResults: number = 100,
-  fallbackLayers?: DatasetLayer[],
-): SpatialQueryResult {
-  // 1. Build 64-vertex geodesic buffer polygon on WGS 84
-  const segments = 64;
-  const bufferRing: [number, number][] = [];
+  segments: number = 64,
+): any {
+  const ring: [number, number][] = [];
   for (let i = 0; i < segments; i++) {
     const azimuth = (i * 360) / segments;
-    bufferRing.push(geodesicDestination(centerLon, centerLat, radiusMeters, azimuth));
+    ring.push(geodesicDestination(centerLon, centerLat, radiusMeters, azimuth));
   }
-  bufferRing.push(bufferRing[0]); // close ring
-
-  const bufferGeoJson = {
+  ring.push(ring[0]);
+  return {
     type: "Feature",
     geometry: {
       type: "Polygon",
-      coordinates: [bufferRing],
+      coordinates: [ring],
     },
     properties: {
       center_lon: centerLon,
@@ -680,6 +738,94 @@ export function computeClientBufferFallback(
       radius_meters: radiusMeters,
     },
   };
+}
+
+export function createGeodesicLineBuffer(
+  coords: [number, number][],
+  radiusMeters: number,
+  capSegments: number = 16,
+): any {
+  if (coords.length === 0) return null;
+  if (coords.length === 1) {
+    return createGeodesicPointBuffer(coords[0][0], coords[0][1], radiusMeters);
+  }
+
+  const leftEdge: [number, number][] = [];
+  const rightEdge: [number, number][] = [];
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+    const { bearingDeg } = geodesicDistanceAndBearing(p1[0], p1[1], p2[0], p2[1]);
+
+    const p1Left = geodesicDestination(p1[0], p1[1], radiusMeters, (bearingDeg - 90 + 360) % 360);
+    const p2Left = geodesicDestination(p2[0], p2[1], radiusMeters, (bearingDeg - 90 + 360) % 360);
+    const p1Right = geodesicDestination(p1[0], p1[1], radiusMeters, (bearingDeg + 90) % 360);
+    const p2Right = geodesicDestination(p2[0], p2[1], radiusMeters, (bearingDeg + 90) % 360);
+
+    leftEdge.push(p1Left, p2Left);
+    rightEdge.push(p1Right, p2Right);
+  }
+
+  // Semi-circular start cap at coords[0]
+  const firstP1 = coords[0];
+  const firstP2 = coords[1];
+  const startBearing = geodesicDistanceAndBearing(firstP1[0], firstP1[1], firstP2[0], firstP2[1]).bearingDeg;
+  const startCap: [number, number][] = [];
+  for (let i = 0; i <= capSegments; i++) {
+    const angle = (startBearing + 90 + (i * 180) / capSegments) % 360;
+    startCap.push(geodesicDestination(firstP1[0], firstP1[1], radiusMeters, angle));
+  }
+
+  // Semi-circular end cap at coords[last]
+  const lastP1 = coords[coords.length - 2];
+  const lastP2 = coords[coords.length - 1];
+  const endBearing = geodesicDistanceAndBearing(lastP1[0], lastP1[1], lastP2[0], lastP2[1]).bearingDeg;
+  const endCap: [number, number][] = [];
+  for (let i = 0; i <= capSegments; i++) {
+    const angle = (endBearing - 90 + (i * 180) / capSegments) % 360;
+    endCap.push(geodesicDestination(lastP2[0], lastP2[1], radiusMeters, angle));
+  }
+
+  // Ring assembly: startCap -> leftEdge -> endCap -> rightEdge (reversed) -> close
+  const ring: [number, number][] = [
+    ...startCap,
+    ...leftEdge,
+    ...endCap,
+    ...rightEdge.reverse(),
+  ];
+  if (ring.length > 0) {
+    ring.push(ring[0]);
+  }
+
+  return {
+    type: "Feature",
+    geometry: {
+      type: "Polygon",
+      coordinates: [ring],
+    },
+    properties: {
+      is_corridor: true,
+      vertex_count: coords.length,
+      radius_meters: radiusMeters,
+    },
+  };
+}
+
+export function computeClientBufferFallback(
+  centerLon: number,
+  centerLat: number,
+  radiusMeters: number,
+  layerIds?: string[],
+  maxResults: number = 100,
+  fallbackLayers?: DatasetLayer[],
+  spineCoords?: [number, number][],
+  ringBandThresholds?: number[],
+): SpatialQueryResult {
+  const isCorridor = spineCoords && spineCoords.length >= 2;
+  const bufferGeoJson = isCorridor
+    ? createGeodesicLineBuffer(spineCoords, radiusMeters)
+    : createGeodesicPointBuffer(centerLon, centerLat, radiusMeters, 64);
 
   const hits: SpatialQueryHit[] = [];
 
@@ -701,20 +847,33 @@ export function computeClientBufferFallback(
 
         if (geom.type === "Point") {
           const coord = geom.coordinates as [number, number];
-          const m = geodesicDistanceAndBearing(centerLon, centerLat, coord[0], coord[1]);
-          if (m.distanceM <= radiusMeters) {
-            intersects = true;
-            minDistanceM = m.distanceM;
-            bearingDeg = m.bearingDeg;
-            targetCoord = coord;
+          if (isCorridor) {
+            const lineRes = distanceToLineString(coord, spineCoords);
+            if (lineRes.minDistanceM <= radiusMeters) {
+              intersects = true;
+              minDistanceM = lineRes.minDistanceM;
+              bearingDeg = lineRes.bearingDeg;
+              targetCoord = coord;
+            }
+          } else {
+            const m = geodesicDistanceAndBearing(centerLon, centerLat, coord[0], coord[1]);
+            if (m.distanceM <= radiusMeters) {
+              intersects = true;
+              minDistanceM = m.distanceM;
+              bearingDeg = m.bearingDeg;
+              targetCoord = coord;
+            }
           }
         } else if (geom.type === "MultiPoint") {
           const pts = geom.coordinates as [number, number][];
           for (const pt of pts) {
-            const m = geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
-            if (m.distanceM <= radiusMeters && m.distanceM < minDistanceM) {
+            const m = isCorridor
+              ? distanceToLineString(pt, spineCoords)
+              : geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
+            const d = isCorridor ? (m as any).minDistanceM : (m as any).distanceM;
+            if (d <= radiusMeters && d < minDistanceM) {
               intersects = true;
-              minDistanceM = m.distanceM;
+              minDistanceM = d;
               bearingDeg = m.bearingDeg;
               targetCoord = pt;
             }
@@ -722,9 +881,12 @@ export function computeClientBufferFallback(
         } else if (geom.type === "LineString") {
           const coords = geom.coordinates as [number, number][];
           for (const pt of coords) {
-            const m = geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
-            if (m.distanceM < minDistanceM) {
-              minDistanceM = m.distanceM;
+            const m = isCorridor
+              ? distanceToLineString(pt, spineCoords)
+              : geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
+            const d = isCorridor ? (m as any).minDistanceM : (m as any).distanceM;
+            if (d < minDistanceM) {
+              minDistanceM = d;
               bearingDeg = m.bearingDeg;
               targetCoord = pt;
             }
@@ -736,7 +898,7 @@ export function computeClientBufferFallback(
           const rings = geom.coordinates as [number, number][][];
           if (rings.length > 0) {
             const extRing = rings[0];
-            const isInside = pointInPolygonRing([centerLon, centerLat], extRing);
+            const isInside = !isCorridor && pointInPolygonRing([centerLon, centerLat], extRing);
             if (isInside) {
               intersects = true;
               minDistanceM = 0;
@@ -744,9 +906,12 @@ export function computeClientBufferFallback(
               targetCoord = [centerLon, centerLat];
             } else {
               for (const pt of extRing) {
-                const m = geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
-                if (m.distanceM < minDistanceM) {
-                  minDistanceM = m.distanceM;
+                const m = isCorridor
+                  ? distanceToLineString(pt, spineCoords)
+                  : geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
+                const d = isCorridor ? (m as any).minDistanceM : (m as any).distanceM;
+                if (d < minDistanceM) {
+                  minDistanceM = d;
                   bearingDeg = m.bearingDeg;
                   targetCoord = pt;
                 }
@@ -761,7 +926,7 @@ export function computeClientBufferFallback(
           for (const poly of polys) {
             if (poly.length > 0) {
               const extRing = poly[0];
-              const isInside = pointInPolygonRing([centerLon, centerLat], extRing);
+              const isInside = !isCorridor && pointInPolygonRing([centerLon, centerLat], extRing);
               if (isInside) {
                 intersects = true;
                 minDistanceM = 0;
@@ -770,9 +935,12 @@ export function computeClientBufferFallback(
                 break;
               }
               for (const pt of extRing) {
-                const m = geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
-                if (m.distanceM < minDistanceM) {
-                  minDistanceM = m.distanceM;
+                const m = isCorridor
+                  ? distanceToLineString(pt, spineCoords)
+                  : geodesicDistanceAndBearing(centerLon, centerLat, pt[0], pt[1]);
+                const d = isCorridor ? (m as any).minDistanceM : (m as any).distanceM;
+                if (d < minDistanceM) {
+                  minDistanceM = d;
                   bearingDeg = m.bearingDeg;
                   targetCoord = pt;
                 }
@@ -785,6 +953,16 @@ export function computeClientBufferFallback(
         }
 
         if (intersects) {
+          let ringBand: number | undefined;
+          if (ringBandThresholds && ringBandThresholds.length > 0) {
+            for (let b = 0; b < ringBandThresholds.length; b++) {
+              if (minDistanceM <= ringBandThresholds[b]) {
+                ringBand = b + 1;
+                break;
+              }
+            }
+          }
+
           hits.push({
             layer_id: layer.id,
             feature_id: feat.id,
@@ -794,6 +972,7 @@ export function computeClientBufferFallback(
             properties: feat.properties || {},
             target_lon: targetCoord ? Math.round(targetCoord[0] * 1_000_000) / 1_000_000 : undefined,
             target_lat: targetCoord ? Math.round(targetCoord[1] * 1_000_000) / 1_000_000 : undefined,
+            ring_band: ringBand,
           });
         }
       }
