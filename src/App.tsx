@@ -126,7 +126,7 @@ function App() {
         const currentMode = useProjectStore.getState().measureMode;
         const nextMode = currentMode === "distance" ? "off" : "distance";
         useProjectStore.getState().setMeasureMode(nextMode);
-        if (ui.rightPanel === "measure") {
+        if (ui.rightPanel && ["elevation", "buffer", "knn", "boolean", "measure"].includes(ui.rightPanel)) {
           ui.closePanel();
         }
         ui.notify(
@@ -142,7 +142,7 @@ function App() {
         const currentMode = useProjectStore.getState().measureMode;
         const nextMode = currentMode === "area" ? "off" : "area";
         useProjectStore.getState().setMeasureMode(nextMode);
-        if (ui.rightPanel === "measure") {
+        if (ui.rightPanel && ["elevation", "buffer", "knn", "boolean", "measure"].includes(ui.rightPanel)) {
           ui.closePanel();
         }
         ui.notify(

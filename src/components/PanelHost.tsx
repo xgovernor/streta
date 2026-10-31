@@ -1,11 +1,14 @@
 import { useUiStore } from "../state/uiStore";
 import { AttributesPanel } from "./panels/AttributesPanel";
 import { BasemapsPanel } from "./panels/BasemapsPanel";
+import { BooleanPanel } from "./panels/BooleanPanel";
+import { BufferPanel } from "./panels/BufferPanel";
 import { DatasetsPanel } from "./panels/DatasetsPanel";
+import { ElevationPanel } from "./panels/ElevationPanel";
 import { FeaturePanel } from "./panels/FeaturePanel";
 import { JoinPanel } from "./panels/JoinPanel";
+import { KnnPanel } from "./panels/KnnPanel";
 import { LayerPanel } from "./panels/LayerPanel";
-import { MeasurePanel } from "./panels/MeasurePanel";
 import { ProjectPanel } from "./panels/ProjectPanel";
 import { SearchPanel } from "./panels/SearchPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
@@ -53,8 +56,15 @@ function RightDock() {
       return <LayerPanel />;
     case "table":
       return <AttributesPanel />;
+    case "elevation":
     case "measure":
-      return <MeasurePanel />;
+      return <ElevationPanel />;
+    case "buffer":
+      return <BufferPanel />;
+    case "knn":
+      return <KnnPanel />;
+    case "boolean":
+      return <BooleanPanel />;
     case "feature":
       return <FeaturePanel />;
     default:

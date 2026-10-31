@@ -7,7 +7,7 @@ import {
   Ruler,
   Table,
 } from "lucide-react";
-import { useUiStore, type AnalysisTab } from "../../state/uiStore";
+import { useUiStore } from "../../state/uiStore";
 import { useProjectStore } from "../../state/projectStore";
 import { cx } from "../../lib/cx";
 
@@ -24,19 +24,19 @@ export function RightRibbon() {
   const rightPanel = useUiStore((state) => state.rightPanel);
   const leftPanel = useUiStore((state) => state.leftPanel);
   const togglePanel = useUiStore((state) => state.togglePanel);
+  const openPanel = useUiStore((state) => state.openPanel);
   const closePanel = useUiStore((state) => state.closePanel);
   const analysisTab = useUiStore((state) => state.analysisTab);
-  const openAnalysisTab = useUiStore((state) => state.openAnalysisTab);
   const measureMode = useProjectStore((state) => state.measureMode);
   const setMeasureModeDispatch = useProjectStore((state) => state.setMeasureMode);
 
-  const handleTool = (tab: AnalysisTab) => {
-    if (rightPanel === "measure" && analysisTab === tab) {
-      togglePanel("measure");
+  const handleTool = (panelId: "elevation" | "buffer" | "knn" | "boolean") => {
+    if (rightPanel === panelId || (rightPanel === "measure" && analysisTab === panelId)) {
+      closePanel("right");
       setMeasureModeDispatch("off");
       return;
     }
-    openAnalysisTab(tab);
+    openPanel(panelId);
     setMeasureModeDispatch("off");
   };
 
@@ -45,8 +45,8 @@ export function RightRibbon() {
       setMeasureModeDispatch("off");
     } else {
       setMeasureModeDispatch("distance");
-      if (rightPanel === "measure") {
-        closePanel();
+      if (rightPanel && ["elevation", "buffer", "knn", "boolean", "measure"].includes(rightPanel)) {
+        closePanel("right");
       }
     }
   };
@@ -56,8 +56,8 @@ export function RightRibbon() {
       setMeasureModeDispatch("off");
     } else {
       setMeasureModeDispatch("area");
-      if (rightPanel === "measure") {
-        closePanel();
+      if (rightPanel && ["elevation", "buffer", "knn", "boolean", "measure"].includes(rightPanel)) {
+        closePanel("right");
       }
     }
   };
@@ -83,28 +83,28 @@ export function RightRibbon() {
       id: "elevation",
       label: "Terrain Elevation Profile",
       icon: Mountain,
-      isActive: rightPanel === "measure" && analysisTab === "elevation",
+      isActive: rightPanel === "elevation" || (rightPanel === "measure" && analysisTab === "elevation"),
       action: () => handleTool("elevation"),
     },
     {
       id: "buffer",
       label: "Proximity Buffer",
       icon: CircleDot,
-      isActive: rightPanel === "measure" && analysisTab === "buffer",
+      isActive: rightPanel === "buffer" || (rightPanel === "measure" && analysisTab === "buffer"),
       action: () => handleTool("buffer"),
     },
     {
       id: "knn",
       label: "k-Nearest Neighbors",
       icon: LocateFixed,
-      isActive: rightPanel === "measure" && analysisTab === "knn",
+      isActive: rightPanel === "knn" || (rightPanel === "measure" && analysisTab === "knn"),
       action: () => handleTool("knn"),
     },
     {
       id: "boolean",
-      label: "Spatial Boolean Ops",
+      label: "Constructive Area Geometry",
       icon: GitMerge,
-      isActive: rightPanel === "measure" && analysisTab === "boolean",
+      isActive: rightPanel === "boolean" || (rightPanel === "measure" && analysisTab === "boolean"),
       action: () => handleTool("boolean"),
     },
   ];

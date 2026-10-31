@@ -24,6 +24,10 @@ const PANEL_DOCK: Record<PanelId, "left" | "right"> = {
   feature: "right",
   layer: "right",
   measure: "right",
+  elevation: "right",
+  buffer: "right",
+  knn: "right",
+  boolean: "right",
 };
 
 /**
@@ -189,8 +193,18 @@ export const useUiStore = create<UiState>()(
 
       setAnalysisTab: (tab) => set({ analysisTab: tab }),
 
-      openAnalysisTab: (tab) =>
-        set({ rightPanel: "measure", lastDock: "right", analysisTab: tab }),
+      openAnalysisTab: (tab) => {
+        const panelMap: Record<AnalysisTab, PanelId> = {
+          elevation: "elevation",
+          buffer: "buffer",
+          knn: "knn",
+          boolean: "boolean",
+          distance: "elevation",
+          area: "elevation",
+        };
+        const panel = panelMap[tab] || "elevation";
+        set({ rightPanel: panel, lastDock: "right", analysisTab: tab });
+      },
 
       setBasemap: (basemap) => set({ basemap }),
 

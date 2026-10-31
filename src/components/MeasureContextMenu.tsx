@@ -180,8 +180,8 @@ export function MeasureContextMenu() {
 
   const handleSliceElevation = () => {
     useMapStore.getState().setElevationSelectedFeatureId(menu.featureId ?? null);
-    useUiStore.getState().openAnalysisTab("elevation");
-    notify(`Elevation Workbench: slicing Line #${menu.lineIndex ?? 1}`);
+    useUiStore.getState().openPanel("elevation");
+    notify(`Terrain Elevation: slicing Line #${menu.lineIndex ?? 1}`);
     setMenu(null);
   };
 
