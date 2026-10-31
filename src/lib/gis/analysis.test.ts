@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { computeElevationProfile, measureGeodesic, spatialBufferQuery } from "./tiledBackend";
+import {
+  computeElevationProfile,
+  createGeodesicLineBuffer,
+  createGeodesicSectorBuffer,
+  distanceToLineString,
+  isBearingInSector,
+  measureGeodesic,
+  spatialBufferQuery,
+} from "./tiledBackend";
 import type { DatasetLayer } from "./types";
 
 describe("Phase 3 Geodesic Analysis Engine", () => {
@@ -142,8 +150,6 @@ describe("Phase 3 Geodesic Analysis Engine", () => {
   });
 
   it("creates a geodesic corridor buffer polygon around a multi-segment route", async () => {
-    const { createGeodesicLineBuffer, distanceToLineString } = await import("./tiledBackend");
-
     const route: [number, number][] = [
       [0, 0],
       [1, 0], // 1 degree East along equator (~111 km)
@@ -210,5 +216,201 @@ describe("Phase 3 Geodesic Analysis Engine", () => {
 
     expect(result.hits[2].feature_id).toBe("t3");
     expect(result.hits[2].ring_band).toBe(3);
+  });
+
+  it("evaluates isBearingInSector with standard and 360-degree wraparound sectors", () => {
+    // Standard sector: East quadrant (45° to 135°)
+    expect(isBearingInSector(90, 45, 135)).toBe(true);
+    expect(isBearingInSector(45, 45, 135)).toBe(true);
+    expect(isBearingInSector(135, 45, 135)).toBe(true);
+    expect(isBearingInSector(0, 45, 135)).toBe(false);
+    expect(isBearingInSector(180, 45, 135)).toBe(false);
+    expect(isBearingInSector(270, 45, 135)).toBe(false);
+
+    // Wraparound sector across North (315° to 45°, 90° fan)
+    expect(isBearingInSector(0, 315, 45)).toBe(true);
+    expect(isBearingInSector(350, 315, 45)).toBe(true);
+    expect(isBearingInSector(30, 315, 45)).toBe(true);
+    expect(isBearingInSector(315, 315, 45)).toBe(true);
+    expect(isBearingInSector(45, 315, 45)).toBe(true);
+    expect(isBearingInSector(90, 315, 45)).toBe(false);
+    expect(isBearingInSector(180, 315, 45)).toBe(false);
+    expect(isBearingInSector(270, 315, 45)).toBe(false);
+
+    // Full 360 circle
+    expect(isBearingInSector(180, 0, 360)).toBe(true);
+    expect(isBearingInSector(270, 90, 90)).toBe(true);
+  });
+
+  it("creates valid geodesic sector polygons for pie wedge and doughnut blind-radius", () => {
+    const outerRadius = 10000; // 10 km
+
+    // 1. Standard Pie Wedge (0° to 90°, East/North quadrant, innerRadius = 0)
+    const pieWedge = createGeodesicSectorBuffer(0, 0, outerRadius, 0, 90, 0);
+    expect(pieWedge.geometry.type).toBe("Polygon");
+    const pieRing = pieWedge.geometry.coordinates[0];
+    expect(pieRing.length).toBeGreaterThan(10);
+    // Closed ring
+    expect(pieRing[0][0]).toBeCloseTo(pieRing[pieRing.length - 1][0], 5);
+    expect(pieRing[0][1]).toBeCloseTo(pieRing[pieRing.length - 1][1], 5);
+
+    // 2. Doughnut Sector / Radar Fan with dead zone (innerRadius = 3000m)
+    const doughnut = createGeodesicSectorBuffer(0, 0, outerRadius, 45, 135, 3000);
+    expect(doughnut.geometry.type).toBe("Polygon");
+    const doughnutRing = doughnut.geometry.coordinates[0];
+    expect(doughnutRing.length).toBeGreaterThan(20);
+    // Closed ring
+    expect(doughnutRing[0][0]).toBeCloseTo(doughnutRing[doughnutRing.length - 1][0], 5);
+    expect(doughnutRing[0][1]).toBeCloseTo(doughnutRing[doughnutRing.length - 1][1], 5);
+  });
+
+  it("filters spatial buffer query targets by directional sector and blind dead-zone", async () => {
+    const mockLayers: DatasetLayer[] = [
+      {
+        id: "sector_targets",
+        datasetId: "ds_sec",
+        name: "Sector Targets",
+        crs: "EPSG:4326",
+        format: "geojson",
+        source: null,
+        geometryKind: "Point",
+        fields: [],
+        extent: null,
+        style: { color: "#06b6d4", strokeWidth: 2, pointRadius: 4, fillOpacity: 0.2, labelField: null },
+        filters: [],
+        visible: true,
+        opacity: 1,
+        order: 0,
+        createdAt: new Date().toISOString(),
+        features: [
+          // Target North: ~5.55 km North (bearing ~0°)
+          { id: "tgt_north", geometry: { type: "Point", coordinates: [0, 0.05] }, properties: {} },
+          // Target East: ~5.55 km East (bearing ~90°)
+          { id: "tgt_east", geometry: { type: "Point", coordinates: [0.05, 0] }, properties: {} },
+          // Target South: ~5.55 km South (bearing ~180°)
+          { id: "tgt_south", geometry: { type: "Point", coordinates: [0, -0.05] }, properties: {} },
+          // Target DeadZone North: ~1.11 km North (bearing ~0°, within 2000m dead zone)
+          { id: "tgt_blind_north", geometry: { type: "Point", coordinates: [0, 0.01] }, properties: {} },
+        ],
+      },
+    ];
+
+    // Query North sector: 315° to 45°, outerRadius 10,000m, dead-zone 2,000m
+    const northSectorResult = await spatialBufferQuery(
+      0,
+      0,
+      10000,
+      undefined,
+      100,
+      mockLayers,
+      undefined,
+      undefined,
+      {
+        startAzimuthDeg: 315,
+        endAzimuthDeg: 45,
+        innerRadiusMeters: 2000,
+      },
+    );
+
+    expect(northSectorResult).not.toBeNull();
+    if (!northSectorResult) return;
+
+    // Only tgt_north should match (tgt_east and tgt_south are out of azimuth; tgt_blind_north is < 2000m)
+    expect(northSectorResult.total_hits).toBe(1);
+    expect(northSectorResult.hits[0].feature_id).toBe("tgt_north");
+  });
+
+  it("filters corridor buffer queries by Port (Left) and Starboard (Right) sides with flat/round caps", async () => {
+    // Equator route heading East: (0, 0) -> (1, 0)
+    const route: [number, number][] = [
+      [0, 0],
+      [1, 0],
+    ];
+
+    const mockLayers: DatasetLayer[] = [
+      {
+        id: "corridor_targets",
+        datasetId: "ds_corr",
+        name: "Corridor Targets",
+        crs: "EPSG:4326",
+        format: "geojson",
+        source: null,
+        geometryKind: "Point",
+        fields: [],
+        extent: null,
+        style: { color: "#06b6d4", strokeWidth: 2, pointRadius: 4, fillOpacity: 0.2, labelField: null },
+        filters: [],
+        visible: true,
+        opacity: 1,
+        order: 0,
+        createdAt: new Date().toISOString(),
+        features: [
+          // Port (Left / North of eastbound line): ~2.22 km North
+          { id: "ship_port", geometry: { type: "Point", coordinates: [0.5, 0.02] }, properties: {} },
+          // Starboard (Right / South of eastbound line): ~2.22 km South
+          { id: "ship_starboard", geometry: { type: "Point", coordinates: [0.5, -0.02] }, properties: {} },
+        ],
+      },
+    ];
+
+    // 1. Port / Left only query
+    const portResult = await spatialBufferQuery(
+      0,
+      0,
+      5000,
+      undefined,
+      100,
+      mockLayers,
+      route,
+      undefined,
+      undefined,
+      { sideType: "left", capStyle: "flat" },
+    );
+    expect(portResult).not.toBeNull();
+    if (!portResult) return;
+    expect(portResult.total_hits).toBe(1);
+    expect(portResult.hits[0].feature_id).toBe("ship_port");
+
+    // 2. Starboard / Right only query
+    const stbdResult = await spatialBufferQuery(
+      0,
+      0,
+      5000,
+      undefined,
+      100,
+      mockLayers,
+      route,
+      undefined,
+      undefined,
+      { sideType: "right", capStyle: "flat" },
+    );
+    expect(stbdResult).not.toBeNull();
+    if (!stbdResult) return;
+    expect(stbdResult.total_hits).toBe(1);
+    expect(stbdResult.hits[0].feature_id).toBe("ship_starboard");
+
+    // 3. Both sides query
+    const bothResult = await spatialBufferQuery(
+      0,
+      0,
+      5000,
+      undefined,
+      100,
+      mockLayers,
+      route,
+      undefined,
+      undefined,
+      { sideType: "both", capStyle: "round" },
+    );
+    expect(bothResult).not.toBeNull();
+    if (!bothResult) return;
+    expect(bothResult.total_hits).toBe(2);
+
+    // 4. Verify flat cap geometry generation
+    const flatBuffer = createGeodesicLineBuffer(route, 5000, { sideType: "both", capStyle: "flat" });
+    expect(flatBuffer.geometry.type).toBe("Polygon");
+    const flatRing = flatBuffer.geometry.coordinates[0];
+    expect(flatRing[0][0]).toBeCloseTo(flatRing[flatRing.length - 1][0], 5);
+    expect(flatRing[0][1]).toBeCloseTo(flatRing[flatRing.length - 1][1], 5);
   });
 });

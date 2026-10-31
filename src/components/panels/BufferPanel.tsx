@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Activity,
   BookmarkPlus,
   CircleDot,
+  Compass,
   Crosshair,
   Download,
   Eraser,
@@ -22,6 +23,7 @@ import {
   measureCoordinates,
   renderBufferOverlay,
   setBufferPicker,
+  setBufferRadiusDragListener,
   type AdditionalBufferRing,
 } from "../../map/mapController";
 import { cx } from "../../lib/cx";
@@ -29,8 +31,12 @@ import { formatDistance } from "../../lib/format";
 import {
   createGeodesicLineBuffer,
   createGeodesicPointBuffer,
+  createGeodesicSectorBuffer,
   distanceToLineString,
+  isBearingInSector,
   spatialBufferQuery,
+  type CorridorOptions,
+  type SectorBufferParams,
   type SpatialQueryHit,
   type SpatialQueryResult,
 } from "../../lib/gis/tiledBackend";
@@ -106,6 +112,19 @@ export function BufferPanel() {
   // Multi-ring definitions generated during query
   const [generatedRings, setGeneratedRings] = useState<AdditionalBufferRing[]>([]);
 
+  // Phase 3: Shape Mode (Omni-Directional Circle vs Radar Wedge Sector)
+  const [shapeMode, setShapeMode] = useState<"circle" | "sector">("circle");
+  const [startAzimuth, setStartAzimuth] = useState<number>(45);
+  const [endAzimuth, setEndAzimuth] = useState<number>(135);
+  const [innerRadiusInput, setInnerRadiusInput] = useState<number>(0);
+
+  // Phase 3: Corridor Options (Both sides / Left / Right, Round vs Flat cap)
+  const [corridorSide, setCorridorSide] = useState<"both" | "left" | "right">("both");
+  const [corridorCap, setCorridorCap] = useState<"round" | "flat">("round");
+
+  // Phase 3: Interactive Rim Drag-Handle on OpenLayers Canvas
+  const [enableDragHandle, setEnableDragHandle] = useState<boolean>(true);
+
   // Current radius in active unit
   const displayRadius = radiusMeters / UNIT_MULTIPLIERS[unit];
 
@@ -126,14 +145,40 @@ export function BufferPanel() {
     if (value > 0) {
       const nextMeters = value * UNIT_MULTIPLIERS[unit];
       setRadiusMeters(nextMeters);
-      runQueryWithParams(sourceType, ringMode, ringCount, nextMeters, bufferCenter, selectedLayerId);
+      runQueryWithParams(
+        sourceType,
+        ringMode,
+        ringCount,
+        nextMeters,
+        bufferCenter,
+        selectedLayerId,
+        shapeMode,
+        startAzimuth,
+        endAzimuth,
+        innerRadiusInput,
+        corridorSide,
+        corridorCap,
+      );
     }
   };
 
   const handlePresetClick = (presetValue: number) => {
     const nextMeters = presetValue * UNIT_MULTIPLIERS[unit];
     setRadiusMeters(nextMeters);
-    runQueryWithParams(sourceType, ringMode, ringCount, nextMeters, bufferCenter, selectedLayerId);
+    runQueryWithParams(
+      sourceType,
+      ringMode,
+      ringCount,
+      nextMeters,
+      bufferCenter,
+      selectedLayerId,
+      shapeMode,
+      startAzimuth,
+      endAzimuth,
+      innerRadiusInput,
+      corridorSide,
+      corridorCap,
+    );
   };
 
   const toggleCenterPicker = () => {
@@ -147,10 +192,88 @@ export function BufferPanel() {
         setBufferCenter(coord);
         setIsPickingCenter(false);
         setBufferPicker(null);
-        runQueryWithParams(sourceType, ringMode, ringCount, radiusMeters, coord, selectedLayerId);
+        runQueryWithParams(
+          sourceType,
+          ringMode,
+          ringCount,
+          radiusMeters,
+          coord,
+          selectedLayerId,
+          shapeMode,
+          startAzimuth,
+          endAzimuth,
+          innerRadiusInput,
+          corridorSide,
+          corridorCap,
+        );
       });
     }
   };
+
+  const setSectorAngles = (start: number, end: number) => {
+    setStartAzimuth(start);
+    setEndAzimuth(end);
+    runQueryWithParams(
+      sourceType,
+      ringMode,
+      ringCount,
+      radiusMeters,
+      bufferCenter,
+      selectedLayerId,
+      "sector",
+      start,
+      end,
+      innerRadiusInput,
+      corridorSide,
+      corridorCap,
+    );
+  };
+
+  useEffect(() => {
+    if (!enableDragHandle || !bufferCenter) {
+      setBufferRadiusDragListener(null);
+      return;
+    }
+
+    setBufferRadiusDragListener((newRadiusMeters: number, isFinal: boolean) => {
+      setRadiusMeters(newRadiusMeters);
+
+      if (isFinal) {
+        runQueryWithParams(
+          sourceType,
+          ringMode,
+          ringCount,
+          newRadiusMeters,
+          bufferCenter,
+          selectedLayerId,
+          shapeMode,
+          startAzimuth,
+          endAzimuth,
+          innerRadiusInput,
+          corridorSide,
+          corridorCap,
+        );
+      }
+    });
+
+    return () => {
+      setBufferRadiusDragListener(null);
+    };
+  }, [
+    enableDragHandle,
+    bufferCenter,
+    sourceType,
+    ringMode,
+    ringCount,
+    selectedLayerId,
+    shapeMode,
+    startAzimuth,
+    endAzimuth,
+    innerRadiusInput,
+    corridorSide,
+    corridorCap,
+    unit,
+  ]);
 
   const runQueryWithParams = async (
     currentSource: BufferSourceType,
@@ -159,6 +282,13 @@ export function BufferPanel() {
     baseDistMeters: number,
     center: [number, number] | null,
     targetLayer: string,
+    currentShapeMode: "circle" | "sector" = shapeMode,
+    currentStartAz: number = startAzimuth,
+    currentEndAz: number = endAzimuth,
+    currentInnerRadius: number = innerRadiusInput,
+    currentCorridorSide: "both" | "left" | "right" = corridorSide,
+    currentCorridorCap: "round" | "flat" = corridorCap,
+    currentEnableDragHandle: boolean = enableDragHandle,
   ) => {
     // 1. Resolve geometry spine
     let spine: [number, number][] | undefined = undefined;
@@ -208,6 +338,23 @@ export function BufferPanel() {
       }
       const maxSearchDistance = ringRadii[ringRadii.length - 1];
 
+      const isSector = currentSource === "point" && currentShapeMode === "sector";
+      const innerRadiusMeters = isSector ? currentInnerRadius * UNIT_MULTIPLIERS[unit] : 0;
+      const sectorParams: SectorBufferParams | undefined = isSector
+        ? {
+            startAzimuthDeg: currentStartAz,
+            endAzimuthDeg: currentEndAz,
+            innerRadiusMeters,
+          }
+        : undefined;
+
+      const corridorOptions: CorridorOptions | undefined = spine
+        ? {
+            sideType: currentCorridorSide,
+            capStyle: currentCorridorCap,
+          }
+        : undefined;
+
       const layerIds = targetLayer === "all" ? undefined : [targetLayer];
       const baseResult = await spatialBufferQuery(
         effectiveCenter[0],
@@ -218,6 +365,8 @@ export function BufferPanel() {
         layers,
         spine,
         isMulti ? ringRadii : undefined,
+        sectorParams,
+        corridorOptions,
       );
 
       if (!baseResult) {
@@ -239,7 +388,7 @@ export function BufferPanel() {
           let bearing = 0;
 
           if (spine && spine.length >= 2) {
-            const res = distanceToLineString([flight.longitude, flight.latitude], spine);
+            const res = distanceToLineString([flight.longitude, flight.latitude], spine, currentCorridorSide);
             distM = res.minDistanceM;
             bearing = res.bearingDeg;
           } else {
@@ -267,7 +416,11 @@ export function BufferPanel() {
             bearing = m.b;
           }
 
-          if (distM <= maxSearchDistance) {
+          const inRange = isSector
+            ? distM >= innerRadiusMeters && distM <= maxSearchDistance && isBearingInSector(bearing, currentStartAz, currentEndAz)
+            : distM <= maxSearchDistance;
+
+          if (inRange) {
             let ringBand: number | undefined;
             if (isMulti) {
               for (let b = 0; b < ringRadii.length; b++) {
@@ -311,7 +464,7 @@ export function BufferPanel() {
           let bearing = 0;
 
           if (spine && spine.length >= 2) {
-            const res = distanceToLineString([vessel.lon, vessel.lat], spine);
+            const res = distanceToLineString([vessel.lon, vessel.lat], spine, currentCorridorSide);
             distM = res.minDistanceM;
             bearing = res.bearingDeg;
           } else {
@@ -332,7 +485,11 @@ export function BufferPanel() {
             bearing = ((((Math.atan2(y, x) * 180) / Math.PI) % 360) + 360) % 360;
           }
 
-          if (distM <= maxSearchDistance) {
+          const inRange = isSector
+            ? distM >= innerRadiusMeters && distM <= maxSearchDistance && isBearingInSector(bearing, currentStartAz, currentEndAz)
+            : distM <= maxSearchDistance;
+
+          if (inRange) {
             let ringBand: number | undefined;
             if (isMulti) {
               for (let b = 0; b < ringRadii.length; b++) {
@@ -376,7 +533,7 @@ export function BufferPanel() {
           let bearing = 0;
 
           if (spine && spine.length >= 2) {
-            const res = distanceToLineString([quake.longitude, quake.latitude], spine);
+            const res = distanceToLineString([quake.longitude, quake.latitude], spine, currentCorridorSide);
             distM = res.minDistanceM;
             bearing = res.bearingDeg;
           } else {
@@ -397,7 +554,11 @@ export function BufferPanel() {
             bearing = ((((Math.atan2(y, x) * 180) / Math.PI) % 360) + 360) % 360;
           }
 
-          if (distM <= maxSearchDistance) {
+          const inRange = isSector
+            ? distM >= innerRadiusMeters && distM <= maxSearchDistance && isBearingInSector(bearing, currentStartAz, currentEndAz)
+            : distM <= maxSearchDistance;
+
+          if (inRange) {
             let ringBand: number | undefined;
             if (isMulti) {
               for (let b = 0; b < ringRadii.length; b++) {
@@ -440,7 +601,17 @@ export function BufferPanel() {
         for (let i = 0; i < ringRadii.length; i++) {
           const r = ringRadii[i];
           const ringGeo = spine && spine.length >= 2
-            ? createGeodesicLineBuffer(spine, r)
+            ? createGeodesicLineBuffer(spine, r, corridorOptions)
+            : isSector
+            ? createGeodesicSectorBuffer(
+                effectiveCenter[0],
+                effectiveCenter[1],
+                r,
+                currentStartAz,
+                currentEndAz,
+                i === 0 ? innerRadiusMeters : ringRadii[i - 1],
+                64,
+              )
             : createGeodesicPointBuffer(effectiveCenter[0], effectiveCenter[1], r, 64);
 
           const rLabel = r >= 1000 ? `${(r / 1000).toFixed(1)} km` : `${Math.round(r)} m`;
@@ -467,6 +638,17 @@ export function BufferPanel() {
       setBufferResult(consolidatedResult);
 
       // Render overlay on OpenLayers
+      let handleAzimuth = 90;
+      if (isSector) {
+        const sweep =
+          Math.abs(currentEndAz - currentStartAz) < 1e-4
+            ? 360
+            : currentEndAz > currentStartAz
+            ? currentEndAz - currentStartAz
+            : currentEndAz - currentStartAz + 360;
+        handleAzimuth = (currentStartAz + sweep / 2) % 360;
+      }
+
       if (isMulti && rings.length > 0) {
         renderBufferOverlay(
           rings[rings.length - 1].geojson,
@@ -474,6 +656,8 @@ export function BufferPanel() {
           maxSearchDistance,
           rings,
           spine,
+          currentEnableDragHandle && !spine,
+          handleAzimuth,
         );
       } else {
         renderBufferOverlay(
@@ -482,6 +666,8 @@ export function BufferPanel() {
           baseDistMeters,
           undefined,
           spine,
+          currentEnableDragHandle && !spine,
+          handleAzimuth,
         );
       }
 
@@ -795,7 +981,7 @@ export function BufferPanel() {
 
         {/* Source Geometry Config Card */}
         {sourceType === "point" && (
-          <div className="flex flex-col gap-1.5 rounded-[2px] border border-line bg-tint p-2.5">
+          <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[10.5px] text-ink-muted">Center Point</span>
               <button
@@ -820,6 +1006,204 @@ export function BufferPanel() {
                 </span>
               ) : (
                 <span className="text-ink-muted">No center chosen yet</span>
+              )}
+            </div>
+
+            {/* Shape Geometry Selector: Circle vs Sector */}
+            <div className="mt-1 pt-2 border-t border-line flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-ink-muted font-medium">Aperture Geometry:</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className={cx(
+                      "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium transition-colors",
+                      shapeMode === "circle"
+                        ? "bg-accent text-on-accent font-semibold border-accent"
+                        : "bg-solid text-ink-muted hover:text-ink border-line",
+                    )}
+                    onClick={() => {
+                      setShapeMode("circle");
+                      if (bufferCenter) {
+                        runQueryWithParams(
+                          "point",
+                          ringMode,
+                          ringCount,
+                          radiusMeters,
+                          bufferCenter,
+                          selectedLayerId,
+                          "circle",
+                        );
+                      }
+                    }}
+                  >
+                    Omni (360°)
+                  </button>
+                  <button
+                    type="button"
+                    className={cx(
+                      "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium transition-colors flex items-center gap-1",
+                      shapeMode === "sector"
+                        ? "bg-accent text-on-accent font-semibold border-accent"
+                        : "bg-solid text-ink-muted hover:text-ink border-line",
+                    )}
+                    onClick={() => {
+                      setShapeMode("sector");
+                      if (bufferCenter) {
+                        runQueryWithParams(
+                          "point",
+                          ringMode,
+                          ringCount,
+                          radiusMeters,
+                          bufferCenter,
+                          selectedLayerId,
+                          "sector",
+                          startAzimuth,
+                          endAzimuth,
+                          innerRadiusInput,
+                        );
+                      }
+                    }}
+                  >
+                    <Radar size={10} />
+                    Radar Wedge
+                  </button>
+                </div>
+              </div>
+
+              {shapeMode === "sector" && (
+                <div className="flex flex-col gap-2 pt-1">
+                  {/* Aperture readout */}
+                  <div className="flex items-center justify-between text-[10px] text-ink-muted">
+                    <span className="flex items-center gap-1">
+                      <Compass size={11} className="text-accent" />
+                      Span: {startAzimuth}° → {endAzimuth}°
+                    </span>
+                    <span className="font-mono text-accent font-medium">
+                      FOV: {((endAzimuth - startAzimuth + 360) % 360 || 360)}°
+                    </span>
+                  </div>
+
+                  {/* Sliders for start/end azimuth */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9.5px] text-ink-muted">Start Azimuth</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={startAzimuth}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setStartAzimuth(val);
+                            runQueryWithParams(
+                              sourceType,
+                              ringMode,
+                              ringCount,
+                              radiusMeters,
+                              bufferCenter,
+                              selectedLayerId,
+                              "sector",
+                              val,
+                              endAzimuth,
+                              innerRadiusInput,
+                            );
+                          }}
+                          className="w-full accent-accent cursor-pointer"
+                        />
+                        <span className="text-[10px] font-mono w-7 text-right">{startAzimuth}°</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[9.5px] text-ink-muted">End Azimuth</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={endAzimuth}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setEndAzimuth(val);
+                            runQueryWithParams(
+                              sourceType,
+                              ringMode,
+                              ringCount,
+                              radiusMeters,
+                              bufferCenter,
+                              selectedLayerId,
+                              "sector",
+                              startAzimuth,
+                              val,
+                              innerRadiusInput,
+                            );
+                          }}
+                          className="w-full accent-accent cursor-pointer"
+                        />
+                        <span className="text-[10px] font-mono w-7 text-right">{endAzimuth}°</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Sector Presets */}
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { label: "N (315°–045°)", s: 315, e: 45 },
+                      { label: "E (045°–135°)", s: 45, e: 135 },
+                      { label: "S (135°–225°)", s: 135, e: 225 },
+                      { label: "W (225°–315°)", s: 225, e: 315 },
+                      { label: "60° Fan", s: 60, e: 120 },
+                      { label: "90° Fan", s: 45, e: 135 },
+                    ].map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        className={cx(
+                          "px-1.5 py-0.5 text-[9px] rounded-[2px] border font-mono transition-colors",
+                          startAzimuth === p.s && endAzimuth === p.e
+                            ? "bg-accent text-on-accent font-semibold border-accent"
+                            : "bg-solid text-ink-muted hover:text-ink border-line",
+                        )}
+                        onClick={() => setSectorAngles(p.s, p.e)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Dead zone / inner radius input */}
+                  <div className="flex items-center justify-between pt-1 border-t border-line/60">
+                    <span className="text-[10px] text-ink-muted">Inner Blind Zone:</span>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step={unit === "m" ? "50" : "0.5"}
+                        value={innerRadiusInput}
+                        onChange={(e) => {
+                          const val = Math.max(0, Number(e.target.value));
+                          setInnerRadiusInput(val);
+                          runQueryWithParams(
+                            sourceType,
+                            ringMode,
+                            ringCount,
+                            radiusMeters,
+                            bufferCenter,
+                            selectedLayerId,
+                            "sector",
+                            startAzimuth,
+                            endAzimuth,
+                            val,
+                          );
+                        }}
+                        className="w-16 px-1.5 py-0.5 text-[10px] font-mono bg-solid border border-line rounded-[2px] text-right"
+                      />
+                      <span className="text-[10px] font-mono text-ink-muted">{unit}</span>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -866,6 +1250,85 @@ export function BufferPanel() {
               ) : (
                 <span className="text-ink-muted">Click any feature on map or table</span>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Phase 3: Corridor Options Card when buffering a line or path */}
+        {(sourceType === "measurement" || sourceType === "selection") && (
+          <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-ink-muted font-medium">Corridor Offset Side:</span>
+              <div className="flex items-center gap-1">
+                {(["both", "left", "right"] as const).map((side) => (
+                  <button
+                    key={side}
+                    type="button"
+                    className={cx(
+                      "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium capitalize transition-colors",
+                      corridorSide === side
+                        ? "bg-accent text-on-accent font-semibold border-accent"
+                        : "bg-solid text-ink-muted hover:text-ink border-line",
+                    )}
+                    onClick={() => {
+                      setCorridorSide(side);
+                      runQueryWithParams(
+                        sourceType,
+                        ringMode,
+                        ringCount,
+                        radiusMeters,
+                        bufferCenter,
+                        selectedLayerId,
+                        shapeMode,
+                        startAzimuth,
+                        endAzimuth,
+                        innerRadiusInput,
+                        side,
+                        corridorCap,
+                      );
+                    }}
+                  >
+                    {side === "both" ? "Both" : side === "left" ? "Port (Left)" : "Starboard (Right)"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1 border-t border-line/60">
+              <span className="text-[10px] text-ink-muted font-medium">Terminal Cap Style:</span>
+              <div className="flex items-center gap-1">
+                {(["round", "flat"] as const).map((cap) => (
+                  <button
+                    key={cap}
+                    type="button"
+                    className={cx(
+                      "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium capitalize transition-colors",
+                      corridorCap === cap
+                        ? "bg-accent text-on-accent font-semibold border-accent"
+                        : "bg-solid text-ink-muted hover:text-ink border-line",
+                    )}
+                    onClick={() => {
+                      setCorridorCap(cap);
+                      runQueryWithParams(
+                        sourceType,
+                        ringMode,
+                        ringCount,
+                        radiusMeters,
+                        bufferCenter,
+                        selectedLayerId,
+                        shapeMode,
+                        startAzimuth,
+                        endAzimuth,
+                        innerRadiusInput,
+                        corridorSide,
+                        cap,
+                      );
+                    }}
+                  >
+                    {cap === "round" ? "Round (180°)" : "Flat (Square)"}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -936,23 +1399,57 @@ export function BufferPanel() {
             <SectionLabel>
               {ringMode === "multi" ? "Step Distance (Per Ring)" : "Buffer Radius"}
             </SectionLabel>
-            {/* Unit Toggle Buttons */}
-            <div className="flex items-center gap-0.5 rounded-[2px] border border-line bg-solid p-0.5">
-              {(["m", "km", "NM", "mi"] as const).map((u) => (
-                <button
-                  key={u}
-                  type="button"
-                  className={cx(
-                    "px-1.5 py-0.5 text-[9.5px] font-mono transition-colors rounded-[1px]",
-                    unit === u
-                      ? "bg-accent text-on-accent font-semibold"
-                      : "text-ink-muted hover:text-ink",
-                  )}
-                  onClick={() => handleUnitChange(u)}
-                >
-                  {u}
-                </button>
-              ))}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className={cx(
+                  "px-1.5 py-0.5 text-[9px] rounded-[2px] border font-mono transition-colors flex items-center gap-1",
+                  enableDragHandle
+                    ? "bg-accent/15 text-accent border-accent/40 font-medium"
+                    : "bg-solid text-ink-muted hover:text-ink border-line",
+                )}
+                title="Toggle interactive map canvas drag-handle to resize radius directly on the map"
+                onClick={() => {
+                  const nextVal = !enableDragHandle;
+                  setEnableDragHandle(nextVal);
+                  runQueryWithParams(
+                    sourceType,
+                    ringMode,
+                    ringCount,
+                    radiusMeters,
+                    bufferCenter,
+                    selectedLayerId,
+                    shapeMode,
+                    startAzimuth,
+                    endAzimuth,
+                    innerRadiusInput,
+                    corridorSide,
+                    corridorCap,
+                    nextVal,
+                  );
+                }}
+              >
+                <span>↔</span>
+                <span>Drag: {enableDragHandle ? "ON" : "OFF"}</span>
+              </button>
+              {/* Unit Toggle Buttons */}
+              <div className="flex items-center gap-0.5 rounded-[2px] border border-line bg-solid p-0.5">
+                {(["m", "km", "NM", "mi"] as const).map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    className={cx(
+                      "px-1.5 py-0.5 text-[9.5px] font-mono transition-colors rounded-[1px]",
+                      unit === u
+                        ? "bg-accent text-on-accent font-semibold"
+                        : "text-ink-muted hover:text-ink",
+                    )}
+                    onClick={() => handleUnitChange(u)}
+                  >
+                    {u}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

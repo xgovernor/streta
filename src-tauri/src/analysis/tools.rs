@@ -164,6 +164,58 @@ pub fn create_geodesic_buffer_polygon(center_lon: f64, center_lat: f64, radius_m
     Polygon::new(LineString::new(ring), vec![])
 }
 
+pub fn create_geodesic_sector_polygon(
+    center_lon: f64,
+    center_lat: f64,
+    outer_radius_meters: f64,
+    start_azimuth_deg: f64,
+    end_azimuth_deg: f64,
+    inner_radius_meters: f64,
+    segments: usize,
+) -> Polygon<f64> {
+    let center = Point::new(center_lon, center_lat);
+    let start_az = ((start_azimuth_deg % 360.0) + 360.0) % 360.0;
+    let end_az = ((end_azimuth_deg % 360.0) + 360.0) % 360.0;
+
+    let sweep = if (end_az - start_az).abs() < 1e-6 {
+        360.0
+    } else if end_az > start_az {
+        end_az - start_az
+    } else {
+        (end_az - start_az) + 360.0
+    };
+
+    let arc_steps = ((segments as f64 * (sweep / 360.0)).ceil() as usize).max(8);
+    let mut ring = Vec::new();
+
+    // Outer arc: from start_az to end_az
+    for i in 0..=arc_steps {
+        let frac = (i as f64) / (arc_steps as f64);
+        let az = ((start_az + frac * sweep) % 360.0 + 360.0) % 360.0;
+        let dest = Geodesic.destination(center, az, outer_radius_meters);
+        ring.push(Coord { x: dest.x(), y: dest.y() });
+    }
+
+    // Inner arc or center point
+    if inner_radius_meters > 0.0 {
+        for i in 0..=arc_steps {
+            let frac = (i as f64) / (arc_steps as f64);
+            let az = ((end_az - frac * sweep) % 360.0 + 360.0) % 360.0;
+            let dest = Geodesic.destination(center, az, inner_radius_meters);
+            ring.push(Coord { x: dest.x(), y: dest.y() });
+        }
+    } else {
+        ring.push(Coord { x: center_lon, y: center_lat });
+    }
+
+    // Close the ring
+    if let Some(&first) = ring.first() {
+        ring.push(first);
+    }
+
+    Polygon::new(LineString::new(ring), vec![])
+}
+
 fn geometry3857_to_geo(geom: &Geometry3857) -> geo::Geometry<f64> {
     match geom {
         Geometry3857::Point(pt) => {
@@ -679,6 +731,20 @@ mod tests {
         let (cx, cy) = res.centroid.unwrap();
         assert!((cx - 0.5).abs() < 1e-4, "Centroid X should be 0.5, got {}", cx);
         assert!((cy - 0.5).abs() < 1e-4, "Centroid Y should be 0.5, got {}", cy);
+    }
+
+    #[test]
+    fn test_geodesic_sector_generation() {
+        // 60-degree wedge from 45 to 105 degrees with 0 inner radius
+        let poly = create_geodesic_sector_polygon(0.0, 0.0, 5_000.0, 45.0, 105.0, 0.0, 64);
+        assert!(poly.exterior().coords().count() >= 10);
+        let first = poly.exterior().coords().next().unwrap();
+        let last = poly.exterior().coords().last().unwrap();
+        assert_eq!(first, last, "Sector ring must be closed");
+
+        // Doughnut / band sector with inner radius
+        let doughnut = create_geodesic_sector_polygon(0.0, 0.0, 5_000.0, 45.0, 105.0, 1_000.0, 64);
+        assert!(doughnut.exterior().coords().count() >= 20);
     }
 }
 

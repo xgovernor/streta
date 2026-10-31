@@ -58,7 +58,12 @@ import type {
   MeasureSummary,
 } from "../lib/gis/types";
 import { formatArea, formatDistance } from "../lib/format";
-import { measureGeodesic, fetchFlightTrail } from "../lib/gis/tiledBackend";
+import {
+  measureGeodesic,
+  fetchFlightTrail,
+  geodesicDestination,
+  geodesicDistanceAndBearing,
+} from "../lib/gis/tiledBackend";
 import { useMapStore } from "../state/mapStore";
 import { useProjectStore } from "../state/projectStore";
 import { useUiStore } from "../state/uiStore";
@@ -209,6 +214,9 @@ let activeDrawInteraction: Draw | null = null;
 let activeAnalysisSource: VectorSource | null = null;
 let activeLocationSource: VectorSource | null = null;
 let activeBufferPicker: ((coord: [number, number]) => void) | null = null;
+let activeBufferRadiusDragListener: ((newRadiusMeters: number, isFinal: boolean) => void) | null = null;
+let isDraggingBufferHandle = false;
+let activeBufferCenterCoord: [number, number] | null = null;
 
 let activeRasterBinding: {
   layer: WebGLTileLayer;
@@ -1174,6 +1182,100 @@ export function mountMap(target: HTMLElement): () => void {
 
   target.addEventListener("contextmenu", handleContextMenu);
 
+  const viewport = map.getViewport();
+
+  const handleHandlePointerDown = (evt: PointerEvent) => {
+    if (!activeBufferRadiusDragListener || !activeBufferCenterCoord) return;
+    const pixel = map.getEventPixel(evt);
+    let hitHandle = false;
+    map.forEachFeatureAtPixel(
+      pixel,
+      (f) => {
+        if (f.get("analysisType") === "bufferHandle") {
+          hitHandle = true;
+          return true;
+        }
+        return false;
+      },
+      { hitTolerance: 10 },
+    );
+
+    if (hitHandle) {
+      isDraggingBufferHandle = true;
+      if (viewport) {
+        viewport.style.cursor = "grabbing";
+      }
+      evt.preventDefault();
+      evt.stopPropagation();
+    }
+  };
+
+  const handleHandlePointerMove = (evt: PointerEvent) => {
+    if (isDraggingBufferHandle && activeBufferCenterCoord && activeBufferRadiusDragListener) {
+      const coord = map.getCoordinateFromPixel(map.getEventPixel(evt));
+      if (coord) {
+        const [lon, lat] = transform(coord, VIEW_CRS, GEOGRAPHIC_CRS) as [number, number];
+        const { distanceM } = geodesicDistanceAndBearing(
+          activeBufferCenterCoord[0],
+          activeBufferCenterCoord[1],
+          lon,
+          lat,
+        );
+        const clampedRadius = Math.max(10, Math.round(distanceM));
+        activeBufferRadiusDragListener(clampedRadius, false);
+      }
+      evt.preventDefault();
+      return;
+    }
+
+    if (activeBufferRadiusDragListener && activeAnalysisSource && !isDraggingBufferHandle) {
+      const pixel = map.getEventPixel(evt);
+      let isOverHandle = false;
+      map.forEachFeatureAtPixel(
+        pixel,
+        (f) => {
+          if (f.get("analysisType") === "bufferHandle") {
+            isOverHandle = true;
+            return true;
+          }
+          return false;
+        },
+        { hitTolerance: 8 },
+      );
+
+      if (isOverHandle && viewport) {
+        viewport.style.cursor = "ew-resize";
+      }
+    }
+  };
+
+  const handleHandlePointerUp = (evt: PointerEvent) => {
+    if (isDraggingBufferHandle && activeBufferCenterCoord && activeBufferRadiusDragListener) {
+      isDraggingBufferHandle = false;
+      if (viewport) {
+        viewport.style.cursor = "";
+      }
+      const coord = map.getCoordinateFromPixel(map.getEventPixel(evt));
+      if (coord) {
+        const [lon, lat] = transform(coord, VIEW_CRS, GEOGRAPHIC_CRS) as [number, number];
+        const { distanceM } = geodesicDistanceAndBearing(
+          activeBufferCenterCoord[0],
+          activeBufferCenterCoord[1],
+          lon,
+          lat,
+        );
+        const clampedRadius = Math.max(10, Math.round(distanceM));
+        activeBufferRadiusDragListener(clampedRadius, true);
+      }
+    }
+  };
+
+  if (viewport) {
+    viewport.addEventListener("pointerdown", handleHandlePointerDown, { capture: true });
+  }
+  window.addEventListener("pointermove", handleHandlePointerMove);
+  window.addEventListener("pointerup", handleHandlePointerUp);
+
   const dragKey = map.on("pointerdrag", () => {
     if (hoverTimer) {
       clearTimeout(hoverTimer);
@@ -1699,9 +1801,18 @@ export function mountMap(target: HTMLElement): () => void {
       activeTeardown = null;
     }
 
+    if (viewport) {
+      viewport.removeEventListener("pointerdown", handleHandlePointerDown, { capture: true });
+    }
+    window.removeEventListener("pointermove", handleHandlePointerMove);
+    window.removeEventListener("pointerup", handleHandlePointerUp);
+
     activeAnalysisSource = null;
     activeLocationSource = null;
     activeBufferPicker = null;
+    activeBufferRadiusDragListener = null;
+    activeBufferCenterCoord = null;
+    isDraggingBufferHandle = false;
     activeMeasureSource = null;
     activeDrawInteraction = null;
 
@@ -2454,6 +2565,33 @@ function analysisStyle(feature: FeatureLike): Style | Style[] {
     ];
   }
 
+  if (type === "bufferHandle") {
+    return [
+      new Style({
+        image: new CircleStyle({
+          radius: 12,
+          fill: new Fill({ color: "rgba(6, 182, 212, 0.35)" }),
+        }),
+      }),
+      new Style({
+        image: new CircleStyle({
+          radius: 6,
+          fill: new Fill({ color: "#ffffff" }),
+          stroke: new Stroke({ color: "#06b6d4", width: 2.5 }),
+        }),
+        text: new Text({
+          text: "↔ RESIZE",
+          font: '700 9px "IBM Plex Mono", monospace',
+          fill: new Fill({ color: "#06b6d4" }),
+          backgroundFill: new Fill({ color: "rgba(10, 10, 10, 0.9)" }),
+          backgroundStroke: new Stroke({ color: "#06b6d4", width: 1 }),
+          padding: [1, 4, 1, 4],
+          offsetY: 15,
+        }),
+      }),
+    ];
+  }
+
   if (type === "profileHover") {
     const elevation = feature.get("elevationM");
     const slope = feature.get("slopePct");
@@ -2574,6 +2712,8 @@ export function renderBufferOverlay(
   radiusMeters?: number,
   additionalRings?: AdditionalBufferRing[],
   spineCoords?: [number, number][],
+  enableDragHandle?: boolean,
+  handleAzimuthDeg: number = 90,
 ): void {
   if (!activeAnalysisSource) return;
   activeAnalysisSource.clear();
@@ -2651,6 +2791,25 @@ export function renderBufferOverlay(
     centerFeature.set("analysisType", "bufferCenter");
     centerFeature.set("radiusMeters", radiusMeters);
     activeAnalysisSource.addFeature(centerFeature);
+
+    if (enableDragHandle && radiusMeters && radiusMeters > 0) {
+      const handleCoord = geodesicDestination(
+        centerCoord[0],
+        centerCoord[1],
+        radiusMeters,
+        handleAzimuthDeg,
+      );
+      const handleFeature = new Feature({
+        geometry: new Point(fromLonLat(handleCoord)),
+      });
+      handleFeature.set("analysisType", "bufferHandle");
+      activeAnalysisSource.addFeature(handleFeature);
+      activeBufferCenterCoord = centerCoord;
+    } else {
+      activeBufferCenterCoord = null;
+    }
+  } else {
+    activeBufferCenterCoord = null;
   }
 }
 
@@ -2713,6 +2872,17 @@ export function renderBooleanOverlay(geojson: any): void {
 /** Clears all features from the buffer and analysis overlay layer. */
 export function clearBufferOverlay(): void {
   activeAnalysisSource?.clear();
+  activeBufferCenterCoord = null;
+  isDraggingBufferHandle = false;
+}
+
+/**
+ * Registers an interactive radius drag listener for dynamically resizing buffer overlays on the canvas.
+ */
+export function setBufferRadiusDragListener(
+  listener: ((newRadiusMeters: number, isFinal: boolean) => void) | null,
+): void {
+  activeBufferRadiusDragListener = listener;
 }
 
 
