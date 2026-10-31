@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Activity,
   ArrowUpDown,
   BarChart3,
   BookmarkPlus,
+  Check,
   CircleDot,
   Compass,
+  Copy,
   Crosshair,
   Download,
   Eraser,
@@ -18,6 +20,7 @@ import {
   Radio,
   Route,
   Search,
+  ShieldAlert,
   Ship,
 } from "lucide-react";
 import {
@@ -34,8 +37,10 @@ import { formatDistance, formatArea } from "../../lib/format";
 import {
   createGeodesicLineBuffer,
   createGeodesicPointBuffer,
+  createGeodesicPolygonBuffer,
   createGeodesicSectorBuffer,
   distanceToLineString,
+  geodesicDistanceAndBearing,
   isBearingInSector,
   spatialBufferQuery,
   type CorridorOptions,
@@ -62,6 +67,22 @@ import {
 type DistanceUnit = "m" | "km" | "NM" | "mi";
 type BufferSourceType = "point" | "measurement" | "selection";
 type RingMode = "single" | "multi";
+
+export interface IncursionRecord {
+  id: string;
+  targetId: string;
+  name: string;
+  type: "flight" | "vessel" | "earthquake";
+  distanceM: number;
+  bearingDeg: number;
+  ringBand?: number;
+  timestamp: number;
+  timeFormatted: string;
+  lon: number;
+  lat: number;
+  speedKnots?: number;
+  altitudeFt?: number;
+}
 
 const UNIT_MULTIPLIERS: Record<DistanceUnit, number> = {
   m: 1,
@@ -133,6 +154,12 @@ export function BufferPanel() {
   const [selectedHitLayer, setSelectedHitLayer] = useState<string>("all");
   const [hitSortOrder, setHitSortOrder] = useState<"distance-asc" | "distance-desc" | "azimuth" | "name">("distance-asc");
 
+  // Phase 5: Live Geofence Watchdog Mode (Perimeter Breach Alerts)
+  const [watchdogActive, setWatchdogActive] = useState<boolean>(false);
+  const [incursions, setIncursions] = useState<IncursionRecord[]>([]);
+  const [copiedIncursions, setCopiedIncursions] = useState<boolean>(false);
+  const knownBreachesRef = useRef<Set<string>>(new Set());
+
   // Current radius in active unit
   const displayRadius = radiusMeters / UNIT_MULTIPLIERS[unit];
 
@@ -150,7 +177,7 @@ export function BufferPanel() {
   };
 
   const handleRadiusInputChange = (value: number) => {
-    if (value > 0) {
+    if (value !== 0) {
       const nextMeters = value * UNIT_MULTIPLIERS[unit];
       setRadiusMeters(nextMeters);
       runQueryWithParams(
@@ -280,6 +307,203 @@ export function BufferPanel() {
     innerRadiusInput,
     corridorSide,
     corridorCap,
+    unit,
+  ]);
+
+  // Phase 5: Live Geofence Watchdog Engine
+  useEffect(() => {
+    if (!watchdogActive) return;
+
+    const evaluateWatchdog = () => {
+      let spine: [number, number][] | undefined = undefined;
+      let effectiveCenter = bufferCenter;
+
+      if (sourceType === "measurement" && hasMeasurementRoute) {
+        spine = drawnMeasurementCoords;
+        effectiveCenter = drawnMeasurementCoords[0];
+      } else if (sourceType === "selection" && selectedFeature) {
+        const geom = selectedFeature.geometry;
+        if (geom.type === "LineString") {
+          spine = geom.coordinates as [number, number][];
+          effectiveCenter = spine[0];
+        } else if (geom.type === "Polygon") {
+          const rings = geom.coordinates as [number, number][][];
+          spine = rings[0];
+          effectiveCenter = spine[0];
+        } else if (geom.type === "Point") {
+          effectiveCenter = geom.coordinates as [number, number];
+        }
+      }
+
+      if (!effectiveCenter && !spine) return;
+
+      const centerLon = effectiveCenter ? effectiveCenter[0] : 0;
+      const centerLat = effectiveCenter ? effectiveCenter[1] : 0;
+
+      const isSector = sourceType === "point" && shapeMode === "sector";
+      const innerMeters = isSector ? innerRadiusInput * UNIT_MULTIPLIERS[unit] : 0;
+      const totalRings = ringMode === "multi" ? Math.max(2, Math.min(5, ringCount)) : 1;
+      const maxSearchDistance = radiusMeters * totalRings;
+
+      const isPolygonSpine = !!(
+        spine &&
+        spine.length >= 4 &&
+        spine[0][0] === spine[spine.length - 1][0] &&
+        spine[0][1] === spine[spine.length - 1][1]
+      );
+
+      const telStore = useTelemetryStore.getState();
+      const currentBreached = new Set<string>();
+      const newIncursions: IncursionRecord[] = [];
+
+      const checkTrack = (
+        targetId: string,
+        name: string,
+        type: "flight" | "vessel" | "earthquake",
+        lon: number,
+        lat: number,
+        speedKnots?: number,
+        altitudeFt?: number,
+      ) => {
+        let distM = Infinity;
+        let bearing = 0;
+
+        if (spine && spine.length >= 2) {
+          const res = distanceToLineString([lon, lat], spine, corridorSide);
+          distM = res.minDistanceM;
+          bearing = res.bearingDeg;
+        } else {
+          const m = geodesicDistanceAndBearing(centerLon, centerLat, lon, lat);
+          distM = m.distanceM;
+          bearing = m.bearingDeg;
+        }
+
+        let inEnvelope = false;
+        if (isPolygonSpine && radiusMeters < 0) {
+          inEnvelope = distM <= Math.abs(radiusMeters);
+        } else if (isSector) {
+          inEnvelope =
+            distM >= innerMeters &&
+            distM <= maxSearchDistance &&
+            isBearingInSector(bearing, startAzimuth, endAzimuth);
+        } else {
+          inEnvelope = distM <= maxSearchDistance;
+        }
+
+        if (inEnvelope) {
+          currentBreached.add(targetId);
+
+          if (!knownBreachesRef.current.has(targetId)) {
+            let band: number | undefined;
+            if (ringMode === "multi") {
+              for (let b = 1; b <= totalRings; b++) {
+                if (distM <= b * radiusMeters) {
+                  band = b;
+                  break;
+                }
+              }
+            }
+
+            const now = Date.now();
+            const timeFormatted = new Date(now).toLocaleTimeString();
+            const inc: IncursionRecord = {
+              id: `${targetId}-${now}`,
+              targetId,
+              name,
+              type,
+              distanceM: Math.round(distM * 10) / 10,
+              bearingDeg: Math.round(bearing * 10) / 10,
+              ringBand: band,
+              timestamp: now,
+              timeFormatted,
+              lon,
+              lat,
+              speedKnots,
+              altitudeFt,
+            };
+            newIncursions.push(inc);
+            notify(`🚨 PERIMETER BREACH: ${type.toUpperCase()} "${name}" entered buffer zone (${formatDistance(distM)})`);
+          }
+        }
+      };
+
+      // 1. Flights
+      const activeFlights = telStore.displayedFlights ?? telStore.flights;
+      for (const flight of activeFlights) {
+        if (!flight.longitude || !flight.latitude) continue;
+        const fid = flight.callsign || flight.icao24;
+        checkTrack(
+          fid,
+          flight.callsign || flight.icao24,
+          "flight",
+          flight.longitude,
+          flight.latitude,
+          flight.velocityMps ? Math.round(flight.velocityMps * 1.94384) : undefined,
+          flight.altitudeMeters ? Math.round(flight.altitudeMeters * 3.28084) : undefined,
+        );
+      }
+
+      // 2. Vessels
+      const activeVessels = telStore.displayedVessels ?? telStore.vessels;
+      for (const vessel of activeVessels) {
+        if (!vessel.lon || !vessel.lat) continue;
+        const vid = String(vessel.mmsi || vessel.name);
+        checkTrack(
+          vid,
+          vessel.name || String(vessel.mmsi),
+          "vessel",
+          vessel.lon,
+          vessel.lat,
+          vessel.speedKnots,
+        );
+      }
+
+      // 3. Earthquakes
+      const activeQuakes = telStore.displayedEarthquakes ?? telStore.earthquakes;
+      for (const quake of activeQuakes) {
+        if (!quake.longitude || !quake.latitude) continue;
+        checkTrack(
+          quake.id,
+          `M${quake.magnitude.toFixed(1)} ${quake.place}`,
+          "earthquake",
+          quake.longitude,
+          quake.latitude,
+        );
+      }
+
+      if (newIncursions.length > 0) {
+        setIncursions((prev) => [...newIncursions, ...prev].slice(0, 100));
+      }
+
+      knownBreachesRef.current = currentBreached;
+    };
+
+    evaluateWatchdog();
+
+    const unsub = useTelemetryStore.subscribe(() => {
+      evaluateWatchdog();
+    });
+
+    const interval = setInterval(evaluateWatchdog, 2500);
+
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
+  }, [
+    watchdogActive,
+    bufferCenter,
+    drawnMeasurementCoords,
+    selectedFeature,
+    sourceType,
+    shapeMode,
+    startAzimuth,
+    endAzimuth,
+    innerRadiusInput,
+    corridorSide,
+    radiusMeters,
+    ringMode,
+    ringCount,
     unit,
   ]);
 
@@ -608,7 +832,14 @@ export function BufferPanel() {
       if (isMulti) {
         for (let i = 0; i < ringRadii.length; i++) {
           const r = ringRadii[i];
-          const ringGeo = spine && spine.length >= 2
+          const isPolygonSpine =
+            spine &&
+            spine.length >= 4 &&
+            spine[0][0] === spine[spine.length - 1][0] &&
+            spine[0][1] === spine[spine.length - 1][1];
+          const ringGeo = isPolygonSpine && spine
+            ? createGeodesicPolygonBuffer(spine, r)
+            : spine && spine.length >= 2
             ? createGeodesicLineBuffer(spine, r, corridorOptions)
             : isSector
             ? createGeodesicSectorBuffer(
@@ -1423,8 +1654,70 @@ export function BufferPanel() {
           </div>
         )}
 
+        {sourceType === "selection" && selectedFeature?.geometry?.type === "Polygon" && (
+          <div className="flex flex-col gap-1.5 rounded-[2px] border border-line bg-tint p-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-ink-muted font-medium">Polygon Buffer Mode:</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className={cx(
+                    "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium transition-colors",
+                    radiusMeters >= 0
+                      ? "bg-accent text-on-accent font-semibold border-accent"
+                      : "bg-solid text-ink-muted hover:text-ink border-line",
+                  )}
+                  onClick={() => {
+                    const nextVal = Math.abs(radiusMeters);
+                    setRadiusMeters(nextVal);
+                    runQueryWithParams(
+                      sourceType,
+                      ringMode,
+                      ringCount,
+                      nextVal,
+                      bufferCenter,
+                      selectedLayerId,
+                    );
+                  }}
+                >
+                  Expansion (+Buffer)
+                </button>
+                <button
+                  type="button"
+                  className={cx(
+                    "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium transition-colors",
+                    radiusMeters < 0
+                      ? "bg-accent text-on-accent font-semibold border-accent"
+                      : "bg-solid text-ink-muted hover:text-ink border-line",
+                  )}
+                  onClick={() => {
+                    const nextVal = -Math.abs(radiusMeters);
+                    setRadiusMeters(nextVal);
+                    runQueryWithParams(
+                      sourceType,
+                      ringMode,
+                      ringCount,
+                      nextVal,
+                      bufferCenter,
+                      selectedLayerId,
+                    );
+                  }}
+                >
+                  Setback (-Erosion)
+                </button>
+              </div>
+            </div>
+            {radiusMeters < 0 && (
+              <span className="text-[9px] text-accent font-mono">
+                Calculating interior setback zone (inward erosion clearance)
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Phase 3: Corridor Options Card when buffering a line or path */}
-        {(sourceType === "measurement" || sourceType === "selection") && (
+        {(sourceType === "measurement" ||
+          (sourceType === "selection" && selectedFeature?.geometry?.type !== "Polygon")) && (
           <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-ink-muted font-medium">Corridor Offset Side:</span>
@@ -1649,7 +1942,7 @@ export function BufferPanel() {
           <div className="mt-1 flex items-center gap-2">
             <input
               type="number"
-              min="1"
+              min={selectedFeature?.geometry?.type === "Polygon" ? "-500000" : "1"}
               max="500000"
               step={unit === "m" ? "100" : "0.5"}
               value={Number(displayRadius.toFixed(unit === "m" ? 0 : 2))}
@@ -1658,7 +1951,7 @@ export function BufferPanel() {
                 handleRadiusInputChange(val);
               }}
               className={FIELD_INPUT}
-              placeholder={`Radius in ${unit}`}
+              placeholder={radiusMeters < 0 ? `Setback erosion in ${unit}` : `Radius in ${unit}`}
             />
             <span className="shrink-0 text-[10.5px] font-mono text-ink-muted">
               {unit}
@@ -1751,6 +2044,180 @@ export function BufferPanel() {
             <Eraser size={12} />
             Clear Buffer
           </button>
+        </div>
+
+        {/* Phase 5: Tactical Geofence Watchdog Card */}
+        <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
+          <div className="flex items-center justify-between border-b border-line/60 pb-1.5">
+            <div className="flex items-center gap-1.5">
+              <ShieldAlert
+                size={13}
+                className={watchdogActive ? "text-red-400 animate-pulse" : "text-ink-muted"}
+              />
+              <span className="text-[10.5px] font-semibold text-ink">
+                Geofence Watchdog
+              </span>
+              {watchdogActive && (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              className={cx(
+                "px-2 py-0.5 text-[9px] font-mono rounded-[2px] border font-semibold transition-colors flex items-center gap-1",
+                watchdogActive
+                  ? "bg-red-500/15 text-red-400 border-red-500/40"
+                  : "bg-solid text-ink-muted hover:text-ink border-line",
+              )}
+              onClick={() => {
+                const nextState = !watchdogActive;
+                setWatchdogActive(nextState);
+                if (nextState) {
+                  notify("🚨 Tactical Geofence Watchdog ACTIVE: Monitoring live perimeter breaches");
+                  if (!bufferResult) {
+                    runQueryWithParams(sourceType, ringMode, ringCount, radiusMeters, bufferCenter, selectedLayerId);
+                  }
+                } else {
+                  notify("Geofence Watchdog returned to standby");
+                }
+              }}
+            >
+              {watchdogActive ? "ACTIVE" : "STANDBY"}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between text-[9px] font-mono text-ink-muted">
+            <span>
+              {watchdogActive
+                ? "Live Monitoring: ADS-B, AIS, Seismic"
+                : "Continuous perimeter breach detection"}
+            </span>
+            <span
+              className={cx(
+                "font-semibold",
+                incursions.length > 0 ? "text-red-400" : "text-ink-muted",
+              )}
+            >
+              {incursions.length} Incursion{incursions.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {watchdogActive && incursions.length > 0 && (
+            <div className="flex items-center justify-between pt-1 border-t border-line/40">
+              <span className="text-[9.5px] font-semibold text-ink">Recent Breach Feed</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="px-1.5 py-0.5 text-[8.5px] font-mono text-ink-muted hover:text-ink bg-solid rounded-[1px] border border-line flex items-center gap-0.5 transition-colors"
+                  title="Copy chronological incursion report to clipboard"
+                  onClick={() => {
+                    const report = incursions
+                      .map(
+                        (inc, idx) =>
+                          `[${inc.timeFormatted}] #${idx + 1} ${inc.type.toUpperCase()} ${inc.name} (ID: ${inc.targetId}) - Dist: ${formatDistance(inc.distanceM)} @ ${inc.bearingDeg}° ${bearingToDirection(inc.bearingDeg)} (Coords: ${inc.lat.toFixed(4)}, ${inc.lon.toFixed(4)})`,
+                      )
+                      .join("\n");
+                    navigator.clipboard.writeText(
+                      `=== TACTICAL GEOFENCE BREACH REPORT ===\nGenerated: ${new Date().toISOString()}\nTotal Incursions: ${incursions.length}\n\n${report}`,
+                    );
+                    setCopiedIncursions(true);
+                    setTimeout(() => setCopiedIncursions(false), 2000);
+                    notify("Copied incursion report to clipboard");
+                  }}
+                >
+                  {copiedIncursions ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                  {copiedIncursions ? "Copied" : "Copy Log"}
+                </button>
+                <button
+                  type="button"
+                  className="px-1.5 py-0.5 text-[8.5px] font-mono text-ink-muted hover:text-ink bg-solid rounded-[1px] border border-line transition-colors"
+                  onClick={() => {
+                    setIncursions([]);
+                    knownBreachesRef.current.clear();
+                    notify("Cleared incursion history");
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Incursion Log Feed */}
+          {watchdogActive && incursions.length > 0 && (
+            <div className="max-h-48 overflow-y-auto flex flex-col gap-1 pr-0.5">
+              {incursions.map((inc) => (
+                <div
+                  key={inc.id}
+                  className="flex items-center justify-between rounded-[2px] border border-red-500/20 bg-solid p-1.5 hover:border-red-500/40 transition-colors"
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {inc.type === "flight" ? (
+                      <Plane size={11} className="text-sky-400 shrink-0" />
+                    ) : inc.type === "vessel" ? (
+                      <Ship size={11} className="text-indigo-400 shrink-0" />
+                    ) : (
+                      <Activity size={11} className="text-amber-400 shrink-0" />
+                    )}
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-semibold text-ink truncate">
+                          {inc.name}
+                        </span>
+                        {inc.ringBand != null && (
+                          <span className="text-[8px] font-mono px-1 py-0.2 bg-tint border border-line rounded-[1px] text-accent">
+                            R{inc.ringBand}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[8.5px] font-mono text-ink-muted">
+                        {inc.timeFormatted} · {formatDistance(inc.distanceM)} ({inc.bearingDeg.toFixed(0)}° {bearingToDirection(inc.bearingDeg)})
+                        {inc.speedKnots != null ? ` · ${inc.speedKnots} kts` : ""}
+                        {inc.altitudeFt != null ? ` · ${inc.altitudeFt} ft` : ""}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="shrink-0 ml-1.5 px-1.5 py-0.5 text-[8.5px] font-mono rounded-[2px] border border-line bg-tint text-ink-muted hover:text-ink hover:border-line-strong flex items-center gap-0.5 transition-colors"
+                    title="Track & zoom to target on map"
+                    onClick={() => {
+                      flyToCoordinate(inc.lon, inc.lat, 14);
+                      const tStore = useTelemetryStore.getState();
+                      if (inc.type === "flight") {
+                        const fl = tStore.flights.find(
+                          (f) => (f.callsign || f.icao24) === inc.targetId,
+                        );
+                        if (fl) tStore.setSelectedTarget({ type: "flight", data: fl });
+                      } else if (inc.type === "vessel") {
+                        const vs = tStore.vessels.find(
+                          (v) => (v.mmsi || v.name) === inc.targetId,
+                        );
+                        if (vs) tStore.setSelectedTarget({ type: "vessel", data: vs });
+                      } else if (inc.type === "earthquake") {
+                        const eq = tStore.earthquakes.find((e) => e.id === inc.targetId);
+                        if (eq) tStore.setSelectedTarget({ type: "earthquake", data: eq });
+                      }
+                      notify(`Tracking ${inc.name}`);
+                    }}
+                  >
+                    <Crosshair size={9} />
+                    Track
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {watchdogActive && incursions.length === 0 && (
+            <div className="py-2 text-center text-[9.5px] font-mono text-ink-muted border border-dashed border-line rounded-[2px]">
+              🛡️ Geofence perimeter secure · 0 incursions detected
+            </div>
+          )}
         </div>
 
         {/* Phase 4: Spatial Coverage & Density KPI Card */}

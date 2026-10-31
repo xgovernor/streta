@@ -2,10 +2,13 @@ import { describe, expect, it } from "bun:test";
 import {
   computeElevationProfile,
   createGeodesicLineBuffer,
+  createGeodesicPointBuffer,
+  createGeodesicPolygonBuffer,
   createGeodesicSectorBuffer,
   distanceToLineString,
   isBearingInSector,
   measureGeodesic,
+  normalizeAntimeridianPolygon,
   spatialBufferQuery,
 } from "./tiledBackend";
 import type { DatasetLayer } from "./types";
@@ -427,5 +430,78 @@ describe("Phase 3 Geodesic Analysis Engine", () => {
     expect(result.area_sq_km!).toBeGreaterThan(75);
     expect(result.area_sq_km!).toBeLessThan(82);
     expect(result.buffer_geojson.properties.area_sq_km).toBeCloseTo(result.area_sq_km!, 2);
+  });
+
+  it("normalizes antimeridian-crossing buffer circles and corridors into valid MultiPolygon GeoJSON", () => {
+    // Center at 179.5 deg Lon, 0 deg Lat. Radius 100,000 meters (~0.9 degrees).
+    // Buffer crosses 180 deg into -179.6 deg.
+    const pointBuffer = createGeodesicPointBuffer(179.5, 0, 100_000);
+    expect(pointBuffer.geometry.type).toBe("MultiPolygon");
+    expect(pointBuffer.geometry.coordinates).toHaveLength(2);
+
+    const [eastPoly, westPoly] = pointBuffer.geometry.coordinates;
+    // East ring should stay >= 0 (and touch +180)
+    for (const pt of eastPoly[0]) {
+      expect(pt[0]).toBeGreaterThanOrEqual(0);
+    }
+    // West ring should stay <= 0 (and touch -180)
+    for (const pt of westPoly[0]) {
+      expect(pt[0]).toBeLessThanOrEqual(0);
+    }
+
+    // A corridor crossing the antimeridian
+    const route: [number, number][] = [
+      [179.0, 10.0],
+      [-179.0, 10.0],
+    ];
+    const corridorBuffer = createGeodesicLineBuffer(route, 20_000);
+    expect(corridorBuffer.geometry.type).toBe("MultiPolygon");
+    expect(corridorBuffer.geometry.coordinates).toHaveLength(2);
+
+    // Direct ring normalization test
+    const rawRing: [number, number][] = [
+      [179.0, 0.0],
+      [-179.0, 0.0],
+      [-179.0, 1.0],
+      [179.0, 1.0],
+      [179.0, 0.0],
+    ];
+    const normalized = normalizeAntimeridianPolygon(rawRing);
+    expect(normalized.type).toBe("MultiPolygon");
+    expect(normalized.coordinates).toHaveLength(2);
+  });
+
+  it("handles outward polygon buffering and inward setbacks (negative erosion)", () => {
+    // 10 km x 10 km square centered at (0, 0)
+    // ~ 0.09 degrees per 10 km
+    const square: [number, number][] = [
+      [-0.05, -0.05],
+      [0.05, -0.05],
+      [0.05, 0.05],
+      [-0.05, 0.05],
+      [-0.05, -0.05],
+    ];
+
+    // 1. Outward buffer (+2000m)
+    const expanded = createGeodesicPolygonBuffer(square, 2000);
+    expect(expanded).not.toBeNull();
+    expect(expanded.properties.is_setback).toBe(false);
+    expect(expanded.properties.is_collapsed).toBe(false);
+    // Outer corner should be further away from center
+    expect(expanded.geometry.coordinates[0][0][0]).toBeLessThan(-0.05);
+
+    // 2. Inward setback (-2000m)
+    const eroded = createGeodesicPolygonBuffer(square, -2000);
+    expect(eroded).not.toBeNull();
+    expect(eroded.properties.is_setback).toBe(true);
+    expect(eroded.properties.is_collapsed).toBe(false);
+    // Inner corner should move inward toward 0
+    expect(eroded.geometry.coordinates[0][0][0]).toBeGreaterThan(-0.05);
+    expect(eroded.geometry.coordinates[0][0][0]).toBeLessThan(0);
+
+    // 3. Catastrophic setback that collapses the polygon (-50,000m)
+    const collapsed = createGeodesicPolygonBuffer(square, -50000);
+    expect(collapsed).not.toBeNull();
+    expect(collapsed.properties.is_collapsed).toBe(true);
   });
 });
