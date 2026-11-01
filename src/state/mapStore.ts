@@ -35,6 +35,12 @@ export interface MeasureContextMenuState {
   vertexCount: number;
 }
 
+export interface BookmarkContextMenuState {
+  x: number;
+  y: number;
+  bookmarkId: string;
+}
+
 interface MapState {
   ready: boolean;
   camera: CameraState;
@@ -50,6 +56,8 @@ interface MapState {
   activeFeature: MapPopup | null;
   /** Active measurement context menu, if opened via right-click on a line. */
   measureContextMenu: MeasureContextMenuState | null;
+  /** Active bookmark context menu, if opened via right-click on a note pin. */
+  bookmarkContextMenu: BookmarkContextMenuState | null;
   /** Persisted elevation profile result sampled along a path. */
   elevationResult: ElevationProfileResult | null;
   /** Specific measurement feature ID being profiled. */
@@ -58,6 +66,7 @@ interface MapState {
   setPopup: (popup: MapPopup | null) => void;
   setActiveFeature: (feature: MapPopup | null) => void;
   setMeasureContextMenu: (menu: MeasureContextMenuState | null) => void;
+  setBookmarkContextMenu: (menu: BookmarkContextMenuState | null) => void;
   setElevationResult: (result: ElevationProfileResult | null) => void;
   setElevationSelectedFeatureId: (id: string | null) => void;
   setCamera: (camera: CameraState) => void;
@@ -83,6 +92,7 @@ export const useMapStore = create<MapState>((set) => ({
   popup: null,
   activeFeature: null,
   measureContextMenu: null,
+  bookmarkContextMenu: null,
   elevationResult: null,
   elevationSelectedFeatureId: null,
 
@@ -90,6 +100,7 @@ export const useMapStore = create<MapState>((set) => ({
   setPopup: (popup) => set({ popup }),
   setActiveFeature: (activeFeature) => set({ activeFeature }),
   setMeasureContextMenu: (measureContextMenu) => set({ measureContextMenu }),
+  setBookmarkContextMenu: (bookmarkContextMenu) => set({ bookmarkContextMenu }),
   setElevationResult: (elevationResult) => set({ elevationResult }),
   setElevationSelectedFeatureId: (elevationSelectedFeatureId) => set({ elevationSelectedFeatureId }),
   setCamera: (camera) => set({ camera }),

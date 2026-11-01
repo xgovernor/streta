@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { MapCanvas } from "./map/MapCanvas";
-import { resetNorth, zoomBy } from "./map/mapController";
+import { CesiumCanvas } from "./map/CesiumCanvas";
+import { applyCamera, resetNorth, zoomBy } from "./map/mapController";
 import { CommandBar } from "./components/CommandBar";
 import { MapAttribution } from "./components/MapAttribution";
 import { FeaturePopup } from "./components/FeaturePopup";
@@ -14,7 +15,9 @@ import { FloatingCanvasControls } from "./components/FloatingCanvasControls";
 import { RegionSnipOverlay } from "./components/RegionSnipOverlay";
 import { HorizontalBasemapTray } from "./components/panels/HorizontalBasemapTray";
 import { MeasureContextMenu } from "./components/MeasureContextMenu";
+import { BookmarkContextMenu } from "./components/BookmarkContextMenu";
 import { useProjectStore } from "./state/projectStore";
+import { useMapStore } from "./state/mapStore";
 import { useUiStore } from "./state/uiStore";
 import type { PanelId } from "./lib/gis/types";
 
@@ -28,10 +31,21 @@ const PANEL_KEYS: Record<string, PanelId> = {
 function App() {
   const theme = useUiStore((state) => state.theme);
   const timelineOpen = useUiStore((state) => state.timelineOpen);
+  const viewMode = useUiStore((state) => state.viewMode);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  /**
+   * The shared camera store is the handoff point between renderers: while
+   * Cesium owns the screen it keeps the store up to date, and returning to 2D
+   * applies the last 3D pose back onto the OpenLayers view.
+   */
+  useEffect(() => {
+    if (viewMode !== "2d") return;
+    applyCamera(useMapStore.getState().camera);
+  }, [viewMode]);
 
   /** The bottom dock raises the attribute table and attribution above it. */
   useEffect(() => {
@@ -123,6 +137,12 @@ function App() {
 
       if (event.key.toLowerCase() === "m") {
         event.preventDefault();
+        // OL Draw interactions get no pointer events from Cesium: never arm
+        // an invisible tool.
+        if (ui.viewMode === "3d") {
+          ui.notify("Measuring works on the 2D map — switch back to 2D");
+          return;
+        }
         const currentMode = useProjectStore.getState().measureMode;
         const nextMode = currentMode === "distance" ? "off" : "distance";
         useProjectStore.getState().setMeasureMode(nextMode);
@@ -139,6 +159,10 @@ function App() {
 
       if (event.key.toLowerCase() === "a") {
         event.preventDefault();
+        if (ui.viewMode === "3d") {
+          ui.notify("Area measurement works on the 2D map — switch back to 2D");
+          return;
+        }
         const currentMode = useProjectStore.getState().measureMode;
         const nextMode = currentMode === "area" ? "off" : "area";
         useProjectStore.getState().setMeasureMode(nextMode);
@@ -168,6 +192,7 @@ function App() {
   return (
     <main className="fixed inset-0 isolate overflow-hidden bg-shell">
       <MapCanvas />
+      {viewMode === "3d" && <CesiumCanvas />}
       <div className="pointer-events-none absolute inset-0 z-10 [contain:layout_paint_style]">
         <CommandBar />
         <LeftRibbon />
@@ -176,6 +201,7 @@ function App() {
         <FeaturePopup />
         <TelemetryHoverPopup />
         <MeasureContextMenu />
+        <BookmarkContextMenu />
         <PanelHost />
         <MapAttribution />
         <StatusBar />

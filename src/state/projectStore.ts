@@ -13,20 +13,36 @@ import {
   uniqueLayerName,
 } from "../lib/gis/layers";
 import { GEOGRAPHIC_CRS } from "../lib/gis/crs";
-import type { Bookmark, DatasetLayer, Dataset, LayerFilter, LayerStyle, MeasureSummary, Selection } from "../lib/gis/types";
+import type { Bookmark, BookmarkTier, DatasetLayer, Dataset, LayerFilter, LayerStyle, MeasureSummary, Selection } from "../lib/gis/types";
 import type { ProjectStore, RecentEntry } from "./projectStore.types";
 import type { FeatureRecord } from "../lib/gis/types";
 
 const BOOKMARKS_STORAGE_KEY = "strata.bookmarks";
+const USER_BOOKMARKS_STORAGE_KEY = "strata.user_bookmarks";
+
+function loadStoredUserBookmarks(): Bookmark[] {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(USER_BOOKMARKS_STORAGE_KEY) : null;
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map((b) => ({ ...b, tier: "user" as const })) : [];
+  } catch {
+    return [];
+  }
+}
 
 function loadStoredBookmarks(): Bookmark[] {
   try {
     const raw = typeof localStorage !== "undefined" ? localStorage.getItem(BOOKMARKS_STORAGE_KEY) : null;
-    if (!raw) return [];
+    if (!raw) return loadStoredUserBookmarks();
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return loadStoredUserBookmarks();
+    return parsed.map((b) => ({
+      ...b,
+      tier: b.tier ?? ("project" as const),
+    }));
   } catch {
-    return [];
+    return loadStoredUserBookmarks();
   }
 }
 
@@ -34,6 +50,8 @@ function saveStoredBookmarks(bookmarks: Bookmark[]) {
   try {
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(bookmarks));
+      const userTier = bookmarks.filter((b) => b.tier === "user");
+      localStorage.setItem(USER_BOOKMARKS_STORAGE_KEY, JSON.stringify(userTier));
     }
   } catch {}
 }
@@ -55,13 +73,15 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
   addBookmark(input) {
     const newBookmark: Bookmark = {
       ...input,
+      tier: input.tier ?? "project",
       id: "bm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
       createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
     set((state) => {
       const next = [newBookmark, ...state.bookmarks];
       saveStoredBookmarks(next);
-      return { bookmarks: next };
+      return { bookmarks: next, dirty: true };
     });
     return newBookmark;
   },
@@ -70,15 +90,24 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
     set((state) => {
       const next = state.bookmarks.filter((b) => b.id !== id);
       saveStoredBookmarks(next);
-      return { bookmarks: next };
+      return { bookmarks: next, dirty: true };
     });
   },
 
   updateBookmark(id, updates) {
     set((state) => {
-      const next = state.bookmarks.map((b) => (b.id === id ? { ...b, ...updates } : b));
+      const next = state.bookmarks.map((b) =>
+        b.id === id ? { ...b, ...updates, updatedAt: Date.now() } : b,
+      );
       saveStoredBookmarks(next);
-      return { bookmarks: next };
+      return { bookmarks: next, dirty: true };
+    });
+  },
+
+  setBookmarks(bookmarks) {
+    set(() => {
+      saveStoredBookmarks(bookmarks);
+      return { bookmarks, dirty: true };
     });
   },
 
@@ -99,6 +128,7 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
       dirty: false,
       hydrationWarnings: [],
       recent: [],
+      bookmarks: loadStoredUserBookmarks(),
     });
   },
 
@@ -403,12 +433,28 @@ export const useProjectStore = create<ProjectStore>()((set, get) => ({
     set({ dirty: false });
   },
 
-  loadProject(project: { name: string; path: string | null; datasets: Dataset[]; layers: DatasetLayer[] }) {
+  loadProject(project: {
+    name: string;
+    path: string | null;
+    datasets: Dataset[];
+    layers: DatasetLayer[];
+    bookmarks?: Bookmark[];
+  }) {
+    const userBookmarks = loadStoredUserBookmarks();
+    const projectBookmarks = (project.bookmarks ?? []).map((b) => ({
+      ...b,
+      tier: (b.tier ?? "project") as BookmarkTier,
+    }));
+    // User bookmarks stay available, project bookmarks replace old project bookmarks
+    const mergedBookmarks = [...projectBookmarks, ...userBookmarks];
+    saveStoredBookmarks(mergedBookmarks);
+
     set({
       projectName: project.name,
       projectPath: project.path,
       datasets: project.datasets,
       layers: project.layers,
+      bookmarks: mergedBookmarks,
       selection: null,
       measureMode: "off",
       measureSummary: null,

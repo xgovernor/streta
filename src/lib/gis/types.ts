@@ -27,15 +27,30 @@ export type PanelId =
   | "telemetry"
   | "bookmarks";
 
+export type BookmarkTier = "project" | "user";
+export type BookmarkPriority = "routine" | "priority" | "immediate" | "flash";
+export type BookmarkStatus = "active" | "pending" | "resolved" | "archived";
+
 export interface Bookmark {
   id: string;
+  tier?: BookmarkTier;
   title: string;
   notes?: string;
   lon: number;
   lat: number;
   zoom: number;
+  rotation?: number;
+  pitch?: number;
+  color?: string;
+  icon?: string;
+  category?: string;
+  priority?: BookmarkPriority;
+  status?: BookmarkStatus;
+  targetFeatureId?: string;
+  layerVisibilitySnapshot?: Record<string, boolean>;
   tags?: string[];
   createdAt: number;
+  updatedAt?: number;
 }
 
 export type ThemeMode = "dark" | "light";

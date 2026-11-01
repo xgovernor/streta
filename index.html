@@ -10,6 +10,10 @@
       content="Strata, a compact geospatial workspace built with OpenLayers, React, and Tauri."
     />
     <title>Strata · Geospatial Workspace</title>
+    <script>
+      // Cesium loads workers and static assets relative to this base URL.
+      window.CESIUM_BASE_URL = "/cesium/";
+    </script>
   </head>
 
   <body>

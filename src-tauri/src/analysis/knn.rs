@@ -22,6 +22,10 @@ pub struct KnnNeighbor {
     pub surface_distance_m: f64,
     /// Direct 3D line-of-sight Euclidean distance in meters
     pub euclidean_distance_3d_m: f64,
+    /// Initial geodesic forward azimuth bearing from query origin to neighbor (0° to 360°)
+    pub bearing_deg: f64,
+    /// 16-point cardinal compass direction (e.g. N, NE, ENE, SSW)
+    pub compass_direction: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,13 +60,41 @@ pub fn chord_to_surface_distance(chord_dist: f64) -> f64 {
     EARTH_RADIUS_M * central_angle
 }
 
+/// Computes forward azimuth bearing from (lon1, lat1) to (lon2, lat2) in degrees [0, 360).
+#[inline]
+pub fn calculate_forward_bearing(lon1: f64, lat1: f64, lon2: f64, lat2: f64) -> f64 {
+    let phi1 = lat1.to_radians();
+    let phi2 = lat2.to_radians();
+    let delta_lambda = (lon2 - lon1).to_radians();
+
+    let y = delta_lambda.sin() * phi2.cos();
+    let x = phi1.cos() * phi2.sin() - phi1.sin() * phi2.cos() * delta_lambda.cos();
+    let bearing_rad = y.atan2(x);
+    let bearing_deg = bearing_rad.to_degrees();
+    (bearing_deg % 360.0 + 360.0) % 360.0
+}
+
+/// Converts a 0°-360° azimuth bearing into a 16-point cardinal compass string (e.g. "N", "NNE", "NE").
+#[inline]
+pub fn bearing_to_compass_direction(bearing_deg: f64) -> &'static str {
+    const DIRECTIONS: [&str; 16] = [
+        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+    ];
+    let normalized = (bearing_deg % 360.0 + 360.0) % 360.0;
+    let idx = ((normalized / 22.5).round() as usize) % 16;
+    DIRECTIONS[idx]
+}
+
 /// Performs SIMD-accelerated k-Nearest-Neighbor spatial query across a collection of geodetic points.
+/// Optionally filters neighbors exceeding `max_distance_meters`.
 pub fn query_spatial_knn(
     points: &[SpatialPointInput],
     query_lon: f64,
     query_lat: f64,
     query_elevation_m: Option<f64>,
     k: usize,
+    max_distance_meters: Option<f64>,
 ) -> Result<KnnQueryResult, String> {
     if points.is_empty() {
         return Ok(KnnQueryResult {
@@ -106,12 +138,24 @@ pub fn query_spatial_knn(
         let chord_dist = item.distance.max(0.0).sqrt();
         let surface_dist = chord_to_surface_distance(chord_dist);
 
+        // Apply search radius cutoff if specified
+        if let Some(max_dist) = max_distance_meters {
+            if surface_dist > max_dist {
+                continue;
+            }
+        }
+
+        let bearing = calculate_forward_bearing(query_lon, query_lat, pt.lon, pt.lat);
+        let compass = bearing_to_compass_direction(bearing).to_string();
+
         neighbors.push(KnnNeighbor {
             id: pt.id.clone(),
             lon: pt.lon,
             lat: pt.lat,
             surface_distance_m: (surface_dist * 10.0).round() / 10.0,
             euclidean_distance_3d_m: (chord_dist * 10.0).round() / 10.0,
+            bearing_deg: (bearing * 10.0).round() / 10.0,
+            compass_direction: compass,
         });
     }
 
@@ -168,7 +212,7 @@ mod tests {
         ];
 
         // Query point near Brussels (closer to Paris and London than Tokyo)
-        let res = query_spatial_knn(&cities, 4.3517, 50.8503, None, 3).expect("kNN query should succeed");
+        let res = query_spatial_knn(&cities, 4.3517, 50.8503, None, 3, None).expect("kNN query should succeed");
         assert_eq!(res.neighbors.len(), 3);
 
         // Nearest should be Paris or London, definitely not Tokyo or New York
@@ -182,5 +226,42 @@ mod tests {
 
         // Surface distance from Brussels to Paris is ~264 km
         assert!(top1.surface_distance_m < 500_000.0);
+        assert!(!top1.compass_direction.is_empty());
+        assert!(top1.bearing_deg >= 0.0 && top1.bearing_deg < 360.0);
+
+        // Distance cutoff test: if max_distance_meters is 300 km (300,000m), London and Paris pass, but Berlin (~650 km) is excluded
+        let res_filtered = query_spatial_knn(&cities, 4.3517, 50.8503, None, 5, Some(350_000.0)).expect("Filtered query should succeed");
+        assert!(res_filtered.neighbors.len() <= 2);
+        for n in &res_filtered.neighbors {
+            assert!(n.surface_distance_m <= 350_000.0);
+        }
+    }
+
+    #[test]
+    fn test_bearing_and_compass() {
+        // Query at Equator Prime Meridian (0.0, 0.0)
+        // Due North: (0.0, 10.0) -> bearing ~ 0 deg, "N"
+        let b_north = calculate_forward_bearing(0.0, 0.0, 0.0, 10.0);
+        assert!((b_north - 0.0).abs() < 1.0 || (b_north - 360.0).abs() < 1.0);
+        assert_eq!(bearing_to_compass_direction(b_north), "N");
+
+        // Due East: (10.0, 0.0) -> bearing ~ 90 deg, "E"
+        let b_east = calculate_forward_bearing(0.0, 0.0, 10.0, 0.0);
+        assert!((b_east - 90.0).abs() < 1.0);
+        assert_eq!(bearing_to_compass_direction(b_east), "E");
+
+        // Due South: (0.0, -10.0) -> bearing ~ 180 deg, "S"
+        let b_south = calculate_forward_bearing(0.0, 0.0, 0.0, -10.0);
+        assert!((b_south - 180.0).abs() < 1.0);
+        assert_eq!(bearing_to_compass_direction(b_south), "S");
+
+        // Due West: (-10.0, 0.0) -> bearing ~ 270 deg, "W"
+        let b_west = calculate_forward_bearing(0.0, 0.0, -10.0, 0.0);
+        assert!((b_west - 270.0).abs() < 1.0);
+        assert_eq!(bearing_to_compass_direction(b_west), "W");
+
+        // Northeast: (10.0, 10.0) -> bearing ~ 45 deg, "NE"
+        let b_ne = calculate_forward_bearing(0.0, 0.0, 10.0, 10.0);
+        assert_eq!(bearing_to_compass_direction(b_ne), "NE");
     }
 }

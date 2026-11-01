@@ -126,6 +126,8 @@ export function greatCircleSegments(
   return segments;
 }
 
+export const interpolateGreatCircleArc = greatCircleSegments;
+
 export interface VoyageRouteInfo {
   /** Uppercase display label of the resolved destination port. */
   label: string;

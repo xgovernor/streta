@@ -39,6 +39,7 @@ import {
 
 import type {
   BasemapId,
+  Bookmark,
   CameraState,
   CoordinateFormat,
   Dataset,
@@ -116,6 +117,7 @@ export interface ProjectDocument {
   crsDefinitions: CrsDefinitionRecord[];
   datasets: Dataset[];
   layers: DatasetLayer[];
+  bookmarks?: Bookmark[];
 }
 
 export interface ImportOutcome {
@@ -161,6 +163,7 @@ export function buildProjectDocument(): ProjectDocument {
     crsDefinitions: [],
     datasets: store.datasets,
     layers: store.layers,
+    bookmarks: store.bookmarks.filter((b) => b.tier !== "user"),
   };
 }
 
@@ -250,6 +253,7 @@ export function parseProject(text: string): {
       crsDefinitions: document.crsDefinitions ?? [],
       datasets: stored.datasets,
       layers: stored.layers,
+      bookmarks: Array.isArray(document.bookmarks) ? (document.bookmarks as Bookmark[]) : undefined,
     },
     datasets: stored.datasets,
     layers: stored.layers,
@@ -300,6 +304,7 @@ export function applyProjectText(
     path,
     datasets,
     layers,
+    bookmarks: project.bookmarks,
   });
 
   ui.setBasemap(project.preferences.basemap);

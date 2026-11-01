@@ -2,9 +2,11 @@ import { useState } from "react";
 import {
   Compass,
   Frame,
+  Globe2,
   Layers,
   Loader2,
   LocateFixed,
+  Map as MapIcon,
   Minus,
   Plus,
 } from "lucide-react";
@@ -28,6 +30,8 @@ export function FloatingCanvasControls() {
   const basemapTrayOpen = useUiStore((state) => state.basemapTrayOpen);
   const toggleBasemapTray = useUiStore((state) => state.toggleBasemapTray);
   const rightPanel = useUiStore((state) => state.rightPanel);
+  const viewMode = useUiStore((state) => state.viewMode);
+  const setViewMode = useUiStore((state) => state.setViewMode);
   const [locating, setLocating] = useState(false);
 
   const locate = async () => {
@@ -65,6 +69,27 @@ export function FloatingCanvasControls() {
           : "bottom-[calc(var(--footer-h)+12px)]"
       )}
     >
+      {/* 2D / 3D renderer toggle */}
+      <button
+        type="button"
+        onClick={() => setViewMode(viewMode === "3d" ? "2d" : "3d")}
+        className={cx(
+          FLOATING_BTN,
+          viewMode === "3d" && "border-cyan-400 bg-cyan-950/40 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+        )}
+        title={viewMode === "3d" ? "Switch to 2D map" : "Switch to 3D globe"}
+        aria-label="Toggle 2D and 3D map"
+        aria-pressed={viewMode === "3d"}
+      >
+        {viewMode === "3d" ? (
+          <MapIcon size={15} strokeWidth={2} />
+        ) : (
+          <Globe2 size={15} strokeWidth={2} />
+        )}
+      </button>
+
+      <div className="my-0.5 h-px w-5 bg-line/80" />
+
       {/* Layers & Basemap Tray Toggle */}
       <button
         type="button"

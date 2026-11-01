@@ -1,16 +1,34 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { viteStaticCopy } from "vite-plugin-static-copy";
 import process from "node:process";
 
 const host = process.env.TAURI_DEV_HOST;
+
+const CESIUM_ASSETS = [
+  "Assets",
+  "Widgets",
+  "Workers",
+  "ThirdParty",
+].map((name) => ({
+  src: `node_modules/cesium/Build/Cesium/${name}`,
+  dest: "cesium",
+  // Strip node_modules/cesium/Build/Cesium so the asset lands at
+  // dist/cesium/Assets/... rather than dist/cesium/node_modules/...
+  rename: { stripBase: 4 },
+}));
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      viteStaticCopy({ targets: CESIUM_ASSETS }),
+    ],
     define: {
       "import.meta.env.GOOGLE_MAPS_API_KEY": JSON.stringify(env.GOOGLE_MAPS_API_KEY || ""),
       "import.meta.env.CESIUM_ION_TOKEN": JSON.stringify(env.CESIUM_ION_TOKEN || ""),

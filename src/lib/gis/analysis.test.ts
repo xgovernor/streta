@@ -1,15 +1,18 @@
 import { describe, expect, it } from "bun:test";
 import {
+  bearingToCompassDirection,
   computeElevationProfile,
   createGeodesicLineBuffer,
   createGeodesicPointBuffer,
   createGeodesicPolygonBuffer,
   createGeodesicSectorBuffer,
   distanceToLineString,
+  extractFeatureCentroid,
   isBearingInSector,
   measureGeodesic,
   normalizeAntimeridianPolygon,
   spatialBufferQuery,
+  spatialKnnQuery,
 } from "./tiledBackend";
 import type { DatasetLayer } from "./types";
 
@@ -503,5 +506,106 @@ describe("Phase 3 Geodesic Analysis Engine", () => {
     const collapsed = createGeodesicPolygonBuffer(square, -50000);
     expect(collapsed).not.toBeNull();
     expect(collapsed.properties.is_collapsed).toBe(true);
+  });
+
+  it("calculates k-NN nearest neighbors with forward bearings and 16-point compass directions", async () => {
+    const candidates = [
+      { id: "NorthPoint", lon: 0.0, lat: 1.0 },
+      { id: "EastPoint", lon: 1.0, lat: 0.0 },
+      { id: "SouthPoint", lon: 0.0, lat: -1.0 },
+      { id: "WestPoint", lon: -1.0, lat: 0.0 },
+      { id: "FarAway", lon: 10.0, lat: 10.0 },
+    ];
+
+    // Query from origin (0, 0)
+    const res = await spatialKnnQuery(candidates, 0.0, 0.0, undefined, 4);
+    expect(res).not.toBeNull();
+    if (!res) return;
+
+    expect(res.neighbors).toHaveLength(4);
+    expect(res.neighbors.map((n) => n.id)).not.toContain("FarAway");
+
+    // Check NorthPoint
+    const north = res.neighbors.find((n) => n.id === "NorthPoint");
+    expect(north).toBeDefined();
+    expect(north!.compass_direction).toBe("N");
+    expect(Math.abs(north!.bearing_deg)).toBeLessThan(1.0);
+
+    // Check EastPoint
+    const east = res.neighbors.find((n) => n.id === "EastPoint");
+    expect(east).toBeDefined();
+    expect(east!.compass_direction).toBe("E");
+    expect(Math.abs(east!.bearing_deg - 90)).toBeLessThan(1.0);
+
+    // Check SouthPoint
+    const south = res.neighbors.find((n) => n.id === "SouthPoint");
+    expect(south).toBeDefined();
+    expect(south!.compass_direction).toBe("S");
+    expect(Math.abs(south!.bearing_deg - 180)).toBeLessThan(1.0);
+
+    // Check WestPoint
+    const west = res.neighbors.find((n) => n.id === "WestPoint");
+    expect(west).toBeDefined();
+    expect(west!.compass_direction).toBe("W");
+    expect(Math.abs(west!.bearing_deg - 270)).toBeLessThan(1.0);
+  });
+
+  it("applies maxDistanceMeters cutoff radius filtering in k-NN queries", async () => {
+    const candidates = [
+      { id: "Close", lon: 0.0, lat: 0.01 }, // ~1.11 km
+      { id: "Medium", lon: 0.0, lat: 0.1 },  // ~11.1 km
+      { id: "Far", lon: 0.0, lat: 1.0 },     // ~111 km
+    ];
+
+    // Max distance: 5 km (5000m) -> only "Close" should match
+    const res = await spatialKnnQuery(candidates, 0.0, 0.0, undefined, 10, 5000);
+    expect(res).not.toBeNull();
+    if (!res) return;
+
+    expect(res.neighbors).toHaveLength(1);
+    expect(res.neighbors[0].id).toBe("Close");
+    expect(res.neighbors[0].surface_distance_m).toBeLessThan(5000);
+  });
+
+  it("converts bearings to accurate 16-point compass directions", () => {
+    expect(bearingToCompassDirection(0)).toBe("N");
+    expect(bearingToCompassDirection(360)).toBe("N");
+    expect(bearingToCompassDirection(22.5)).toBe("NNE");
+    expect(bearingToCompassDirection(45)).toBe("NE");
+    expect(bearingToCompassDirection(67.5)).toBe("ENE");
+    expect(bearingToCompassDirection(90)).toBe("E");
+    expect(bearingToCompassDirection(135)).toBe("SE");
+    expect(bearingToCompassDirection(180)).toBe("S");
+    expect(bearingToCompassDirection(225)).toBe("SW");
+    expect(bearingToCompassDirection(270)).toBe("W");
+    expect(bearingToCompassDirection(315)).toBe("NW");
+    expect(bearingToCompassDirection(350)).toBe("N");
+  });
+
+  it("extracts representative centroids across all GeoJSON geometry types", () => {
+    // Point
+    expect(extractFeatureCentroid({ type: "Point", coordinates: [10, 20] })).toEqual([10, 20]);
+
+    // MultiPoint
+    expect(extractFeatureCentroid({
+      type: "MultiPoint",
+      coordinates: [[10, 20], [20, 40]],
+    })).toEqual([15, 30]);
+
+    // LineString
+    expect(extractFeatureCentroid({
+      type: "LineString",
+      coordinates: [[0, 0], [10, 10]],
+    })).toEqual([5, 5]);
+
+    // Polygon
+    expect(extractFeatureCentroid({
+      type: "Polygon",
+      coordinates: [[[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]]],
+    })).toEqual([4, 4]);
+
+    // Invalid or empty
+    expect(extractFeatureCentroid(null)).toBeNull();
+    expect(extractFeatureCentroid({ type: "Point", coordinates: [] })).toBeNull();
   });
 });

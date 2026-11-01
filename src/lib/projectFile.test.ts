@@ -208,6 +208,58 @@ describe("project files", () => {
     expect(parsed.layers.length).toBe(1);
     expect(parsed.warnings.length).toBe(1);
   });
+
+  test("serializes project-tier bookmarks into project file and restores them on load", () => {
+    seedProject();
+
+    // Add a project bookmark and a user bookmark
+    useProjectStore.getState().addBookmark({
+      title: "Tactical Observation Point Alpha",
+      notes: "Forward recon coordinates",
+      lon: 8.5417,
+      lat: 47.3769,
+      zoom: 14,
+      rotation: 0.45,
+      pitch: 0.2,
+      tier: "project",
+      priority: "flash",
+      status: "active",
+      color: "#ef4444",
+      category: "Recon",
+    });
+
+    useProjectStore.getState().addBookmark({
+      title: "Personal Scratch Note",
+      notes: "Do not save into project file",
+      lon: 8.55,
+      lat: 47.38,
+      zoom: 12,
+      tier: "user",
+    });
+
+    const text = serializeProject();
+    const doc = JSON.parse(text);
+
+    // Only the project-tier bookmark should be serialized into the document
+    expect(Array.isArray(doc.bookmarks)).toBe(true);
+    expect(doc.bookmarks.length).toBe(1);
+    expect(doc.bookmarks[0].title).toBe("Tactical Observation Point Alpha");
+    expect(doc.bookmarks[0].priority).toBe("flash");
+    expect(doc.bookmarks[0].rotation).toBe(0.45);
+
+    // Now test applyProjectText restoring it
+    useProjectStore.getState().newProject();
+    applyProjectText(text, "restored.strata", null);
+
+    const restoredBookmarks = useProjectStore.getState().bookmarks;
+    const projectBm = restoredBookmarks.find(
+      (b) => b.title === "Tactical Observation Point Alpha",
+    );
+    expect(projectBm).toBeDefined();
+    expect(projectBm?.notes).toBe("Forward recon coordinates");
+    expect(projectBm?.color).toBe("#ef4444");
+    expect(projectBm?.category).toBe("Recon");
+  });
 });
 
 describe("dataset import", () => {

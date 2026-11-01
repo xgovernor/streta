@@ -25,6 +25,7 @@ export interface ProjectStore {
   addBookmark: (bookmark: Omit<Bookmark, "id" | "createdAt">) => Bookmark;
   removeBookmark: (id: string) => void;
   updateBookmark: (id: string, updates: Partial<Bookmark>) => void;
+  setBookmarks: (bookmarks: Bookmark[]) => void;
 
   dismissHydrationWarnings: () => void;
   newProject: () => void;
@@ -74,6 +75,7 @@ export interface ProjectStore {
     path: string | null;
     datasets: Dataset[];
     layers: DatasetLayer[];
+    bookmarks?: Bookmark[];
   }) => void;
   forgetRecent: (name: string) => void;
   addToRecent: (entry: RecentEntry) => void;

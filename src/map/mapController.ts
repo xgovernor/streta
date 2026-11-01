@@ -1,6 +1,7 @@
 import Feature, { type FeatureLike } from "ol/Feature";
 import Draw from "ol/interaction/Draw";
 import Modify from "ol/interaction/Modify";
+import Translate from "ol/interaction/Translate";
 import {
   Circle as OlCircle,
   LineString,
@@ -23,7 +24,7 @@ import { fromLonLat, transform, transformExtent } from "ol/proj";
 import VectorSource from "ol/source/Vector";
 import VectorTileSource from "ol/source/VectorTile";
 import XYZ from "ol/source/XYZ";
-import { Circle as CircleStyle, Fill, Stroke, Style, Text } from "ol/style";
+import { Circle as CircleStyle, Fill, Icon, Stroke, Style, Text } from "ol/style";
 import type { StyleFunction } from "ol/style/Style";
 import { apply } from "ol-mapbox-style";
 import type { EventsKey } from "ol/events";
@@ -51,6 +52,7 @@ import {
 import type {
   BasemapDefinition,
   BasemapId,
+  Bookmark,
   CameraState,
   DatasetLayer,
   Geometry,
@@ -67,6 +69,16 @@ import {
 import { useMapStore } from "../state/mapStore";
 import { useProjectStore } from "../state/projectStore";
 import { useUiStore } from "../state/uiStore";
+import {
+  cesiumApplyCamera,
+  cesiumFitExtent,
+  cesiumFlyTo,
+  cesiumFlyToBookmark,
+  cesiumResetNorth,
+  cesiumZoomBy,
+  captureCesiumAsPng,
+  getCesiumViewer,
+} from "./cesiumView";
 import { createDatasetStyle, measureStyle } from "./vectorStyle";
 import {
   createTelemetryLayers,
@@ -84,6 +96,7 @@ import {
   isTelemetryLayer,
 } from "./webglTelemetry";
 import { useTelemetryStore } from "../state/telemetryStore";
+import { interpolateGreatCircleArc } from "../lib/gis/voyageRoute";
 
 type BasemapLayers = Record<BasemapId, BaseLayer>;
 
@@ -91,16 +104,43 @@ const BASEMAP_Z = 0;
 const DATA_Z_BASE = 20;
 const MEASURE_Z = 900;
 const ANALYSIS_Z = 950;
+const BOOKMARK_Z = 960;
 const GRATICULE_Z = 5;
 
 let activeMap: OlMap | null = null;
 let activeTeardown: (() => void) | null = null;
 
 /**
+ * True when the Cesium renderer is the active canvas and camera commands must
+ * be routed there instead of the (hidden) OpenLayers map.
+ */
+function cesiumIsActive(): boolean {
+  return useUiStore.getState().viewMode === "3d" && getCesiumViewer() !== null;
+}
+
+/**
+ * The honest gate: a control with no 3D implementation refuses loudly instead
+ * of silently acting on the hidden OpenLayers map. Returns true when the call
+ * was handled (swallowed), false when the caller should proceed in 2D.
+ */
+function gate3D(feature: string): boolean {
+  if (!cesiumIsActive()) {
+    return false;
+  }
+  useUiStore
+    .getState()
+    .flash(`${feature} works on the 2D map — switch back to 2D to use it`);
+  return true;
+}
+
+/**
  * Captures the current map view as a PNG data URL. Returns null if no map
  * is active or capture fails.
  */
 export function captureMapAsPng(): string | null {
+  if (cesiumIsActive()) {
+    return captureCesiumAsPng();
+  }
   if (!activeMap) return null;
   try {
     const mapCanvas = activeMap.getViewport()?.querySelector("canvas");
@@ -132,6 +172,9 @@ export function downloadMapCapture(filename = "strata-map.png"): boolean {
 }
 
 export function captureMapRegionAsPng(rect: { x: number; y: number; width: number; height: number }): string | null {
+  if (cesiumIsActive()) {
+    return captureCesiumAsPng(rect);
+  }
   if (!activeMap) return null;
   try {
     const viewport = activeMap.getViewport();
@@ -212,7 +255,88 @@ let activeMeasureClear: (() => void) | null = null;
 let activeMeasureSource: VectorSource | null = null;
 let activeDrawInteraction: Draw | null = null;
 let activeAnalysisSource: VectorSource | null = null;
+let activeKnnSource: VectorSource | null = null;
 let activeLocationSource: VectorSource | null = null;
+let activeBookmarkSource: VectorSource | null = null;
+let activeBookmarkPicker: ((coord: [number, number]) => void) | null = null;
+let activeBookmarkSelectHandler: ((bookmarkId: string) => void) | null = null;
+
+const notePinIconCache = new Map<string, Icon>();
+
+function getBookmarkNoteIcon(color: string, isSelected: boolean): Icon {
+  const key = `${color}_${isSelected ? 1 : 0}`;
+  let cached = notePinIconCache.get(key);
+  if (!cached) {
+    const strokeColor = isSelected ? "#ffffff" : "rgba(255, 255, 255, 0.95)";
+    const strokeWidth = isSelected ? "2.0" : "1.5";
+    const filter = isSelected ? `filter="drop-shadow(0 0 5px ${color})"` : "filter=\"drop-shadow(0 1px 2px rgba(0,0,0,0.4))\"";
+    const svg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="35" viewBox="0 0 26 35">',
+      '  <ellipse cx="13" cy="33.5" rx="4.5" ry="1.5" fill="rgba(0,0,0,0.38)"/>',
+      `  <path d="M13 1 C7 1 2.5 5.5 2.5 11.5 C2.5 19.5 13 33 13 33 C13 33 23.5 19.5 23.5 11.5 C23.5 5.5 19 1 13 1 Z" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" ${filter}/>`,
+      '  <circle cx="13" cy="11.5" r="7" fill="#0f172a" stroke="rgba(255,255,255,0.4)" stroke-width="0.8"/>',
+      '  <path d="M10 8 h3.8 l2.2 2.2 v5 h-6 z" fill="none" stroke="#f8fafc" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>',
+      '  <path d="M13.8 8 v2.2 h2.2" fill="none" stroke="#f8fafc" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"/>',
+      '  <line x1="11.2" y1="11.5" x2="13.2" y2="11.5" stroke="#94a3b8" stroke-width="0.9" stroke-linecap="round"/>',
+      '  <line x1="11.2" y1="13.2" x2="14.8" y2="13.2" stroke="#94a3b8" stroke-width="0.9" stroke-linecap="round"/>',
+      "</svg>",
+    ].join("");
+    const uri = "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+    cached = new Icon({
+      src: uri,
+      anchor: [0.5, 0.94],
+      size: [26, 35],
+    });
+    notePinIconCache.set(key, cached);
+  }
+  return cached;
+}
+
+function bookmarkStyleFunction(feature: FeatureLike): Style[] {
+  const isSelected = feature.get("isSelected") === true;
+  const color = (feature.get("color") as string) || "#00e5ff";
+  const title = (feature.get("title") as string) || "Bookmark";
+  const priority = (feature.get("priority") as string) || "routine";
+
+  const styles: Style[] = [];
+
+  // Ground pulse radar aura for flash/immediate or selection
+  if (isSelected || priority === "flash" || priority === "immediate") {
+    styles.push(
+      new Style({
+        image: new CircleStyle({
+          radius: isSelected ? 17 : 13,
+          fill: new Fill({
+            color: priority === "flash" ? "rgba(239, 68, 68, 0.28)" : "rgba(0, 229, 255, 0.22)",
+          }),
+          stroke: new Stroke({
+            color: priority === "flash" ? "#ef4444" : color,
+            width: isSelected ? 2 : 1.5,
+            lineDash: isSelected ? [3, 3] : undefined,
+          }),
+        }),
+      }),
+    );
+  }
+
+  // Tactical Note Pin with embedded document icon and label
+  styles.push(
+    new Style({
+      image: getBookmarkNoteIcon(color, isSelected),
+      text: new Text({
+        text: title.length > 24 ? title.slice(0, 22) + "…" : title,
+        font: "600 11px 'IBM Plex Sans', -apple-system, sans-serif",
+        fill: new Fill({ color: "#f8fafc" }),
+        offsetY: -38,
+        padding: [2, 6, 2, 6],
+        backgroundFill: new Fill({ color: "rgba(15, 23, 42, 0.88)" }),
+        backgroundStroke: new Stroke({ color: isSelected ? "#38bdf8" : color, width: 1.2 }),
+      }),
+    }),
+  );
+
+  return styles;
+}
 let activeBufferPicker: ((coord: [number, number]) => void) | null = null;
 let activeBufferRadiusDragListener: ((newRadiusMeters: number, isFinal: boolean) => void) | null = null;
 let isDraggingBufferHandle = false;
@@ -479,6 +603,15 @@ export function mountMap(target: HTMLElement): () => void {
   });
   activeAnalysisSource = analysisSource;
 
+  const knnSource = new VectorSource();
+  const knnLayer = new VectorLayer({
+    source: knnSource,
+    style: analysisStyle,
+    zIndex: ANALYSIS_Z + 1,
+    properties: { id: "knn", overlay: true },
+  });
+  activeKnnSource = knnSource;
+
   const view = new View({
     center: fromLonLat([initialCamera.lon, initialCamera.lat]),
     zoom: initialCamera.zoom,
@@ -518,6 +651,15 @@ export function mountMap(target: HTMLElement): () => void {
   });
   activeLocationSource = locationSource;
 
+  const bookmarkSource = new VectorSource();
+  const bookmarkLayer = new VectorLayer({
+    source: bookmarkSource,
+    style: bookmarkStyleFunction,
+    zIndex: BOOKMARK_Z,
+    properties: { id: "bookmarks", overlay: true },
+  });
+  activeBookmarkSource = bookmarkSource;
+
   const map = new OlMap({
     target,
     view,
@@ -527,12 +669,57 @@ export function mountMap(target: HTMLElement): () => void {
       graticuleLayer,
       measureLayer,
       analysisLayer,
+      knnLayer,
+      bookmarkLayer,
       locationLayer,
     ],
     controls: [],
   });
 
   activeMap = map;
+
+  if (import.meta.env.DEV) {
+    // Spike hook: lets the 2D/3D experiments poke the live map from the console.
+    (window as unknown as { __strataOl?: { map: OlMap; view: View } }).__strataOl = { map, view };
+  }
+
+  const bookmarkTranslate = new Translate({
+    layers: [bookmarkLayer],
+  });
+  map.addInteraction(bookmarkTranslate);
+
+  let lastTranslateEndTime = 0;
+
+  bookmarkTranslate.on("translatestart", () => {
+    const el = map.getTargetElement();
+    if (el) el.style.cursor = "grabbing";
+  });
+
+  bookmarkTranslate.on("translateend", (evt) => {
+    lastTranslateEndTime = Date.now();
+    const el = map.getTargetElement();
+    if (el) el.style.cursor = "";
+
+    const feat = evt.features.getArray()[0];
+    if (!feat) return;
+
+    const bId = feat.get("bookmarkId");
+    if (!bId) return;
+
+    const geom = feat.getGeometry();
+    if (geom && typeof (geom as Point).getCoordinates === "function") {
+      const olCoords = (geom as Point).getCoordinates();
+      const [lon, lat] = transform(olCoords, VIEW_CRS, GEOGRAPHIC_CRS) as [number, number];
+
+      useProjectStore.getState().updateBookmark(bId, {
+        lon: Math.round(lon * 1e6) / 1e6,
+        lat: Math.round(lat * 1e6) / 1e6,
+      });
+
+      const bTitle = feat.get("title") || "Note";
+      useUiStore.getState().flash(`Repositioned "${bTitle}" to ${lat.toFixed(5)}°, ${lon.toFixed(5)}°`);
+    }
+  });
 
   createTelemetryLayers(map);
 
@@ -934,7 +1121,26 @@ export function mountMap(target: HTMLElement): () => void {
       { x: event.coordinate[0], y: event.coordinate[1] },
     );
 
-    if (telem) {
+    let hoverBookmarkFeature: FeatureLike | null = null;
+    map.forEachFeatureAtPixel(
+      event.pixel,
+      (f) => {
+        if (f.get("bookmarkId")) {
+          hoverBookmarkFeature = f;
+          return true;
+        }
+        return false;
+      },
+      { hitTolerance: 10, layerFilter: (l) => l === bookmarkLayer },
+    );
+
+    if (hoverBookmarkFeature) {
+      const bTitle = (hoverBookmarkFeature as FeatureLike).get("title") || "Note";
+      const bPriority = (hoverBookmarkFeature as FeatureLike).get("priority");
+      const bCat = (hoverBookmarkFeature as FeatureLike).get("category");
+      const pfx = bPriority && bPriority !== "routine" ? `[${String(bPriority).toUpperCase()}] ` : "📍 ";
+      store.setHoverLabel(`${pfx}${bTitle}${bCat ? ` · ${bCat}` : ""} (Right-click: Options · Drag: Move)`);
+    } else if (telem) {
       let label = "";
       if (telem.type === "flight") {
         label = `✈ ${telem.data.callsign || telem.data.icao24} · ${Math.round(telem.data.altitudeMeters || 0)}m · ${Math.round((telem.data.velocityMps || 0) * 1.94)}kts`;
@@ -979,6 +1185,7 @@ export function mountMap(target: HTMLElement): () => void {
       element.style.cursor =
         isMeasureHover ? "pointer"
         : isMeasureActive ? "crosshair"
+        : hoverBookmarkFeature ? "grab"
         : (hover || telem) ? "pointer"
         : "";
     }
@@ -1070,6 +1277,34 @@ export function mountMap(target: HTMLElement): () => void {
 
   const handleContextMenu = (event: MouseEvent) => {
     const pixel = map.getEventPixel(event);
+
+    // 1. Right-click on Bookmark Tactical Note Pin
+    let hitBookmarkId: string | null = null;
+    map.forEachFeatureAtPixel(
+      pixel,
+      (feature) => {
+        const bId = feature.get("bookmarkId");
+        if (bId) {
+          hitBookmarkId = String(bId);
+          return true;
+        }
+        return false;
+      },
+      { hitTolerance: 14, layerFilter: (layer) => layer === bookmarkLayer },
+    );
+
+    if (hitBookmarkId) {
+      event.preventDefault();
+      event.stopPropagation();
+      useMapStore.getState().setMeasureContextMenu(null);
+      useMapStore.getState().setBookmarkContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        bookmarkId: hitBookmarkId,
+      });
+      return;
+    }
+
     const hit = map.forEachFeatureAtPixel(
       pixel,
       (feature, layer) => {
@@ -1291,6 +1526,18 @@ export function mountMap(target: HTMLElement): () => void {
   });
 
   const clickKey = map.on("singleclick", (event) => {
+    useMapStore.getState().setBookmarkContextMenu(null);
+
+    if (Date.now() - lastTranslateEndTime < 250) {
+      return;
+    }
+
+    if (activeBookmarkPicker) {
+      const [lon, lat] = transform(event.coordinate, VIEW_CRS, GEOGRAPHIC_CRS) as [number, number];
+      activeBookmarkPicker([lon, lat]);
+      return;
+    }
+
     if (activeBufferPicker) {
       const [lon, lat] = transform(event.coordinate, VIEW_CRS, GEOGRAPHIC_CRS) as [number, number];
       activeBufferPicker([lon, lat]);
@@ -1337,6 +1584,29 @@ export function mountMap(target: HTMLElement): () => void {
     if (hitTelemetry) {
       useTelemetryStore.getState().setSelectedTarget(hitTelemetry as any);
       useUiStore.getState().openPanel("telemetry");
+      return;
+    }
+
+    // Check if user clicked a bookmark tactical pin
+    let hitBookmarkId: string | null = null;
+    map.forEachFeatureAtPixel(
+      event.pixel,
+      (feature) => {
+        const bId = feature.get("bookmarkId");
+        if (bId) {
+          hitBookmarkId = String(bId);
+          return true;
+        }
+        return false;
+      },
+      { hitTolerance: 10 },
+    );
+
+    if (hitBookmarkId) {
+      if (activeBookmarkSelectHandler) {
+        activeBookmarkSelectHandler(hitBookmarkId);
+      }
+      useUiStore.getState().openPanel("bookmarks");
       return;
     }
 
@@ -1793,6 +2063,7 @@ export function mountMap(target: HTMLElement): () => void {
     clearTelemetryLayers();
 
     target.classList.remove("is-ready");
+    map.removeInteraction(bookmarkTranslate);
     map.setTarget(undefined);
     map.dispose();
     bindings.clear();
@@ -1808,7 +2079,11 @@ export function mountMap(target: HTMLElement): () => void {
     window.removeEventListener("pointerup", handleHandlePointerUp);
 
     activeAnalysisSource = null;
+    activeKnnSource = null;
     activeLocationSource = null;
+    activeBookmarkSource = null;
+    activeBookmarkPicker = null;
+    activeBookmarkSelectHandler = null;
     activeBufferPicker = null;
     activeBufferRadiusDragListener = null;
     activeBufferCenterCoord = null;
@@ -2071,6 +2346,11 @@ function measureSketchStyle(feature: FeatureLike, resolution: number): Style[] {
 }
 
 export function flyTo(lon: number, lat: number, zoom = 8): void {
+  if (cesiumIsActive()) {
+    cesiumFlyTo(lon, lat, zoom);
+    return;
+  }
+
   const view = activeMap?.getView();
   if (!view) {
     return;
@@ -2084,6 +2364,11 @@ export function flyTo(lon: number, lat: number, zoom = 8): void {
 }
 
 export function zoomBy(delta: number): void {
+  if (cesiumIsActive()) {
+    cesiumZoomBy(delta);
+    return;
+  }
+
   const view = activeMap?.getView();
   if (!view) {
     return;
@@ -2100,11 +2385,21 @@ export function zoomBy(delta: number): void {
 }
 
 export function resetNorth(): void {
+  if (cesiumIsActive()) {
+    cesiumResetNorth();
+    return;
+  }
+
   activeMap?.getView().animate({ rotation: 0, duration: 320 });
 }
 
 /** Jumps the map to a stored camera, used when a project is opened. */
 export function applyCamera(camera: CameraState): void {
+  if (cesiumIsActive()) {
+    cesiumApplyCamera(camera);
+    return;
+  }
+
   const view = activeMap?.getView();
 
   if (!view) {
@@ -2198,6 +2493,19 @@ export function fitToData(): void {
     return;
   }
 
+  if (cesiumIsActive()) {
+    cesiumFitExtent(
+      transformExtent(target.extent, VIEW_CRS, GEOGRAPHIC_CRS) as [
+        number,
+        number,
+        number,
+        number,
+      ],
+      target.maxZoom,
+    );
+    return;
+  }
+
   activeMap?.getView().fit(target.extent, {
     padding: [110, 170, 90, 170],
     duration: 700,
@@ -2228,6 +2536,21 @@ export function zoomToLayer(id: string): void {
   const map = activeMap;
   const extent = layerExtent(id);
 
+  if (cesiumIsActive()) {
+    if (extent) {
+      cesiumFitExtent(
+        transformExtent(extent, VIEW_CRS, GEOGRAPHIC_CRS) as [
+          number,
+          number,
+          number,
+          number,
+        ],
+        16,
+      );
+    }
+    return;
+  }
+
   if (!map || !extent) {
     return;
   }
@@ -2240,6 +2563,9 @@ export function zoomToLayer(id: string): void {
 }
 
 export function zoomToSelection(): void {
+  if (gate3D("Zoom to selection")) {
+    return;
+  }
   const map = activeMap;
   const selection = useProjectStore.getState().selection;
 
@@ -2674,9 +3000,12 @@ function analysisStyle(feature: FeatureLike): Style | Style[] {
       }),
       text: new Text({
         text: `#${rank}`,
-        font: '700 10px "IBM Plex Sans", sans-serif',
+        font: '700 11px "IBM Plex Sans", sans-serif',
         fill: new Fill({ color: "#ffffff" }),
-        offsetY: -14,
+        backgroundFill: new Fill({ color: "rgba(162, 28, 175, 0.9)" }),
+        backgroundStroke: new Stroke({ color: "#ffffff", width: 1.5 }),
+        padding: [2, 5, 2, 5],
+        offsetY: -16,
       }),
     });
   }
@@ -2813,34 +3142,73 @@ export function renderBufferOverlay(
   }
 }
 
+export interface KnnOverlayNeighbor {
+  id: string;
+  lon: number;
+  lat: number;
+  surface_distance_m: number;
+  euclidean_distance_3d_m?: number;
+  bearing_deg?: number;
+  compass_direction?: string;
+  kind?: string;
+}
+
 /**
  * Renders k-NN nearest-neighbor query results with geodesic rays and target badges.
  */
 export function renderKnnOverlay(
   queryCoord: [number, number],
-  neighbors: Array<{ id: string; lon: number; lat: number; surface_distance_m: number }>,
+  neighbors: KnnOverlayNeighbor[],
+  options?: {
+    distanceUnit?: "km" | "m" | "NM" | "mi";
+  },
 ): void {
-  if (!activeAnalysisSource) return;
-  activeAnalysisSource.clear();
+  if (!activeKnnSource) return;
+  activeKnnSource.clear();
 
   const queryFeature = new Feature({
     geometry: new Point(fromLonLat(queryCoord)),
   });
   queryFeature.set("analysisType", "knnQuery");
-  activeAnalysisSource.addFeature(queryFeature);
+  activeKnnSource.addFeature(queryFeature);
+
+  const unit = options?.distanceUnit ?? "km";
+  const formatDist = (meters: number) => {
+    if (unit === "NM") {
+      const nm = meters / 1852;
+      return `${nm >= 10 ? nm.toFixed(1) : nm.toFixed(2)} NM`;
+    }
+    if (unit === "mi") {
+      const mi = meters / 1609.344;
+      return `${mi >= 10 ? mi.toFixed(1) : mi.toFixed(2)} mi`;
+    }
+    if (unit === "m" || meters < 1000) {
+      return `${Math.round(meters)} m`;
+    }
+    return `${(meters / 1000).toFixed(1)} km`;
+  };
 
   neighbors.forEach((n, idx) => {
     const targetCoord: [number, number] = [n.lon, n.lat];
-    const lineFeature = new Feature({
-      geometry: new LineString([fromLonLat(queryCoord), fromLonLat(targetCoord)]),
+
+    // Compute great-circle geodesic arc segments safely split at antimeridian
+    const segments = interpolateGreatCircleArc(queryCoord[0], queryCoord[1], n.lon, n.lat, 2);
+
+    segments.forEach((seg: number[][]) => {
+      const projectedCoords = seg.map((pt: number[]) => fromLonLat(pt as [number, number]));
+      const lineFeature = new Feature({
+        geometry: new LineString(projectedCoords),
+      });
+      lineFeature.set("analysisType", "knnLine");
+
+      const distStr = formatDist(n.surface_distance_m);
+      const bearingStr =
+        n.bearing_deg !== undefined
+          ? ` @ ${Math.round(n.bearing_deg).toString().padStart(3, "0")}° ${n.compass_direction ?? ""}`.trimEnd()
+          : "";
+      lineFeature.set("distanceLabel", `#${idx + 1}: ${distStr}${bearingStr}`);
+      activeKnnSource?.addFeature(lineFeature);
     });
-    lineFeature.set("analysisType", "knnLine");
-    const distLabel =
-      n.surface_distance_m >= 1000
-        ? `${(n.surface_distance_m / 1000).toFixed(1)} km`
-        : `${Math.round(n.surface_distance_m)} m`;
-    lineFeature.set("distanceLabel", `#${idx + 1}: ${distLabel}`);
-    activeAnalysisSource?.addFeature(lineFeature);
 
     const targetFeature = new Feature({
       geometry: new Point(fromLonLat(targetCoord)),
@@ -2848,8 +3216,14 @@ export function renderKnnOverlay(
     targetFeature.set("analysisType", "knnTarget");
     targetFeature.set("rank", idx + 1);
     targetFeature.set("targetId", n.id);
-    activeAnalysisSource?.addFeature(targetFeature);
+    targetFeature.set("kind", n.kind ?? "generic");
+    activeKnnSource?.addFeature(targetFeature);
   });
+}
+
+/** Clears all features from the k-NN overlay layer. */
+export function clearKnnOverlay(): void {
+  activeKnnSource?.clear();
 }
 
 /**
@@ -2950,13 +3324,101 @@ export function setBufferPicker(
 /**
  * Smoothly animates the map camera to the target lon/lat.
  */
-export function flyToCoordinate(lon: number, lat: number, zoom = 14): void {
+export function flyToCoordinate(lon: number, lat: number, zoom = 14, rotation = 0): void {
+  if (cesiumIsActive()) {
+    cesiumFlyTo(lon, lat, zoom);
+    return;
+  }
   if (!activeMap) return;
   activeMap.getView().animate({
     center: fromLonLat([lon, lat]),
     zoom,
+    rotation,
     duration: 500,
   });
+}
+
+/**
+ * Smoothly flies the map camera to a bookmark's position, zoom, and heading.
+ */
+export function flyToBookmark(
+  bookmark: { lon: number; lat: number; zoom: number; rotation?: number; pitch?: number },
+  duration = 750,
+): void {
+  if (cesiumIsActive()) {
+    cesiumFlyToBookmark(bookmark, duration / 1000);
+    return;
+  }
+  if (!activeMap) return;
+  activeMap.getView().animate({
+    center: fromLonLat([bookmark.lon, bookmark.lat]),
+    zoom: bookmark.zoom,
+    rotation: bookmark.rotation ?? 0,
+    duration,
+  });
+}
+
+/**
+ * Renders bookmarks onto the dedicated tactical map overlay layer.
+ */
+export function renderBookmarkOverlay(
+  bookmarks: Bookmark[],
+  activeBookmarkId?: string | null,
+): void {
+  if (!activeBookmarkSource) return;
+  activeBookmarkSource.clear();
+
+  for (const b of bookmarks) {
+    const coords = fromLonLat([b.lon, b.lat]);
+    const feat = new Feature({
+      geometry: new Point(coords),
+      bookmarkId: b.id,
+      title: b.title,
+      notes: b.notes,
+      color: b.color || "#00e5ff",
+      priority: b.priority || "routine",
+      status: b.status || "active",
+      category: b.category,
+      tier: b.tier,
+      isSelected: b.id === activeBookmarkId,
+    });
+    activeBookmarkSource.addFeature(feat);
+  }
+}
+
+/**
+ * Clears all bookmarks from the map overlay layer.
+ */
+export function clearBookmarkOverlay(): void {
+  activeBookmarkSource?.clear();
+}
+
+/**
+ * Enables or disables interactive click-to-pick on the map for placing a bookmark pin.
+ */
+export function setBookmarkPinPicker(
+  picker: ((coord: [number, number]) => void) | null,
+): void {
+  // Pin-picking has no 3D click path yet: report it instead of swallowing.
+  if (picker && gate3D("Dropping a bookmark pin")) {
+    return;
+  }
+  activeBookmarkPicker = picker;
+  if (activeMap) {
+    const target = activeMap.getTargetElement();
+    if (target) {
+      target.style.cursor = picker ? "crosshair" : "";
+    }
+  }
+}
+
+/**
+ * Registers a handler callback when a bookmark pin is clicked directly on the map.
+ */
+export function setBookmarkSelectHandler(
+  handler: ((bookmarkId: string) => void) | null,
+): void {
+  activeBookmarkSelectHandler = handler;
 }
 
 /**
@@ -2994,6 +3456,14 @@ export function setUserLocation(lon: number, lat: number, accuracy?: number): vo
   }
 
   activeLocationSource.addFeature(pointFeature);
+
+  if (cesiumIsActive()) {
+    // The Cesium GPS marker itself is Batch C; until then the camera flight
+    // works but the marker must not be pretended into existence.
+    useUiStore
+      .getState()
+      .flash("Location locked — the GPS marker pins on the 2D map");
+  }
 
   flyTo(lon, lat, accuracy && accuracy > 5000 ? 11 : 14);
 }

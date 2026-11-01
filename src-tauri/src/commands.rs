@@ -153,8 +153,16 @@ pub fn spatial_knn_query(
     query_lat: f64,
     query_elevation_m: Option<f64>,
     k: usize,
+    max_distance_meters: Option<f64>,
 ) -> Result<crate::analysis::KnnQueryResult, String> {
-    crate::analysis::query_spatial_knn(&points, query_lon, query_lat, query_elevation_m, k)
+    crate::analysis::query_spatial_knn(
+        &points,
+        query_lon,
+        query_lat,
+        query_elevation_m,
+        k,
+        max_distance_meters,
+    )
 }
 
 #[tauri::command]

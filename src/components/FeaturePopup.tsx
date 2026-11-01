@@ -68,6 +68,7 @@ export function FeaturePopup() {
   const popup = useMapStore((state) => state.popup);
   const setPopup = useMapStore((state) => state.setPopup);
   const activeFeature = useMapStore((state) => state.activeFeature);
+  const viewMode = useUiStore((state) => state.viewMode);
 
   useMapStore((state) => state.camera);
 
@@ -90,7 +91,10 @@ export function FeaturePopup() {
   const target = popup ?? activeFeature;
   const role = popup ? "dialog" : "tooltip";
 
-  if (!target) {
+  // In 3D the anchors come from the hidden OpenLayers view, so positions
+  // would be wrong; hide rather than lie. Real pick-driven cards land with
+  // the interaction adapter.
+  if (!target || viewMode === "3d") {
     return null;
   }
 

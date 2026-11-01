@@ -163,6 +163,11 @@ export function ElevationPanel() {
               type="button"
               className={cx(SECONDARY_BUTTON, "justify-center gap-1.5 text-[11px]")}
               onClick={() => {
+                const uiState = useUiStore.getState();
+                if (uiState.viewMode === "3d") {
+                  notify("Measuring works on the 2D map — switch back to 2D");
+                  return;
+                }
                 setMeasureMode("distance");
                 notify("Click map to plot elevation cross-section path (double-click to finish)");
               }}

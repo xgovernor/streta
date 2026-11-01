@@ -10,6 +10,9 @@ import type {
 
 export type AnalysisTab = "distance" | "area" | "elevation" | "buffer" | "knn" | "boolean";
 
+/** Renderer selection. OpenLayers owns 2D; Cesium owns 3D. */
+export type ViewMode = "2d" | "3d";
+
 /** Which dock a panel opens in. Independent: one left + one right at once. */
 const PANEL_DOCK: Record<PanelId, "left" | "right"> = {
   search: "left",
@@ -44,6 +47,7 @@ interface UiState {
   alertsOpen: boolean;
   analysisTab: AnalysisTab;
   basemap: BasemapId;
+  viewMode: ViewMode;
   theme: ThemeMode;
   coordFormat: CoordinateFormat;
   graticule: boolean;
@@ -63,6 +67,7 @@ interface UiState {
   setAnalysisTab: (tab: AnalysisTab) => void;
   openAnalysisTab: (tab: AnalysisTab) => void;
   setBasemap: (basemap: BasemapId) => void;
+  setViewMode: (mode: ViewMode) => void;
   setTheme: (theme: ThemeMode) => void;
   setCoordFormat: (format: CoordinateFormat) => void;
   setGraticule: (visible: boolean) => void;
@@ -144,6 +149,7 @@ export const useUiStore = create<UiState>()(
       alertsOpen: false,
       analysisTab: "elevation",
       ...DEFAULT_PREFERENCES,
+      viewMode: "2d",
       toast: null,
       snipMode: false,
       basemapTrayOpen: false,
@@ -207,6 +213,8 @@ export const useUiStore = create<UiState>()(
       },
 
       setBasemap: (basemap) => set({ basemap }),
+
+      setViewMode: (viewMode) => set({ viewMode }),
 
       setTheme: (theme) => set({ theme }),
 

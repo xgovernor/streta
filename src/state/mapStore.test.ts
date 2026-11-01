@@ -32,4 +32,23 @@ describe("mapStore measurement context menu", () => {
     useMapStore.getState().setMeasureContextMenu(null);
     expect(useMapStore.getState().measureContextMenu).toBeNull();
   });
+
+  test("initializes, sets, and clears bookmarkContextMenu state", () => {
+    expect(useMapStore.getState().bookmarkContextMenu).toBeNull();
+
+    useMapStore.getState().setBookmarkContextMenu({
+      x: 220,
+      y: 180,
+      bookmarkId: "bm_test_123",
+    });
+
+    const menu = useMapStore.getState().bookmarkContextMenu;
+    expect(menu).not.toBeNull();
+    expect(menu?.bookmarkId).toBe("bm_test_123");
+    expect(menu?.x).toBe(220);
+    expect(menu?.y).toBe(180);
+
+    useMapStore.getState().setBookmarkContextMenu(null);
+    expect(useMapStore.getState().bookmarkContextMenu).toBeNull();
+  });
 });

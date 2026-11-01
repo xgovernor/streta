@@ -9,9 +9,19 @@ import { useUiStore } from "../state/uiStore";
  * credit rather than leaving the wrong one up.
  */
 export function MapAttribution() {
+  const viewMode = useUiStore((state) => state.viewMode);
   const basemap = useUiStore((state) => state.basemap);
+
+  // One credit line per rendered canvas. In 3D the globe paints the selected
+  // raster basemap, falling back to OSM for vector styles — credit must
+  // follow what is actually on screen, not the hidden 2D layer stack.
+  const displayedId =
+    viewMode === "3d" &&
+    BASEMAPS.find((item) => item.id === basemap)?.kind !== "raster"
+      ? "openstreetmap"
+      : basemap;
   const attribution =
-    BASEMAPS.find((item) => item.id === basemap)?.attribution ?? [];
+    BASEMAPS.find((item) => item.id === displayedId)?.attribution ?? [];
 
   if (!attribution.length) {
     return null;

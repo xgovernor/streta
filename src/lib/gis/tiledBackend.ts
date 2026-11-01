@@ -2134,6 +2134,8 @@ export interface KnnNeighbor {
   lat: number;
   surface_distance_m: number;
   euclidean_distance_3d_m: number;
+  bearing_deg: number;
+  compass_direction: string;
 }
 
 export interface KnnQueryResult {
@@ -2144,12 +2146,102 @@ export interface KnnQueryResult {
   execution_micros: number;
 }
 
+/**
+ * Converts a 0°-360° azimuth bearing into a 16-point cardinal compass string (e.g. "N", "NNE", "NE").
+ */
+export function bearingToCompassDirection(bearingDeg: number): string {
+  const directions = [
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+  ];
+  const normalized = ((bearingDeg % 360) + 360) % 360;
+  const index = Math.round(normalized / 22.5) % 16;
+  return directions[index];
+}
+
+/**
+ * Extracts a representative [lon, lat] centroid from any GeoJSON geometry type
+ * (Point, MultiPoint, LineString, MultiLineString, Polygon, MultiPolygon).
+ */
+export function extractFeatureCentroid(geometry: any): [number, number] | null {
+  if (!geometry || !geometry.type || !geometry.coordinates) return null;
+  const type = geometry.type;
+  const coords = geometry.coordinates;
+
+  if (type === "Point") {
+    if (Array.isArray(coords) && typeof coords[0] === "number" && typeof coords[1] === "number") {
+      return [coords[0], coords[1]];
+    }
+    return null;
+  }
+
+  if (type === "MultiPoint" || type === "LineString") {
+    if (!Array.isArray(coords) || coords.length === 0) return null;
+    let sumLon = 0;
+    let sumLat = 0;
+    let count = 0;
+    for (const pt of coords) {
+      if (Array.isArray(pt) && typeof pt[0] === "number" && typeof pt[1] === "number") {
+        sumLon += pt[0];
+        sumLat += pt[1];
+        count++;
+      }
+    }
+    return count > 0 ? [sumLon / count, sumLat / count] : null;
+  }
+
+  if (type === "MultiLineString" || type === "Polygon") {
+    if (!Array.isArray(coords) || coords.length === 0) return null;
+    let sumLon = 0;
+    let sumLat = 0;
+    let count = 0;
+    for (const line of coords) {
+      if (Array.isArray(line)) {
+        for (const pt of line) {
+          if (Array.isArray(pt) && typeof pt[0] === "number" && typeof pt[1] === "number") {
+            sumLon += pt[0];
+            sumLat += pt[1];
+            count++;
+          }
+        }
+      }
+    }
+    return count > 0 ? [sumLon / count, sumLat / count] : null;
+  }
+
+  if (type === "MultiPolygon") {
+    if (!Array.isArray(coords) || coords.length === 0) return null;
+    let sumLon = 0;
+    let sumLat = 0;
+    let count = 0;
+    for (const poly of coords) {
+      if (Array.isArray(poly)) {
+        for (const ring of poly) {
+          if (Array.isArray(ring)) {
+            for (const pt of ring) {
+              if (Array.isArray(pt) && typeof pt[0] === "number" && typeof pt[1] === "number") {
+                sumLon += pt[0];
+                sumLat += pt[1];
+                count++;
+              }
+            }
+          }
+        }
+      }
+    }
+    return count > 0 ? [sumLon / count, sumLat / count] : null;
+  }
+
+  return null;
+}
+
 export async function spatialKnnQuery(
   points: SpatialPointInput[],
   queryLon: number,
   queryLat: number,
   queryElevationM?: number,
   k: number = 5,
+  maxDistanceMeters?: number,
 ): Promise<KnnQueryResult | null> {
   if (points.length === 0) {
     return {
@@ -2169,44 +2261,51 @@ export async function spatialKnnQuery(
         queryLat,
         queryElevationM: queryElevationM ?? null,
         k,
+        maxDistanceMeters: maxDistanceMeters ?? null,
       });
     } catch (err) {
       console.error("spatial_knn_query failed:", err);
     }
   }
 
-  // Client-side fallback: Haversine distance sort
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const R = 6371008.8;
+  // Client-side fallback: Geodesic distance, azimuth bearing & 16-point compass
+  const start = performance.now();
+  const sorted: KnnNeighbor[] = [];
 
-  const sorted = points
-    .map((p) => {
-      const dLat = toRad(p.lat - queryLat);
-      const dLon = toRad(p.lon - queryLon);
-      const lat1 = toRad(queryLat);
-      const lat2 = toRad(p.lat);
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const dist = R * c;
-      return {
-        id: p.id,
-        lon: p.lon,
-        lat: p.lat,
-        surface_distance_m: Math.round(dist * 10) / 10,
-        euclidean_distance_3d_m: Math.round(dist * 10) / 10,
-      };
-    })
-    .sort((a, b) => a.surface_distance_m - b.surface_distance_m)
-    .slice(0, Math.min(k, points.length));
+  for (const p of points) {
+    const { distanceM, bearingDeg } = geodesicDistanceAndBearing(
+      queryLon,
+      queryLat,
+      p.lon,
+      p.lat,
+    );
+
+    if (maxDistanceMeters !== undefined && distanceM > maxDistanceMeters) {
+      continue;
+    }
+
+    const compass = bearingToCompassDirection(bearingDeg);
+    sorted.push({
+      id: p.id,
+      lon: p.lon,
+      lat: p.lat,
+      surface_distance_m: Math.round(distanceM * 10) / 10,
+      euclidean_distance_3d_m: Math.round(distanceM * 10) / 10,
+      bearing_deg: Math.round(bearingDeg * 10) / 10,
+      compass_direction: compass,
+    });
+  }
+
+  sorted.sort((a, b) => a.surface_distance_m - b.surface_distance_m);
+  const sliced = sorted.slice(0, Math.min(k, sorted.length));
+  const elapsedMicros = (performance.now() - start) * 1000;
 
   return {
     query_lon: queryLon,
     query_lat: queryLat,
     k,
-    neighbors: sorted,
-    execution_micros: 10,
+    neighbors: sliced,
+    execution_micros: Math.round(elapsedMicros * 10) / 10,
   };
 }
 
