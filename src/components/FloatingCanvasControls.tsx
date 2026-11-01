@@ -30,9 +30,13 @@ export function FloatingCanvasControls() {
   const basemapTrayOpen = useUiStore((state) => state.basemapTrayOpen);
   const toggleBasemapTray = useUiStore((state) => state.toggleBasemapTray);
   const rightPanel = useUiStore((state) => state.rightPanel);
+  const leftPanel = useUiStore((state) => state.leftPanel);
+  const tableMaximized = useUiStore((state) => state.tableMaximized);
   const viewMode = useUiStore((state) => state.viewMode);
   const setViewMode = useUiStore((state) => state.setViewMode);
   const [locating, setLocating] = useState(false);
+
+  const isTableOpen = leftPanel === "table" || rightPanel === "table";
 
   const locate = async () => {
     if (locating) return;
@@ -60,13 +64,16 @@ export function FloatingCanvasControls() {
   return (
     <div
       className={cx(
-        "pointer-events-auto absolute z-40 flex flex-col items-center gap-1 select-none transition-[right,bottom] duration-200 ease-out",
-        rightPanel
+        "pointer-events-auto absolute z-40 flex flex-col items-center gap-1 select-none transition-[right,bottom,opacity] duration-200 ease-out",
+        isTableOpen && tableMaximized && "opacity-0 pointer-events-none",
+        rightPanel && rightPanel !== "table"
           ? "right-[calc(var(--ribbon-w)+300px+12px)]"
           : "right-[calc(var(--ribbon-w)+12px)]",
-        basemapTrayOpen
-          ? "bottom-[calc(var(--footer-h)+108px)]"
-          : "bottom-[calc(var(--footer-h)+12px)]"
+        isTableOpen
+          ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+var(--table-h,340px)+12px)]"
+          : basemapTrayOpen
+            ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+108px)]"
+            : "bottom-[calc(var(--footer-h)+var(--timeline-h)+12px)]"
       )}
     >
       {/* 2D / 3D renderer toggle */}

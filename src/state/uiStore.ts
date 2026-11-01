@@ -55,9 +55,13 @@ interface UiState {
   toast: string | null;
   snipMode: boolean;
   basemapTrayOpen: boolean;
+  tableMaximized: boolean;
+  tableHeight: number;
   setSnipMode: (active: boolean) => void;
   setBasemapTrayOpen: (open: boolean) => void;
   toggleBasemapTray: () => void;
+  setTableMaximized: (maximized: boolean) => void;
+  setTableHeight: (height: number) => void;
   openPanel: (panel: PanelId) => void;
   togglePanel: (panel: PanelId) => void;
   closePanel: (side?: "left" | "right") => void;
@@ -81,7 +85,7 @@ interface UiState {
 type PersistedUi = Pick<
   UiState,
   "basemap" | "coordFormat" | "theme" | "graticule" | "trafficFlow" | "timelineOpen"
->;
+> & { tableHeight?: number };
 
 export const DEFAULT_PREFERENCES: PersistedUi = {
   basemap: "positron",
@@ -90,6 +94,7 @@ export const DEFAULT_PREFERENCES: PersistedUi = {
   graticule: false,
   trafficFlow: false,
   timelineOpen: false,
+  tableHeight: 340,
 };
 
 const STORAGE_KEY = "strata.preferences";
@@ -135,6 +140,10 @@ function readPreferences(value: unknown): PersistedUi {
       typeof stored.timelineOpen === "boolean" ?
         stored.timelineOpen
       : DEFAULT_PREFERENCES.timelineOpen,
+    tableHeight:
+      typeof stored.tableHeight === "number" && stored.tableHeight >= 140 ?
+        stored.tableHeight
+      : DEFAULT_PREFERENCES.tableHeight,
   };
 }
 
@@ -153,10 +162,14 @@ export const useUiStore = create<UiState>()(
       toast: null,
       snipMode: false,
       basemapTrayOpen: false,
+      tableMaximized: false,
+      tableHeight: 340,
       setSnipMode: (snipMode) => set({ snipMode }),
       setBasemapTrayOpen: (basemapTrayOpen) => set({ basemapTrayOpen }),
       toggleBasemapTray: () =>
         set((state) => ({ basemapTrayOpen: !state.basemapTrayOpen })),
+      setTableMaximized: (tableMaximized) => set({ tableMaximized }),
+      setTableHeight: (tableHeight) => set({ tableHeight }),
 
       openPanel: (panel) =>
         set(() => {
@@ -176,7 +189,16 @@ export const useUiStore = create<UiState>()(
           const dock = PANEL_DOCK[panel];
           const key = dock === "left" ? "leftPanel" : "rightPanel";
           const closing = state[key] === panel;
-          const update = dock === "left" ? { leftPanel: closing ? null : panel } : { rightPanel: closing ? null : panel };
+          const update =
+            dock === "left"
+              ? {
+                  leftPanel: closing ? null : panel,
+                  tableMaximized: closing && panel === "table" ? false : state.tableMaximized,
+                }
+              : {
+                  rightPanel: closing ? null : panel,
+                  tableMaximized: closing && panel === "table" ? false : state.tableMaximized,
+                };
           return { ...update, lastDock: closing ? state.lastDock : dock };
         }),
 
@@ -187,8 +209,16 @@ export const useUiStore = create<UiState>()(
       closePanel: (side) =>
         set((state) => {
           const target: "left" | "right" | null = side ?? state.lastDock;
-          if (target === "left") return { leftPanel: null };
-          if (target === "right") return { rightPanel: null };
+          if (target === "left")
+            return {
+              leftPanel: null,
+              tableMaximized: state.leftPanel === "table" ? false : state.tableMaximized,
+            };
+          if (target === "right")
+            return {
+              rightPanel: null,
+              tableMaximized: state.rightPanel === "table" ? false : state.tableMaximized,
+            };
           return {};
         }),
 
@@ -270,6 +300,7 @@ export const useUiStore = create<UiState>()(
         graticule: state.graticule,
         trafficFlow: state.trafficFlow,
         timelineOpen: state.timelineOpen,
+        tableHeight: state.tableHeight,
       }),
       merge: (persisted, current) => ({
         ...current,

@@ -90,11 +90,11 @@ export function StatusBar() {
       aria-label="Map status"
     >
       {/* Truthful clock: mission time is UTC, always. */}
-      <span className={cx(ITEM, "gap-2")} title="Current UTC time">
+      {/* <span className={cx(ITEM, "gap-2")} title="Current UTC time">
         <span className="text-ink [font-variant-numeric:tabular-nums]">
           {new Date(nowMs).toISOString().slice(11, 19)}Z
         </span>
-      </span>
+      </span> */}
 
       {/* Grid reference of the cursor (or center when pointer off-map). */}
       {grid ? (
@@ -242,13 +242,12 @@ export function StatusBar() {
                     feedAgeClass(stale),
                     status.lastError && "underline decoration-critical underline-offset-2",
                   )}
-                  title={`${FEED_LABELS[feed]} (${FEED_SHORT[feed]}) — ${
-                    status.lastError
+                  title={`${FEED_LABELS[feed]} (${FEED_SHORT[feed]}) — ${status.lastError
                       ? `last fetch failed: ${status.lastError}`
                       : ageSec !== null
                         ? `age ${ageSec}s · ${status.count} targets`
                         : "no data yet"
-                  }`}
+                    }`}
                 >
                   {FEED_SHORT[feed]}{" "}
                   <span className="[font-variant-numeric:tabular-nums]">

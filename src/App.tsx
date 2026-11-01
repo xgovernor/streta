@@ -32,10 +32,30 @@ function App() {
   const theme = useUiStore((state) => state.theme);
   const timelineOpen = useUiStore((state) => state.timelineOpen);
   const viewMode = useUiStore((state) => state.viewMode);
+  const leftPanel = useUiStore((state) => state.leftPanel);
+  const rightPanel = useUiStore((state) => state.rightPanel);
+  const tableHeight = useUiStore((state) => state.tableHeight);
+  const tableMaximized = useUiStore((state) => state.tableMaximized);
+  const isTableOpen = leftPanel === "table" || rightPanel === "table";
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  /** Synchronize the dynamic table height and maximize state with CSS variable */
+  useEffect(() => {
+    if (!isTableOpen) {
+      document.documentElement.style.removeProperty("--table-h");
+      return;
+    }
+    const val = tableMaximized
+      ? "calc(100vh - var(--commandbar-h) - var(--footer-h) - var(--timeline-h))"
+      : `${tableHeight}px`;
+    document.documentElement.style.setProperty("--table-h", val);
+    return () => {
+      document.documentElement.style.removeProperty("--table-h");
+    };
+  }, [isTableOpen, tableHeight, tableMaximized]);
 
   /**
    * The shared camera store is the handoff point between renderers: while
@@ -193,7 +213,7 @@ function App() {
     <main className="fixed inset-0 isolate overflow-hidden bg-shell">
       <MapCanvas />
       {viewMode === "3d" && <CesiumCanvas />}
-      <div className="pointer-events-none absolute inset-0 z-10 [contain:layout_paint_style]">
+      <div className="pointer-events-none absolute inset-0 z-10">
         <CommandBar />
         <LeftRibbon />
         <RightRibbon />

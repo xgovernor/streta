@@ -541,17 +541,10 @@ export function BookmarksPanel() {
       ? "New Note"
       : "Bookmarks & Notes";
 
-  const panelEyebrow =
-    panelMode === "details" && currentDetailBookmark
-      ? `${currentDetailBookmark.tier === "user" ? "Personal" : "Project"} Note`
-      : panelMode === "edit" || panelMode === "add"
-      ? "Saved Location"
-      : "GIS Bookmarks";
 
   return (
     <PanelShell
       title={panelTitle}
-      eyebrow={panelEyebrow}
       side="left"
       flush={true}
       expanded={isExpandedView}
