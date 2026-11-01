@@ -16,6 +16,7 @@ import { RegionSnipOverlay } from "./components/RegionSnipOverlay";
 import { HorizontalBasemapTray } from "./components/panels/HorizontalBasemapTray";
 import { MeasureContextMenu } from "./components/MeasureContextMenu";
 import { BookmarkContextMenu } from "./components/BookmarkContextMenu";
+import { BootSplashScreen } from "./components/BootSplashScreen";
 import { useProjectStore } from "./state/projectStore";
 import { useMapStore } from "./state/mapStore";
 import { useUiStore } from "./state/uiStore";
@@ -228,6 +229,7 @@ function App() {
         <Toast />
         <HorizontalBasemapTray />
         <RegionSnipOverlay />
+        <BootSplashScreen />
       </div>
     </main>
   );
