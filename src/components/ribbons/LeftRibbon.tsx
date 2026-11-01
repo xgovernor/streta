@@ -1,3 +1,4 @@
+import { motion, type Variants } from "motion/react";
 import {
   Bookmark,
   Database,
@@ -18,7 +19,17 @@ interface RibbonItem {
   badge?: number;
 }
 
+const leftRibbonVariants: Variants = {
+  hidden: { opacity: 0, x: -50 },
+  visible: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.85, delay: 0.16, ease: [0.16, 1, 0.3, 1] },
+  },
+};
+
 export function LeftRibbon() {
+  const booted = useUiStore((state) => state.booted);
   const leftPanel = useUiStore((state) => state.leftPanel);
   const togglePanel = useUiStore((state) => state.togglePanel);
 
@@ -31,7 +42,10 @@ export function LeftRibbon() {
   ];
 
   return (
-    <aside
+    <motion.aside
+      initial="hidden"
+      animate={booted ? "visible" : "hidden"}
+      variants={leftRibbonVariants}
       className="pointer-events-auto absolute left-0 top-[var(--commandbar-h)] bottom-[var(--footer-h)] z-20 flex w-[var(--ribbon-w)] flex-col items-center justify-between border-r border-line bg-solid py-2 select-none"
       aria-label="Navigation Ribbon"
     >
@@ -86,6 +100,6 @@ export function LeftRibbon() {
           </span>
         </button>
       </div>
-    </aside>
+    </motion.aside>
   );
 }

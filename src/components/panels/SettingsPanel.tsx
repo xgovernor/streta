@@ -51,7 +51,7 @@ export function SettingsPanel() {
       }
     >
       <div className="mb-3.5">
-        <div className="mb-1.5 flex items-baseline justify-between font-mono text-[8px] uppercase tracking-[0.1em] text-ink-muted">
+        <div className="mb-1.5 flex items-baseline justify-between font-mono text-[9.5px] uppercase tracking-[0.1em] text-ink-muted">
           <span>Interface</span>
           <span>Theme</span>
         </div>
@@ -80,7 +80,7 @@ export function SettingsPanel() {
       </div>
 
       <div className="mb-3.5">
-        <div className="mb-1.5 flex items-baseline justify-between font-mono text-[8px] uppercase tracking-[0.1em] text-ink-muted">
+        <div className="mb-1.5 flex items-baseline justify-between font-mono text-[9.5px] uppercase tracking-[0.1em] text-ink-muted">
           <span>Readout</span>
           <span>{formats.find((item) => item.id === coordFormat)?.hint}</span>
         </div>
@@ -106,7 +106,7 @@ export function SettingsPanel() {
         </div>
       </div>
 
-      <div className="mb-1.5 flex items-center justify-between font-mono text-[8px] uppercase tracking-[0.13em] text-ink-muted">
+      <div className="mb-1.5 flex items-center justify-between font-mono text-[9.5px] uppercase tracking-[0.13em] text-ink-muted">
         <span>Keyboard</span>
       </div>
       <div className="mb-3.5 flex flex-col gap-1.5">

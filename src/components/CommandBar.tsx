@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { motion, type Variants } from "motion/react";
 import {
   BellRing,
   History,
@@ -43,18 +44,28 @@ function LiveClock() {
   return (
     <div className="flex items-center gap-2 font-mono text-[10px] text-ink-muted">
       <span className="flex items-center gap-1 font-bold text-ink">
-        <span className="text-[8px] uppercase tracking-wider text-ink-muted">UTC</span>
+        <span className="text-[9.5px] uppercase tracking-wider text-ink-muted">UTC</span>
         {utcStr}
       </span>
       <span className="hidden mid:inline text-ink-soft">
-        <span className="text-[8px] uppercase tracking-wider text-ink-muted mr-1">LOC</span>
+        <span className="text-[9.5px] uppercase tracking-wider text-ink-muted mr-1">LOC</span>
         {localStr}
       </span>
     </div>
   );
 }
 
+const navVariants: Variants = {
+  hidden: { opacity: 0, y: -48 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.85, delay: 0.08, ease: [0.16, 1, 0.3, 1] },
+  },
+};
+
 export function CommandBar() {
+  const booted = useUiStore((state) => state.booted);
   const togglePanel = useUiStore((state) => state.togglePanel);
   const timelineOpen = useUiStore((state) => state.timelineOpen);
   const toggleTimeline = useUiStore((state) => state.toggleTimeline);
@@ -90,7 +101,10 @@ export function CommandBar() {
   };
 
   return (
-    <header
+    <motion.header
+      initial="hidden"
+      animate={booted ? "visible" : "hidden"}
+      variants={navVariants}
       className="pointer-events-auto absolute inset-x-0 top-0 z-[30] flex h-[var(--commandbar-h)] items-center justify-between border-b border-line bg-solid px-2.5 select-none"
       aria-label="Command bar"
     >
@@ -138,7 +152,7 @@ export function CommandBar() {
             <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <Plane size={11} className="rotate-[-45deg] text-accent" />
             <span className="font-bold text-ink">{flights.length}</span>
-            <span className="text-[8px] text-ink-muted uppercase">Air</span>
+            <span className="text-[9.5px] text-ink-muted uppercase">Air</span>
           </button>
         )}
 
@@ -152,7 +166,7 @@ export function CommandBar() {
             <span className="size-1.5 rounded-full bg-cyan-400" />
             <Ship size={11} className="text-cyan-400" />
             <span className="font-bold text-ink">{vessels.length}</span>
-            <span className="text-[8px] text-ink-muted uppercase">Sea</span>
+            <span className="text-[9.5px] text-ink-muted uppercase">Sea</span>
           </button>
         )}
 
@@ -166,7 +180,7 @@ export function CommandBar() {
             <span className="size-1.5 rounded-full bg-purple-400" />
             <Satellite size={11} className="text-purple-400" />
             <span className="font-bold text-ink">{satellites.length}</span>
-            <span className="text-[8px] text-ink-muted uppercase">Space</span>
+            <span className="text-[9.5px] text-ink-muted uppercase">Space</span>
           </button>
         )}
       </div>
@@ -219,6 +233,6 @@ export function CommandBar() {
           {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
       </div>
-    </header>
+    </motion.header>
   );
 }

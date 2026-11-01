@@ -191,26 +191,26 @@ export function ElevationChart({ data }: ElevationChartProps) {
       {/* Secondary Topographic Stats */}
       <div className="grid grid-cols-4 gap-1 rounded-[2px] border border-line/60 bg-solid/50 px-1.5 py-1 text-[9.5px]">
         <div className="flex flex-col items-center">
-          <span className="text-[8px] uppercase tracking-wider text-ink-muted">Net Δ</span>
+          <span className="text-[9.5px] uppercase tracking-wider text-ink-muted">Net Δ</span>
           <span className="font-mono font-semibold text-ink">
             {netElevation >= 0 ? "+" : ""}
             {Math.round(netElevation)}m
           </span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-[8px] uppercase tracking-wider text-ink-muted">Avg Elev</span>
+          <span className="text-[9.5px] uppercase tracking-wider text-ink-muted">Avg Elev</span>
           <span className="font-mono font-semibold text-ink">
             {Math.round(avgElevation)}m
           </span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-[8px] uppercase tracking-wider text-ink-muted">Max Slope</span>
+          <span className="text-[9.5px] uppercase tracking-wider text-ink-muted">Max Slope</span>
           <span className="font-mono font-semibold text-ink">
             {maxSlope != null ? `${maxSlope}%` : "—"}
           </span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-[8px] uppercase tracking-wider text-ink-muted">Peak Dist</span>
+          <span className="text-[9.5px] uppercase tracking-wider text-ink-muted">Peak Dist</span>
           <span className="font-mono font-semibold text-ink">
             {data.peak_distance_m != null
               ? `${(data.peak_distance_m / 1000).toFixed(1)} km`

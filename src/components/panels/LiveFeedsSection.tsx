@@ -549,7 +549,7 @@ export function LiveFeedsSection() {
 
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">ALTITUDE</span>
+                  <span className="text-[9.5px] text-ink-subtle">ALTITUDE</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.altitudeMeters).toLocaleString()} m
                   </span>
@@ -558,7 +558,7 @@ export function LiveFeedsSection() {
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">GROUND SPEED</span>
+                  <span className="text-[9.5px] text-ink-subtle">GROUND SPEED</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.velocityMps * 3.6)} km/h
                   </span>
@@ -567,7 +567,7 @@ export function LiveFeedsSection() {
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">V-SPEED</span>
+                  <span className="text-[9.5px] text-ink-subtle">V-SPEED</span>
                   <span
                     className={cx(
                       "font-semibold",
@@ -613,7 +613,7 @@ export function LiveFeedsSection() {
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"
                       />
-                      <div className="absolute bottom-1 right-1.5 rounded-[2px] bg-shell px-1 py-0.5 text-[8px] font-mono text-ink-soft">
+                      <div className="absolute bottom-1 right-1.5 rounded-[2px] bg-shell px-1 py-0.5 text-[9.5px] font-mono text-ink-soft">
                         {extendedAircraft.registration || selectedTarget.data.icao24}
                       </div>
                     </div>
@@ -626,7 +626,7 @@ export function LiveFeedsSection() {
                         <span className="font-mono text-xs font-bold text-ink">
                           {extendedAircraft.route.originAirport?.iata || extendedAircraft.route.originAirport?.icao || "ORIGIN"}
                         </span>
-                        <span className="text-[8px] text-ink-muted truncate max-w-[90px]" title={extendedAircraft.route.originAirport?.name}>
+                        <span className="text-[9.5px] text-ink-muted truncate max-w-[90px]" title={extendedAircraft.route.originAirport?.name}>
                           {extendedAircraft.route.originAirport?.name || "Departure"}
                         </span>
                       </div>
@@ -638,7 +638,7 @@ export function LiveFeedsSection() {
                         <span className="font-mono text-xs font-bold text-ink">
                           {extendedAircraft.route.destinationAirport?.iata || extendedAircraft.route.destinationAirport?.icao || "DEST"}
                         </span>
-                        <span className="text-[8px] text-ink-muted truncate max-w-[90px] text-right" title={extendedAircraft.route.destinationAirport?.name}>
+                        <span className="text-[9.5px] text-ink-muted truncate max-w-[90px] text-right" title={extendedAircraft.route.destinationAirport?.name}>
                           {extendedAircraft.route.destinationAirport?.name || "Arrival"}
                         </span>
                       </div>
@@ -721,19 +721,19 @@ export function LiveFeedsSection() {
               </div>
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">DEPTH</span>
+                  <span className="text-[9.5px] text-ink-subtle">DEPTH</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.depthKm.toFixed(1)} km
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">SIGNIFICANCE</span>
+                  <span className="text-[9.5px] text-ink-subtle">SIGNIFICANCE</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.significance}
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">TSUNAMI RISK</span>
+                  <span className="text-[9.5px] text-ink-subtle">TSUNAMI RISK</span>
                   <span
                     className={cx(
                       "font-semibold",
@@ -769,19 +769,19 @@ export function LiveFeedsSection() {
               </div>
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">ALTITUDE</span>
+                  <span className="text-[9.5px] text-ink-subtle">ALTITUDE</span>
                   <span className="font-semibold text-ink">
                     {(selectedTarget.data.altitudeKm ?? 0).toFixed(0)} km
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">VELOCITY</span>
+                  <span className="text-[9.5px] text-ink-subtle">VELOCITY</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.velocityKmh ?? 0).toLocaleString()} km/h
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">SUB-SAT POS</span>
+                  <span className="text-[9.5px] text-ink-subtle">SUB-SAT POS</span>
                   <span className="font-semibold text-ink">
                     {(selectedTarget.data.latitude ?? 0).toFixed(1)}°, {(selectedTarget.data.longitude ?? 0).toFixed(1)}°
                   </span>
@@ -846,19 +846,19 @@ export function LiveFeedsSection() {
               </div>
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">FRP POWER</span>
+                  <span className="text-[9.5px] text-ink-subtle">FRP POWER</span>
                   <span className="font-semibold text-warn">
                     {selectedTarget.data.frpMw.toFixed(1)} MW
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">BRIGHTNESS</span>
+                  <span className="text-[9.5px] text-ink-subtle">BRIGHTNESS</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.brightnessK.toFixed(1)} K
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">ACQUISITION</span>
+                  <span className="text-[9.5px] text-ink-subtle">ACQUISITION</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.acqDate} ({selectedTarget.data.dayNight === "D" ? "Day" : "Night"})
                   </span>
@@ -892,19 +892,19 @@ export function LiveFeedsSection() {
               </div>
               <div className="grid grid-cols-3 gap-1.5 font-mono text-[9.5px]">
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">SPEED</span>
+                  <span className="text-[9.5px] text-ink-subtle">SPEED</span>
                   <span className="font-semibold text-ink">
                     {selectedTarget.data.speedKnots.toFixed(1)} kts
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">COURSE</span>
+                  <span className="text-[9.5px] text-ink-subtle">COURSE</span>
                   <span className="font-semibold text-ink">
                     {Math.round(selectedTarget.data.courseDeg)}°
                   </span>
                 </div>
                 <div className="flex flex-col rounded-[2px] bg-surface p-1">
-                  <span className="text-[8px] text-ink-subtle">TYPE</span>
+                  <span className="text-[9.5px] text-ink-subtle">TYPE</span>
                   <span className="truncate font-semibold text-ink">
                     {selectedTarget.data.shipType}
                   </span>
@@ -1109,7 +1109,7 @@ export function LiveFeedsSection() {
                             <span className={cx(isEmg ? "text-critical font-bold" : "text-ink")}>
                               {Math.round(flight.altitudeMeters).toLocaleString()}m
                             </span>
-                            <span className="text-[8px] text-ink-subtle">
+                            <span className="text-[9.5px] text-ink-subtle">
                               {Math.round(flight.velocityMps * 3.6)}km/h
                             </span>
                           </div>

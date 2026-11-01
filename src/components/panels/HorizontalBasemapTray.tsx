@@ -310,7 +310,7 @@ export function HorizontalBasemapTray() {
                   <span className="truncate font-sans text-[11.5px] font-bold text-white drop-shadow-md">
                     {meta.name}
                   </span>
-                  <span className="font-mono text-[8px] uppercase tracking-[0.06em] text-zinc-300">
+                  <span className="font-mono text-[9.5px] uppercase tracking-[0.06em] text-zinc-300">
                     {isSelected ? "Active" : meta.category}
                   </span>
                 </div>

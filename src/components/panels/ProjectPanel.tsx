@@ -89,7 +89,7 @@ export function ProjectPanel() {
       }
     >
       <label className="flex flex-col gap-1">
-        <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-ink-muted">
+        <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-ink-muted">
           Project name
         </span>
         <input

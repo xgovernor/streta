@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { motion, type Variants } from "motion/react";
 import { AlertTriangle, History, X } from "lucide-react";
 import { crsName, GEOGRAPHIC_CRS, transformPosition, VIEW_CRS } from "../lib/gis/crs";
 import { formatMGRS } from "../lib/gis/mgrs";
@@ -22,7 +23,7 @@ import {
 import { useUiStore } from "../state/uiStore";
 
 const ITEM = "flex h-full shrink-0 items-center gap-1.5 px-2.5";
-const LABEL = "text-[8px] uppercase tracking-[0.12em] text-ink-muted";
+const LABEL = "text-[9.5px] uppercase tracking-[0.12em] text-ink-muted";
 const VALUE = "text-ink [font-variant-numeric:tabular-nums]";
 
 const ALL_FEEDS: TelemetryFeedType[] = [
@@ -41,7 +42,17 @@ const FEED_SHORT: Record<TelemetryFeedType, string> = {
   fires: "FIRE",
 };
 
+const statusVariants: Variants = {
+  hidden: { opacity: 0, y: 36 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.85, delay: 0.24, ease: [0.16, 1, 0.3, 1] },
+  },
+};
+
 export function StatusBar() {
+  const booted = useUiStore((state) => state.booted);
   const camera = useMapStore((state) => state.camera);
   const pointer = useMapStore((state) => state.pointer);
   const hoverLabel = useMapStore((state) => state.hoverLabel);
@@ -85,7 +96,10 @@ export function StatusBar() {
   const maxAgeMs = Math.max(autoRefreshSeconds * 1500, 45_000);
 
   return (
-    <footer
+    <motion.footer
+      initial="hidden"
+      animate={booted ? "visible" : "hidden"}
+      variants={statusVariants}
       className="pointer-events-auto absolute inset-x-0 bottom-0 z-[25] flex h-[var(--footer-h)] items-stretch overflow-hidden border-t border-line bg-solid font-mono text-[9.5px] tracking-[0.02em] text-ink-soft"
       aria-label="Map status"
     >
@@ -243,10 +257,10 @@ export function StatusBar() {
                     status.lastError && "underline decoration-critical underline-offset-2",
                   )}
                   title={`${FEED_LABELS[feed]} (${FEED_SHORT[feed]}) — ${status.lastError
-                      ? `last fetch failed: ${status.lastError}`
-                      : ageSec !== null
-                        ? `age ${ageSec}s · ${status.count} targets`
-                        : "no data yet"
+                    ? `last fetch failed: ${status.lastError}`
+                    : ageSec !== null
+                      ? `age ${ageSec}s · ${status.count} targets`
+                      : "no data yet"
                     }`}
                 >
                   {FEED_SHORT[feed]}{" "}
@@ -296,7 +310,7 @@ export function StatusBar() {
           {formatDistance(scaleDistance)}
         </span>
       </span>
-    </footer>
+    </motion.footer>
   );
 }
 

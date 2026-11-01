@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { motion, type Variants } from "motion/react";
 import {
   Compass,
   Frame,
@@ -24,7 +25,17 @@ import { cx } from "../lib/cx";
 const FLOATING_BTN =
   "grid size-8 place-items-center rounded-[2px] border border-line bg-solid/90 text-ink-soft shadow-panel backdrop-blur-md transition-colors hover:border-line-strong hover:bg-tint hover:text-ink focus-visible:outline-2";
 
+const floatingControlsVariants: Variants = {
+  hidden: { opacity: 0, scale: 0.88 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: { duration: 0.75, delay: 0.3, ease: [0.16, 1, 0.3, 1] },
+  },
+};
+
 export function FloatingCanvasControls() {
+  const booted = useUiStore((state) => state.booted);
   const rotation = useMapStore((state) => state.camera.rotation);
   const flash = useUiStore((state) => state.flash);
   const basemapTrayOpen = useUiStore((state) => state.basemapTrayOpen);
@@ -62,10 +73,19 @@ export function FloatingCanvasControls() {
     }
   };
   return (
-    <div
+    <motion.div
+      initial="hidden"
+      animate={
+        booted
+          ? isTableOpen && tableMaximized
+            ? { opacity: 0, scale: 0.88, transition: { duration: 0.2 } }
+            : "visible"
+          : "hidden"
+      }
+      variants={floatingControlsVariants}
       className={cx(
-        "pointer-events-auto absolute z-40 flex flex-col items-center gap-1 select-none transition-[right,bottom,opacity] duration-200 ease-out",
-        isTableOpen && tableMaximized && "opacity-0 pointer-events-none",
+        "pointer-events-auto absolute z-40 flex flex-col items-center gap-1 select-none transition-[right,bottom] duration-200 ease-out",
+        isTableOpen && tableMaximized && "pointer-events-none",
         rightPanel && rightPanel !== "table"
           ? "right-[calc(var(--ribbon-w)+300px+12px)]"
           : "right-[calc(var(--ribbon-w)+12px)]",
@@ -178,6 +198,6 @@ export function FloatingCanvasControls() {
           <LocateFixed size={14} strokeWidth={2} />
         )}
       </button>
-    </div>
+    </motion.div>
   );
 }

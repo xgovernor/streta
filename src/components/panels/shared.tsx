@@ -57,7 +57,7 @@ interface SectionLabelProps {
 
 export function SectionLabel({ children, trailing }: SectionLabelProps) {
   return (
-    <span className="flex items-center gap-1.5 font-mono text-[8px] font-semibold uppercase tracking-[0.18em] text-ink-muted">
+    <span className="flex items-center gap-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.18em] text-ink-muted">
       <span aria-hidden="true" className="h-px w-2 flex-none bg-line-strong" />
       {children}
       {trailing ? <span className="ml-2 inline-flex tracking-normal">{trailing}</span> : null}

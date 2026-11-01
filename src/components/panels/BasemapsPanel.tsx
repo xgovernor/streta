@@ -125,7 +125,7 @@ export function BasemapsPanel() {
                     <strong className="text-[11px] font-semibold">
                       {item.name}
                     </strong>
-                    <span className="font-mono text-[8px] uppercase tracking-[0.05em] text-ink-muted">
+                    <span className="font-mono text-[9.5px] uppercase tracking-[0.05em] text-ink-muted">
                       {item.tone}
                     </span>
                   </span>

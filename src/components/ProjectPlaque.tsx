@@ -18,7 +18,7 @@ export function ProjectPlaque() {
   return (
     <header className="bg-solid pointer-events-none absolute left-14 top-2.5 z-[22] flex items-center gap-3.5 rounded-[2px] border border-line py-[7px] pl-3 pr-2.5 shadow-float compact:hidden short:hidden">
       <div className="flex max-w-[280px] flex-col gap-px">
-        <span className="truncate font-mono text-[8px] uppercase tracking-[0.16em] text-ink-muted">
+        <span className="truncate font-mono text-[9.5px] uppercase tracking-[0.16em] text-ink-muted">
           Strata · Workspace
         </span>
         <strong className="truncate text-[12.5px] font-semibold tracking-[-0.01em]">
@@ -33,7 +33,7 @@ export function ProjectPlaque() {
       </div>
       <span
         className={cx(
-          "flex items-center gap-[5px] border-l border-line pl-3 font-mono text-[8px] uppercase tracking-[0.13em]",
+          "flex items-center gap-[5px] border-l border-line pl-3 font-mono text-[9.5px] uppercase tracking-[0.13em]",
           ready ? "text-ok" : "text-ink-muted",
         )}
       >

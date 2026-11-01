@@ -175,7 +175,7 @@ export function TelemetryHoverPopup() {
           <div className="mt-2 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
             <div className="flex items-center gap-1.5">
               <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[8px] font-bold text-ink-soft tracking-wider">LIVE ADS-B</span>
+              <span className="text-[9.5px] font-bold text-ink-soft tracking-wider">LIVE ADS-B</span>
             </div>
             <div className="flex items-center gap-1 text-ink font-semibold">
               <span>INSPECT & TRACK</span>
@@ -232,7 +232,7 @@ export function TelemetryHoverPopup() {
           <div className="mt-2 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
             <div className="flex items-center gap-1.5">
               <span className="size-1.5 rounded-full bg-cyan-400" />
-              <span className="text-[8px] font-bold text-ink-soft tracking-wider">SGP4 ORBIT</span>
+              <span className="text-[9.5px] font-bold text-ink-soft tracking-wider">SGP4 ORBIT</span>
             </div>
             <div className="flex items-center gap-1 text-ink font-semibold">
               <span>INSPECT & TRACK</span>
@@ -252,10 +252,10 @@ export function TelemetryHoverPopup() {
         const statusDotClass = isUnderWay
           ? "bg-emerald-500"
           : isAnchor
-          ? "bg-amber-500"
-          : isMoored
-          ? "bg-cyan-500"
-          : "bg-neutral-400";
+            ? "bg-amber-500"
+            : isMoored
+              ? "bg-cyan-500"
+              : "bg-neutral-400";
 
         const voyage =
           data.destination && data.lon != null && data.lat != null
@@ -299,7 +299,7 @@ export function TelemetryHoverPopup() {
             {/* Kinematics Grid: SOG, COG, Heading */}
             <div className="grid grid-cols-2 gap-2 text-[10.5px]">
               <div className="rounded-[2px] bg-tint p-1.5">
-                <div className="text-[8px] uppercase tracking-wider text-ink-muted">Speed (SOG)</div>
+                <div className="text-[9.5px] uppercase tracking-wider text-ink-muted">Speed (SOG)</div>
                 <div className="font-mono font-semibold text-ink">
                   {(data.speedKnots || 0).toFixed(1)} kts
                 </div>
@@ -308,7 +308,7 @@ export function TelemetryHoverPopup() {
                 </div>
               </div>
               <div className="rounded-[2px] bg-tint p-1.5">
-                <div className="text-[8px] uppercase tracking-wider text-ink-muted">Course (COG)</div>
+                <div className="text-[9.5px] uppercase tracking-wider text-ink-muted">Course (COG)</div>
                 <div className="font-mono font-semibold text-ink">
                   {Math.round(data.courseDeg || 0)}° {toCompassHeading(data.courseDeg || 0)}
                 </div>
@@ -324,7 +324,7 @@ export function TelemetryHoverPopup() {
             {data.destination ? (
               <div className="rounded-[2px] bg-tint p-1.5 text-[9.5px]">
                 <div className="flex items-center justify-between text-ink-soft">
-                  <span className="text-ink-muted uppercase tracking-wider text-[8px]">Destination</span>
+                  <span className="text-ink-muted uppercase tracking-wider text-[9.5px]">Destination</span>
                   {voyage && (
                     <span className="font-mono text-[9px] font-bold text-accent">
                       {Math.round(voyage.distanceNm).toLocaleString()} NM
@@ -339,7 +339,7 @@ export function TelemetryHoverPopup() {
                     <span>
                       ETA {voyage.etaDays < 1 ? `~${Math.max(1, Math.round(voyage.etaDays * 24))} H` : `~${voyage.etaDays.toFixed(1)} Days`}
                     </span>
-                    <span className="text-[8px] uppercase tracking-wider text-ink-soft">Great-Circle</span>
+                    <span className="text-[9.5px] uppercase tracking-wider text-ink-soft">Great-Circle</span>
                   </div>
                 )}
               </div>
@@ -354,7 +354,7 @@ export function TelemetryHoverPopup() {
             <div className="mt-2.5 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
               <div className="flex items-center gap-1.5">
                 <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[8px] font-bold text-ink-soft tracking-wider">LIVE AIS STREAM</span>
+                <span className="text-[9.5px] font-bold text-ink-soft tracking-wider">LIVE AIS STREAM</span>
               </div>
               <div className="flex items-center gap-1 text-ink font-semibold">
                 <span>INSPECT & TRACK</span>
@@ -394,7 +394,7 @@ export function TelemetryHoverPopup() {
           <div className="mt-2 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
             <div className="flex items-center gap-1.5">
               <span className="size-1.5 rounded-full bg-amber-500" />
-              <span className="text-[8px] font-bold text-ink-soft tracking-wider">USGS SEISMIC</span>
+              <span className="text-[9.5px] font-bold text-ink-soft tracking-wider">USGS SEISMIC</span>
             </div>
             <div className="flex items-center gap-1 text-ink font-semibold">
               <span>INSPECT & TRACK</span>
@@ -428,7 +428,7 @@ export function TelemetryHoverPopup() {
           <div className="mt-2 flex items-center justify-between border-t border-line pt-1.5 text-[8.5px] font-mono text-ink-muted">
             <div className="flex items-center gap-1.5">
               <span className="size-1.5 rounded-full bg-orange-500" />
-              <span className="text-[8px] font-bold text-ink-soft tracking-wider">NASA FIRMS</span>
+              <span className="text-[9.5px] font-bold text-ink-soft tracking-wider">NASA FIRMS</span>
             </div>
             <div className="flex items-center gap-1 text-ink font-semibold">
               <span>INSPECT & TRACK</span>

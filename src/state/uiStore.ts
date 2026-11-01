@@ -57,6 +57,8 @@ interface UiState {
   basemapTrayOpen: boolean;
   tableMaximized: boolean;
   tableHeight: number;
+  booted: boolean;
+  setBooted: (booted: boolean) => void;
   setSnipMode: (active: boolean) => void;
   setBasemapTrayOpen: (open: boolean) => void;
   toggleBasemapTray: () => void;
@@ -164,6 +166,8 @@ export const useUiStore = create<UiState>()(
       basemapTrayOpen: false,
       tableMaximized: false,
       tableHeight: 340,
+      booted: false,
+      setBooted: (booted) => set({ booted }),
       setSnipMode: (snipMode) => set({ snipMode }),
       setBasemapTrayOpen: (basemapTrayOpen) => set({ basemapTrayOpen }),
       toggleBasemapTray: () =>

@@ -76,7 +76,7 @@ function Slider({
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 font-mono text-[8px] uppercase tracking-[0.08em] text-ink-muted">
+    <label className="flex items-center gap-2 font-mono text-[9.5px] uppercase tracking-[0.08em] text-ink-muted">
       <span className="w-[66px] flex-none">{label}</span>
       <input
         type="range"
@@ -158,10 +158,10 @@ function Facet({
   return (
     <div className="rounded-[2px] border border-line bg-tint">
       <div className="flex items-center gap-1 py-1 pl-2 pr-1">
-        <span className="truncate font-mono text-[8px] uppercase tracking-[0.1em] text-ink-muted">
+        <span className="truncate font-mono text-[9.5px] uppercase tracking-[0.1em] text-ink-muted">
           {field}
         </span>
-        <span className="ml-auto flex-none font-mono text-[8px] text-ink-muted">
+        <span className="ml-auto flex-none font-mono text-[9.5px] text-ink-muted">
           {values.length ? `${values.length} of ${options.length}` : "all"}
         </span>
         <button
@@ -200,7 +200,7 @@ function Facet({
                 onChange(
                   values.includes(option.value) ?
                     values.filter((value) => value !== option.value)
-                  : [...values, option.value],
+                    : [...values, option.value],
                 )
               }
             />
@@ -248,7 +248,7 @@ function FilterSection({ layer }: { layer: DatasetLayer }) {
         trailing={
           active ?
             `${formatCount(shown.length)} of ${formatCount(layer.features.length)} shown`
-          : null
+            : null
         }
       >
         Filter
@@ -268,7 +268,7 @@ function FilterSection({ layer }: { layer: DatasetLayer }) {
                   layer.filters.map((item) =>
                     item.field === filter.field ?
                       { field: item.field, values }
-                    : item,
+                      : item,
                   ),
                 )
               }
@@ -489,7 +489,7 @@ export function LayerPanel() {
           value={
             hasActiveFilters(layer) ?
               `${formatCount(shown.length)} of ${formatCount(layer.features.length)}`
-            : formatCount(layer.features.length)
+              : formatCount(layer.features.length)
           }
         />
         <KeyValue label="Geometry" value={layer.geometryKind} />
@@ -601,7 +601,7 @@ export function LayerPanel() {
       </div>
 
       <label className="mt-2 flex flex-col gap-1">
-        <span className="font-mono text-[8px] uppercase tracking-[0.08em] text-ink-muted">
+        <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-ink-muted">
           Label field
         </span>
         <select

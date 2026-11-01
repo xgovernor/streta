@@ -536,10 +536,10 @@ export function BookmarksPanel() {
     panelMode === "details" && currentDetailBookmark
       ? currentDetailBookmark.title
       : panelMode === "edit"
-      ? "Edit Note"
-      : panelMode === "add"
-      ? "New Note"
-      : "Bookmarks & Notes";
+        ? "Edit Note"
+        : panelMode === "add"
+          ? "New Note"
+          : "Bookmarks & Notes";
 
 
   return (
@@ -602,7 +602,7 @@ export function BookmarksPanel() {
                 />
                 <span
                   className={cx(
-                    "rounded-[2px] border px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider",
+                    "rounded-[2px] border px-1.5 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-wider",
                     currentDetailBookmark.tier === "user"
                       ? "border-purple-500/30 bg-purple-950/40 text-purple-300"
                       : "border-cyan-500/30 bg-cyan-950/40 text-cyan-300",
@@ -613,14 +613,14 @@ export function BookmarksPanel() {
 
                 <span
                   className={cx(
-                    "rounded-[2px] px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider",
+                    "rounded-[2px] px-1.5 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-wider",
                     currentDetailBookmark.priority === "flash"
                       ? "bg-critical-20 text-critical border border-critical/40 animate-pulse"
                       : currentDetailBookmark.priority === "immediate"
-                      ? "bg-orange-950/40 text-orange-400 border border-orange-500/40"
-                      : currentDetailBookmark.priority === "priority"
-                      ? "bg-amber-950/40 text-amber-400 border border-amber-500/40"
-                      : "bg-white/[0.04] border border-white/10 text-ink-muted",
+                        ? "bg-orange-950/40 text-orange-400 border border-orange-500/40"
+                        : currentDetailBookmark.priority === "priority"
+                          ? "bg-amber-950/40 text-amber-400 border border-amber-500/40"
+                          : "bg-white/[0.04] border border-white/10 text-ink-muted",
                   )}
                 >
                   {currentDetailBookmark.priority === "routine"
@@ -711,7 +711,7 @@ export function BookmarksPanel() {
 
               <div className="grid grid-cols-2 gap-2 text-ink">
                 <div>
-                  <span className="block text-[8px] uppercase text-ink-muted">Coordinates</span>
+                  <span className="block text-[9.5px] uppercase text-ink-muted">Coordinates</span>
                   <span className="font-semibold text-[10.5px]">
                     {formatLat(currentDetailBookmark.lat, coordFormat)},{" "}
                     {formatLon(currentDetailBookmark.lon, coordFormat)}
@@ -719,19 +719,19 @@ export function BookmarksPanel() {
                 </div>
 
                 <div>
-                  <span className="block text-[8px] uppercase text-ink-muted">Camera Level</span>
+                  <span className="block text-[9.5px] uppercase text-ink-muted">Camera Level</span>
                   <span className="font-semibold text-[10.5px]">
                     Zoom {currentDetailBookmark.zoom}
                     {currentDetailBookmark.rotation
                       ? ` · Heading ${Math.round(
-                          (((currentDetailBookmark.rotation * 180) / Math.PI) % 360),
-                        )}°`
+                        (((currentDetailBookmark.rotation * 180) / Math.PI) % 360),
+                      )}°`
                       : ""}
                   </span>
                 </div>
 
                 <div>
-                  <span className="block text-[8px] uppercase text-ink-muted">Proximity</span>
+                  <span className="block text-[9.5px] uppercase text-ink-muted">Proximity</span>
                   <span className="font-semibold text-[10.5px] text-accent">
                     {formatDistance(
                       haversineMeters(
@@ -744,7 +744,7 @@ export function BookmarksPanel() {
                 </div>
 
                 <div>
-                  <span className="block text-[8px] uppercase text-ink-muted">Recorded</span>
+                  <span className="block text-[9.5px] uppercase text-ink-muted">Recorded</span>
                   <span className="text-[10px] text-ink-muted">
                     {new Date(currentDetailBookmark.createdAt).toLocaleString(undefined, {
                       month: "short",
@@ -777,7 +777,7 @@ export function BookmarksPanel() {
 
             {/* Analytical Tools Shortcuts */}
             <div className="mt-4 flex flex-col gap-1.5">
-              <span className="font-mono text-[8px] uppercase tracking-wider text-ink-muted">
+              <span className="font-mono text-[9.5px] uppercase tracking-wider text-ink-muted">
                 Spatial Operations
               </span>
               <div className="grid grid-cols-2 gap-2">
@@ -1143,7 +1143,7 @@ export function BookmarksPanel() {
                 {/* I/O Dropdown Menu */}
                 {isIoMenuOpen && (
                   <div className="absolute right-0 top-6 z-50 flex w-44 flex-col border border-line bg-raised shadow-xl">
-                    <div className="border-b border-line px-2 py-1 font-mono text-[8px] uppercase tracking-wider text-ink-muted">
+                    <div className="border-b border-line px-2 py-1 font-mono text-[9.5px] uppercase tracking-wider text-ink-muted">
                       Export Dataset
                     </div>
                     <button
@@ -1170,7 +1170,7 @@ export function BookmarksPanel() {
                       <Download size={11} />
                       <span>Spreadsheet CSV</span>
                     </button>
-                    <div className="border-y border-line px-2 py-1 font-mono text-[8px] uppercase tracking-wider text-ink-muted">
+                    <div className="border-y border-line px-2 py-1 font-mono text-[9.5px] uppercase tracking-wider text-ink-muted">
                       Import Data
                     </div>
                     <button
@@ -1279,7 +1279,7 @@ export function BookmarksPanel() {
 
                 <div className="grid grid-cols-3 gap-1.5">
                   <div>
-                    <label className="mb-0.5 block font-mono text-[8px] uppercase text-ink-muted">
+                    <label className="mb-0.5 block font-mono text-[9.5px] uppercase text-ink-muted">
                       Tier
                     </label>
                     <select
@@ -1294,7 +1294,7 @@ export function BookmarksPanel() {
                   </div>
 
                   <div>
-                    <label className="mb-0.5 block font-mono text-[8px] uppercase text-ink-muted">
+                    <label className="mb-0.5 block font-mono text-[9.5px] uppercase text-ink-muted">
                       Priority
                     </label>
                     <select
@@ -1311,7 +1311,7 @@ export function BookmarksPanel() {
                   </div>
 
                   <div>
-                    <label className="mb-0.5 block font-mono text-[8px] uppercase text-ink-muted">
+                    <label className="mb-0.5 block font-mono text-[9.5px] uppercase text-ink-muted">
                       Sort By
                     </label>
                     <select
@@ -1446,8 +1446,8 @@ export function BookmarksPanel() {
                                 bm.priority === "flash"
                                   ? "bg-critical-20 text-critical border border-critical/40 animate-pulse"
                                   : bm.priority === "immediate"
-                                  ? "bg-orange-950/40 text-orange-400 border border-orange-500/40"
-                                  : "bg-amber-950/40 text-amber-400 border border-amber-500/40",
+                                    ? "bg-orange-950/40 text-orange-400 border border-orange-500/40"
+                                    : "bg-amber-950/40 text-amber-400 border border-amber-500/40",
                               )}
                             >
                               {bm.priority}
@@ -1523,7 +1523,7 @@ export function BookmarksPanel() {
                       {(bm.category || (bm.tags && bm.tags.length > 0)) && (
                         <div className="flex flex-wrap items-center gap-1 pt-0.5">
                           {bm.category && (
-                            <span className="border border-line bg-raised px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-accent font-semibold">
+                            <span className="border border-line bg-raised px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-accent font-semibold">
                               {bm.category}
                             </span>
                           )}

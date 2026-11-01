@@ -304,17 +304,17 @@ export function RasterDatasetsSection() {
       const viewBbox = getViewportBbox();
       const bbox: [number, number, number, number] =
         viewBbox &&
-        preset.center[0] >= viewBbox[0] &&
-        preset.center[0] <= viewBbox[2] &&
-        preset.center[1] >= viewBbox[1] &&
-        preset.center[1] <= viewBbox[3]
+          preset.center[0] >= viewBbox[0] &&
+          preset.center[0] <= viewBbox[2] &&
+          preset.center[1] >= viewBbox[1] &&
+          preset.center[1] <= viewBbox[3]
           ? viewBbox
           : [
-              preset.center[0] - 0.15,
-              preset.center[1] - 0.12,
-              preset.center[0] + 0.15,
-              preset.center[1] + 0.12,
-            ];
+            preset.center[0] - 0.15,
+            preset.center[1] - 0.12,
+            preset.center[0] + 0.15,
+            preset.center[1] + 0.12,
+          ];
 
       const width = 36;
       const height = 36;
@@ -523,7 +523,7 @@ export function RasterDatasetsSection() {
                           className="h-2 w-full rounded-[2px] border border-line"
                           style={{ background: activeMeta.gradient }}
                         />
-                        <div className="flex justify-between text-[8px] font-mono text-ink-muted">
+                        <div className="flex justify-between text-[9.5px] font-mono text-ink-muted">
                           {activeMeta.ticks.map((t, idx) => (
                             <span key={idx}>{t.label}</span>
                           ))}

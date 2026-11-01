@@ -526,7 +526,7 @@ export function DatasetsPanel() {
                             </div>
 
                             {layer.visible ? (
-                              <div className="mt-1.5 flex items-center gap-2 border-t border-line pt-1.5 font-mono text-[8px] uppercase tracking-[0.08em] text-ink-muted">
+                              <div className="mt-1.5 flex items-center gap-2 border-t border-line pt-1.5 font-mono text-[9.5px] uppercase tracking-[0.08em] text-ink-muted">
                                 <span>Opacity</span>
                                 <input
                                   type="range"
@@ -636,44 +636,44 @@ export function DatasetsPanel() {
           title="No datasets loaded. Open a file, add one from the library, or start from the bundled sample."
         />
       )}        {recent.length ? (
-          <>
-            <SectionLabel trailing="Too large to keep">Previous session</SectionLabel>
-            <div className="flex flex-col gap-px">
-              {recent.map((entry) => (
-                <div
-                  key={`${entry.name}-${entry.featureCount}`}
-                  className="flex items-center gap-2 rounded-[2px] px-1.5 py-[7px]"
-                >
-                  <LayerSwatch color={entry.color} />
-                  <span className="flex min-w-0 flex-1 flex-col gap-px">
-                    <strong className="truncate text-[11px] font-semibold">
-                      {entry.name}
-                    </strong>
-                    <span className="truncate font-mono text-[9px] text-ink-muted">
-                      {formatCount(entry.featureCount)} features · {entry.crs}
-                    </span>
+        <>
+          <SectionLabel trailing="Too large to keep">Previous session</SectionLabel>
+          <div className="flex flex-col gap-px">
+            {recent.map((entry) => (
+              <div
+                key={`${entry.name}-${entry.featureCount}`}
+                className="flex items-center gap-2 rounded-[2px] px-1.5 py-[7px]"
+              >
+                <LayerSwatch color={entry.color} />
+                <span className="flex min-w-0 flex-1 flex-col gap-px">
+                  <strong className="truncate text-[11px] font-semibold">
+                    {entry.name}
+                  </strong>
+                  <span className="truncate font-mono text-[9px] text-ink-muted">
+                    {formatCount(entry.featureCount)} features · {entry.crs}
                   </span>
-                  <button
-                    type="button"
-                    className="px-1 text-[9.5px] font-semibold text-accent transition-opacity hover:opacity-80"
-                    onClick={() => void reload(entry.source, entry.name)}
-                  >
-                    Reload
-                  </button>
-                  <button
-                    type="button"
-                    className={ICON_BUTTON}
-                    title="Forget"
-                    aria-label={`Forget ${entry.name}`}
-                    onClick={() => forgetRecent(entry.name)}
-                  >
-                    <Trash2 size={12} strokeWidth={1.9} aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : null}
+                </span>
+                <button
+                  type="button"
+                  className="px-1 text-[9.5px] font-semibold text-accent transition-opacity hover:opacity-80"
+                  onClick={() => void reload(entry.source, entry.name)}
+                >
+                  Reload
+                </button>
+                <button
+                  type="button"
+                  className={ICON_BUTTON}
+                  title="Forget"
+                  aria-label={`Forget ${entry.name}`}
+                  onClick={() => forgetRecent(entry.name)}
+                >
+                  <Trash2 size={12} strokeWidth={1.9} aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
 
       <SectionLabel>Reference</SectionLabel>
       <div className="flex items-center gap-2 rounded-[2px] border border-line bg-tint p-2">

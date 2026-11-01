@@ -574,17 +574,17 @@ export function BufferPanel() {
       const innerRadiusMeters = isSector ? currentInnerRadius * UNIT_MULTIPLIERS[unit] : 0;
       const sectorParams: SectorBufferParams | undefined = isSector
         ? {
-            startAzimuthDeg: currentStartAz,
-            endAzimuthDeg: currentEndAz,
-            innerRadiusMeters,
-          }
+          startAzimuthDeg: currentStartAz,
+          endAzimuthDeg: currentEndAz,
+          innerRadiusMeters,
+        }
         : undefined;
 
       const corridorOptions: CorridorOptions | undefined = spine
         ? {
-            sideType: currentCorridorSide,
-            capStyle: currentCorridorCap,
-          }
+          sideType: currentCorridorSide,
+          capStyle: currentCorridorCap,
+        }
         : undefined;
 
       const layerIds = targetLayer === "all" ? undefined : [targetLayer];
@@ -625,24 +625,24 @@ export function BufferPanel() {
             bearing = res.bearingDeg;
           } else {
             const m = (baseResult as any).center_lon != null
-              ? (function() {
-                  const toRad = (d: number) => (d * Math.PI) / 180;
-                  const R = 6371008.8;
-                  const dLat = toRad(flight.latitude - effectiveCenter[1]);
-                  const dLon = toRad(flight.longitude - effectiveCenter[0]);
-                  const a =
-                    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                    Math.cos(toRad(effectiveCenter[1])) * Math.cos(toRad(flight.latitude)) *
-                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-                  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-                  const d = R * c;
-                  const y = Math.sin(dLon) * Math.cos(toRad(flight.latitude));
-                  const x =
-                    Math.cos(toRad(effectiveCenter[1])) * Math.sin(toRad(flight.latitude)) -
-                    Math.sin(toRad(effectiveCenter[1])) * Math.cos(toRad(flight.latitude)) * Math.cos(dLon);
-                  const b = ((((Math.atan2(y, x) * 180) / Math.PI) % 360) + 360) % 360;
-                  return { d, b };
-                })()
+              ? (function () {
+                const toRad = (d: number) => (d * Math.PI) / 180;
+                const R = 6371008.8;
+                const dLat = toRad(flight.latitude - effectiveCenter[1]);
+                const dLon = toRad(flight.longitude - effectiveCenter[0]);
+                const a =
+                  Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(toRad(effectiveCenter[1])) * Math.cos(toRad(flight.latitude)) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                const d = R * c;
+                const y = Math.sin(dLon) * Math.cos(toRad(flight.latitude));
+                const x =
+                  Math.cos(toRad(effectiveCenter[1])) * Math.sin(toRad(flight.latitude)) -
+                  Math.sin(toRad(effectiveCenter[1])) * Math.cos(toRad(flight.latitude)) * Math.cos(dLon);
+                const b = ((((Math.atan2(y, x) * 180) / Math.PI) % 360) + 360) % 360;
+                return { d, b };
+              })()
               : { d: Infinity, b: 0 };
             distM = m.d;
             bearing = m.b;
@@ -840,18 +840,18 @@ export function BufferPanel() {
           const ringGeo = isPolygonSpine && spine
             ? createGeodesicPolygonBuffer(spine, r)
             : spine && spine.length >= 2
-            ? createGeodesicLineBuffer(spine, r, corridorOptions)
-            : isSector
-            ? createGeodesicSectorBuffer(
-                effectiveCenter[0],
-                effectiveCenter[1],
-                r,
-                currentStartAz,
-                currentEndAz,
-                i === 0 ? innerRadiusMeters : ringRadii[i - 1],
-                64,
-              )
-            : createGeodesicPointBuffer(effectiveCenter[0], effectiveCenter[1], r, 64);
+              ? createGeodesicLineBuffer(spine, r, corridorOptions)
+              : isSector
+                ? createGeodesicSectorBuffer(
+                  effectiveCenter[0],
+                  effectiveCenter[1],
+                  r,
+                  currentStartAz,
+                  currentEndAz,
+                  i === 0 ? innerRadiusMeters : ringRadii[i - 1],
+                  64,
+                )
+                : createGeodesicPointBuffer(effectiveCenter[0], effectiveCenter[1], r, 64);
 
           const rLabel = r >= 1000 ? `${(r / 1000).toFixed(1)} km` : `${Math.round(r)} m`;
           rings.push({
@@ -883,8 +883,8 @@ export function BufferPanel() {
           Math.abs(currentEndAz - currentStartAz) < 1e-4
             ? 360
             : currentEndAz > currentStartAz
-            ? currentEndAz - currentStartAz
-            : currentEndAz - currentStartAz + 360;
+              ? currentEndAz - currentStartAz
+              : currentEndAz - currentStartAz + 360;
         handleAzimuth = (currentStartAz + sweep / 2) % 360;
       }
 
@@ -916,8 +916,7 @@ export function BufferPanel() {
           : `${Math.round(maxSearchDistance)} m`;
 
       notify(
-        `Found ${allHits.length} features within ${distLabel}${
-          isMulti ? ` across ${totalRings} concentric bands` : ""
+        `Found ${allHits.length} features within ${distLabel}${isMulti ? ` across ${totalRings} concentric bands` : ""
         }`,
       );
     } catch (err) {
@@ -1037,8 +1036,8 @@ export function BufferPanel() {
       sourceType === "measurement"
         ? `Corridor Buffer ${distLabel}`
         : ringMode === "multi"
-        ? `Multi-Ring ${ringCount}x (${distLabel})`
-        : `Buffer ${distLabel}`;
+          ? `Multi-Ring ${ringCount}x (${distLabel})`
+          : `Buffer ${distLabel}`;
 
     const datasetName = uniqueDatasetName(existingDatasetNames, title);
 
@@ -1307,8 +1306,8 @@ export function BufferPanel() {
             {sourceType === "measurement"
               ? "Corridor Envelope"
               : ringMode === "multi"
-              ? `${ringCount}-Ring Range Rings`
-              : "64-vertex Polygon"}
+                ? `${ringCount}-Ring Range Rings`
+                : "64-vertex Polygon"}
           </span>
         </>
       }
@@ -1718,82 +1717,82 @@ export function BufferPanel() {
         {/* Phase 3: Corridor Options Card when buffering a line or path */}
         {(sourceType === "measurement" ||
           (sourceType === "selection" && selectedFeature?.geometry?.type !== "Polygon")) && (
-          <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-ink-muted font-medium">Corridor Offset Side:</span>
-              <div className="flex items-center gap-1">
-                {(["both", "left", "right"] as const).map((side) => (
-                  <button
-                    key={side}
-                    type="button"
-                    className={cx(
-                      "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium capitalize transition-colors",
-                      corridorSide === side
-                        ? "bg-accent text-on-accent font-semibold border-accent"
-                        : "bg-solid text-ink-muted hover:text-ink border-line",
-                    )}
-                    onClick={() => {
-                      setCorridorSide(side);
-                      runQueryWithParams(
-                        sourceType,
-                        ringMode,
-                        ringCount,
-                        radiusMeters,
-                        bufferCenter,
-                        selectedLayerId,
-                        shapeMode,
-                        startAzimuth,
-                        endAzimuth,
-                        innerRadiusInput,
-                        side,
-                        corridorCap,
-                      );
-                    }}
-                  >
-                    {side === "both" ? "Both" : side === "left" ? "Port (Left)" : "Starboard (Right)"}
-                  </button>
-                ))}
+            <div className="flex flex-col gap-2 rounded-[2px] border border-line bg-tint p-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-ink-muted font-medium">Corridor Offset Side:</span>
+                <div className="flex items-center gap-1">
+                  {(["both", "left", "right"] as const).map((side) => (
+                    <button
+                      key={side}
+                      type="button"
+                      className={cx(
+                        "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium capitalize transition-colors",
+                        corridorSide === side
+                          ? "bg-accent text-on-accent font-semibold border-accent"
+                          : "bg-solid text-ink-muted hover:text-ink border-line",
+                      )}
+                      onClick={() => {
+                        setCorridorSide(side);
+                        runQueryWithParams(
+                          sourceType,
+                          ringMode,
+                          ringCount,
+                          radiusMeters,
+                          bufferCenter,
+                          selectedLayerId,
+                          shapeMode,
+                          startAzimuth,
+                          endAzimuth,
+                          innerRadiusInput,
+                          side,
+                          corridorCap,
+                        );
+                      }}
+                    >
+                      {side === "both" ? "Both" : side === "left" ? "Port (Left)" : "Starboard (Right)"}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center justify-between pt-1 border-t border-line/60">
-              <span className="text-[10px] text-ink-muted font-medium">Terminal Cap Style:</span>
-              <div className="flex items-center gap-1">
-                {(["round", "flat"] as const).map((cap) => (
-                  <button
-                    key={cap}
-                    type="button"
-                    className={cx(
-                      "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium capitalize transition-colors",
-                      corridorCap === cap
-                        ? "bg-accent text-on-accent font-semibold border-accent"
-                        : "bg-solid text-ink-muted hover:text-ink border-line",
-                    )}
-                    onClick={() => {
-                      setCorridorCap(cap);
-                      runQueryWithParams(
-                        sourceType,
-                        ringMode,
-                        ringCount,
-                        radiusMeters,
-                        bufferCenter,
-                        selectedLayerId,
-                        shapeMode,
-                        startAzimuth,
-                        endAzimuth,
-                        innerRadiusInput,
-                        corridorSide,
-                        cap,
-                      );
-                    }}
-                  >
-                    {cap === "round" ? "Round (180°)" : "Flat (Square)"}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between pt-1 border-t border-line/60">
+                <span className="text-[10px] text-ink-muted font-medium">Terminal Cap Style:</span>
+                <div className="flex items-center gap-1">
+                  {(["round", "flat"] as const).map((cap) => (
+                    <button
+                      key={cap}
+                      type="button"
+                      className={cx(
+                        "px-2 py-0.5 text-[9.5px] rounded-[2px] border font-medium capitalize transition-colors",
+                        corridorCap === cap
+                          ? "bg-accent text-on-accent font-semibold border-accent"
+                          : "bg-solid text-ink-muted hover:text-ink border-line",
+                      )}
+                      onClick={() => {
+                        setCorridorCap(cap);
+                        runQueryWithParams(
+                          sourceType,
+                          ringMode,
+                          ringCount,
+                          radiusMeters,
+                          bufferCenter,
+                          selectedLayerId,
+                          shapeMode,
+                          startAzimuth,
+                          endAzimuth,
+                          innerRadiusInput,
+                          corridorSide,
+                          cap,
+                        );
+                      }}
+                    >
+                      {cap === "round" ? "Round (180°)" : "Flat (Square)"}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* Ring Mode: Single vs Multi-Ring Tactical Range Rings */}
         <div className="flex flex-col gap-1">
@@ -1962,7 +1961,7 @@ export function BufferPanel() {
           <div className="flex items-center justify-between text-[9.5px] font-mono text-ink-muted px-1">
             <span>
               {ringMode === "multi"
-                ? `Max Reach: ${( (radiusMeters * ringCount) / 1000 ).toFixed(1)} km`
+                ? `Max Reach: ${((radiusMeters * ringCount) / 1000).toFixed(1)} km`
                 : `Area: ${areaSqKm} km²`}
             </span>
             <span>
@@ -2168,7 +2167,7 @@ export function BufferPanel() {
                           {inc.name}
                         </span>
                         {inc.ringBand != null && (
-                          <span className="text-[8px] font-mono px-1 py-0.2 bg-tint border border-line rounded-[1px] text-accent">
+                          <span className="text-[9.5px] font-mono px-1 py-0.2 bg-tint border border-line rounded-[1px] text-accent">
                             R{inc.ringBand}
                           </span>
                         )}
@@ -2273,15 +2272,15 @@ export function BufferPanel() {
                     onClick={() => {
                       const lon = Number(
                         nearestHit.target_lon ??
-                          nearestHit.properties?.longitude ??
-                          nearestHit.properties?.lon ??
-                          bufferResult.center_lon,
+                        nearestHit.properties?.longitude ??
+                        nearestHit.properties?.lon ??
+                        bufferResult.center_lon,
                       );
                       const lat = Number(
                         nearestHit.target_lat ??
-                          nearestHit.properties?.latitude ??
-                          nearestHit.properties?.lat ??
-                          bufferResult.center_lat,
+                        nearestHit.properties?.latitude ??
+                        nearestHit.properties?.lat ??
+                        bufferResult.center_lat,
                       );
                       flyToCoordinate(lon, lat, 16);
                     }}
@@ -2309,15 +2308,15 @@ export function BufferPanel() {
                     onClick={() => {
                       const lon = Number(
                         furthestHit.target_lon ??
-                          furthestHit.properties?.longitude ??
-                          furthestHit.properties?.lon ??
-                          bufferResult.center_lon,
+                        furthestHit.properties?.longitude ??
+                        furthestHit.properties?.lon ??
+                        bufferResult.center_lon,
                       );
                       const lat = Number(
                         furthestHit.target_lat ??
-                          furthestHit.properties?.latitude ??
-                          furthestHit.properties?.lat ??
-                          bufferResult.center_lat,
+                        furthestHit.properties?.latitude ??
+                        furthestHit.properties?.lat ??
+                        bufferResult.center_lat,
                       );
                       flyToCoordinate(lon, lat, 16);
                     }}
@@ -2544,15 +2543,15 @@ export function BufferPanel() {
                       onClick={() => {
                         const lon = Number(
                           hit.target_lon ??
-                            hit.properties?.longitude ??
-                            hit.properties?.lon ??
-                            bufferResult.center_lon,
+                          hit.properties?.longitude ??
+                          hit.properties?.lon ??
+                          bufferResult.center_lon,
                         );
                         const lat = Number(
                           hit.target_lat ??
-                            hit.properties?.latitude ??
-                            hit.properties?.lat ??
-                            bufferResult.center_lat,
+                          hit.properties?.latitude ??
+                          hit.properties?.lat ??
+                          bufferResult.center_lat,
                         );
                         flyToCoordinate(lon, lat, 16);
                         notify(`Navigated to ${name}`);
@@ -2588,13 +2587,13 @@ export function BufferPanel() {
                                 ? hit.telemetry_type === "flight"
                                   ? "#fbbf24"
                                   : hit.telemetry_type === "vessel"
-                                  ? "#22d3ee"
-                                  : "#f43f5e"
+                                    ? "#22d3ee"
+                                    : "#f43f5e"
                                 : layer?.style?.color || "#06b6d4",
                             }}
                           />
                           {isTel ? `Live ${hit.telemetry_type}` : layer?.name || hit.layer_id}
-                          <span className="text-ink-muted/70 text-[8px] uppercase tracking-wide">
+                          <span className="text-ink-muted/70 text-[9.5px] uppercase tracking-wide">
                             [{hit.geometry_type}]
                           </span>
                         </span>
@@ -2615,8 +2614,8 @@ export function BufferPanel() {
           {sourceType === "measurement"
             ? "Constructs a geodetic line corridor envelope around the active measurement path, querying all layers and feeds within the corridor radius."
             : ringMode === "multi"
-            ? `Generates ${ringCount} concentric tactical range rings on WGS 84, classifying intercepted targets into graduated distance bands.`
-            : "Constructs a 64-vertex true geodesic buffer polygon on WGS 84, scanning the spatial index and calculating ellipsoidal distances to all intercepted features."}
+              ? `Generates ${ringCount} concentric tactical range rings on WGS 84, classifying intercepted targets into graduated distance bands.`
+              : "Constructs a 64-vertex true geodesic buffer polygon on WGS 84, scanning the spatial index and calculating ellipsoidal distances to all intercepted features."}
         </InfoNote>
       </div>
     </PanelShell>

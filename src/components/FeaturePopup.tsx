@@ -185,7 +185,7 @@ function buildCard(
     >
       <div className="flex items-center gap-1.5 border-b border-line px-2.5 py-1.5">
         <LayerSwatch color={layer.style.color} />
-        <span className="truncate font-mono text-[8px] uppercase tracking-[0.12em] text-ink-muted">
+        <span className="truncate font-mono text-[9.5px] uppercase tracking-[0.12em] text-ink-muted">
           {layer.name}
         </span>
         <button
@@ -245,7 +245,7 @@ function buildCard(
             const coordFormat = useUiStore.getState().coordFormat;
             const text = `${formatLat(lat, coordFormat)} · ${formatLon(lon, coordFormat)}`;
             if (navigator.clipboard) {
-              navigator.clipboard.writeText(text).catch(() => {});
+              navigator.clipboard.writeText(text).catch(() => { });
             }
           }}
         >
@@ -302,7 +302,7 @@ function CameraHoverWidget({
   const name =
     typeof props.name === "string" && props.name.trim() ?
       props.name
-    : feature.id;
+      : feature.id;
 
   const city = typeof props.city === "string" ? props.city : null;
   const provider = typeof props.provider === "string" ? props.provider : null;
@@ -310,32 +310,32 @@ function CameraHoverWidget({
   const heading =
     typeof props.heading_deg === "number" && Number.isFinite(props.heading_deg) ?
       props.heading_deg
-    : null;
+      : null;
 
   const mountHeight =
     typeof props.mount_height_m === "number" && Number.isFinite(props.mount_height_m) ?
       props.mount_height_m
-    : null;
+      : null;
 
   const mountGround =
     typeof props.mount_ground_m === "number" && Number.isFinite(props.mount_ground_m) ?
       props.mount_ground_m
-    : null;
+      : null;
 
   const totalElev =
     typeof props.total_elevation_m === "number" && Number.isFinite(props.total_elevation_m) ?
       props.total_elevation_m
-    : null;
+      : null;
 
   const fov =
     typeof props.fov_deg === "number" && Number.isFinite(props.fov_deg) ?
       props.fov_deg
-    : null;
+      : null;
 
   const range =
     typeof props.range_m === "number" && Number.isFinite(props.range_m) ?
       props.range_m
-    : null;
+      : null;
 
   const handleZoom = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -358,7 +358,7 @@ function CameraHoverWidget({
     const coordFormat = useUiStore.getState().coordFormat;
     const text = `${formatLat(lat, coordFormat)} · ${formatLon(lon, coordFormat)}`;
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch(() => {});
+      navigator.clipboard.writeText(text).catch(() => { });
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     }
@@ -380,11 +380,11 @@ function CameraHoverWidget({
       {/* Header bar */}
       <div className="flex items-center gap-1.5 border-b border-line bg-tint px-2.5 py-1.5">
         <LayerSwatch color={layer.style.color} />
-        <span className="truncate font-mono text-[8px] uppercase tracking-[0.12em] text-ink-muted">
+        <span className="truncate font-mono text-[9.5px] uppercase tracking-[0.12em] text-ink-muted">
           CCTV Camera
         </span>
         <div className="ml-auto flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-[2px] border border-line bg-tint px-1.5 py-0.5 font-mono text-[8px] font-semibold text-ok">
+          <span className="inline-flex items-center gap-1 rounded-[2px] border border-line bg-tint px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-ok">
             <span className="size-1.5 rounded-full bg-ok animate-pulse" />
             LIVE
           </span>
@@ -480,7 +480,7 @@ function CameraHoverWidget({
                   className={refreshing ? "animate-spin text-accent" : ""}
                 />
               </button>
-              <div className="pointer-events-none absolute bottom-1 left-1.5 flex items-center gap-1 font-mono text-[8px] text-white/80 drop-shadow">
+              <div className="pointer-events-none absolute bottom-1 left-1.5 flex items-center gap-1 font-mono text-[9.5px] text-white/80 drop-shadow">
                 <Camera size={9} strokeWidth={2} />
                 <span>{feature.id}</span>
               </div>
@@ -527,7 +527,7 @@ function CameraHoverWidget({
                 </span>
               </div>
               {mountHeight != null && totalElev != null ? (
-                <span className="font-mono text-[8px] text-ink-muted" title={`Mount: ${mountHeight}m, Ground: ${mountGround ?? "?"}m`}>
+                <span className="font-mono text-[9.5px] text-ink-muted" title={`Mount: ${mountHeight}m, Ground: ${mountGround ?? "?"}m`}>
                   +{mountHeight}m
                 </span>
               ) : null}

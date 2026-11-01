@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence, useSpring } from "motion/react";
 import { useMapStore } from "../state/mapStore";
+import { useUiStore } from "../state/uiStore";
 
 /**
  * High-fidelity macOS boot splash screen powered by Motion spring physics.
@@ -39,6 +40,7 @@ export function BootSplashScreen() {
     // Safety fallback: dismiss after 2.5s even if map postrender is delayed
     const tFallback = setTimeout(() => {
       setVisible(false);
+      useUiStore.getState().setBooted(true);
     }, 2500);
 
     return () => {
@@ -57,8 +59,10 @@ export function BootSplashScreen() {
     progress.set(1.0);
 
     // Hold at 100% for an authentic macOS beat (160ms), then trigger AnimatePresence exit
+    // and launch layout chrome entrance animation simultaneously
     const tDone = setTimeout(() => {
       setVisible(false);
+      useUiStore.getState().setBooted(true);
     }, 160);
 
     return () => clearTimeout(tDone);
@@ -75,7 +79,7 @@ export function BootSplashScreen() {
             scale: 1.018,
             filter: "blur(3px)",
             transition: {
-              duration: 0.55,
+              duration: 0.45,
               ease: [0.16, 1, 0.3, 1],
             },
           }}

@@ -29,7 +29,7 @@ import { PanelShell } from "../PanelShell";
 import {
   EmptyState,
   KeyValue,
-  PRIMARY_BUTTON,    SECONDARY_BUTTON,
+  PRIMARY_BUTTON, SECONDARY_BUTTON,
   SectionLabel,
 } from "./shared";
 
@@ -169,11 +169,11 @@ function OnlineContext({
 
   return (
     <>
-      <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-ink-muted">Context</span>
+      <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-ink-muted">Context</span>
 
       <div className="flex flex-col gap-2.5">
         <div className="flex flex-col gap-[3px]">
-          <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-ink-muted">
+          <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-ink-muted">
             Place
           </span>
           {place.status === "loading" ? (
@@ -201,7 +201,7 @@ function OnlineContext({
 
         {wikiLinked ? (
           <div className="flex flex-col gap-[3px] border-t border-line pt-2">
-            <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-ink-muted">
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-ink-muted">
               Wikipedia
             </span>
             {wiki.status === "loading" ? (
@@ -236,7 +236,7 @@ function OnlineContext({
         ) : null}
 
         <div className="flex flex-col gap-[3px] border-t border-line pt-2">
-          <span className="font-mono text-[8px] uppercase tracking-[0.1em] text-ink-muted">
+          <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-ink-muted">
             OpenStreetMap
           </span>
           {!osmRef ? (
@@ -333,12 +333,11 @@ function CctvSnapshotViewer({ rawUrl }: { rawUrl: string }) {
           <Camera size={11} strokeWidth={2} aria-hidden="true" />
           <span>Live Snapshot</span>
           <span
-            className={`inline-block size-1.5 rounded-full ${
-              hasError ? "bg-warn" : isPaused ? "bg-ink-muted" : "bg-ok animate-pulse"
-            }`}
+            className={`inline-block size-1.5 rounded-full ${hasError ? "bg-warn" : isPaused ? "bg-ink-muted" : "bg-ok animate-pulse"
+              }`}
           />
         </div>
-        <span className="font-mono text-[8px] text-ink-muted">
+        <span className="font-mono text-[9.5px] text-ink-muted">
           {isPaused ? "Paused" : `Refreshed ${lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}
         </span>
       </div>

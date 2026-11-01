@@ -201,8 +201,8 @@ export function BookmarkContextMenu() {
                     bm.priority === "flash"
                       ? "bg-critical-20 text-critical border border-critical/40 animate-pulse"
                       : bm.priority === "immediate"
-                      ? "bg-orange-950/40 text-orange-400 border border-orange-500/40"
-                      : "bg-amber-950/40 text-amber-400 border border-amber-500/40",
+                        ? "bg-orange-950/40 text-orange-400 border border-orange-500/40"
+                        : "bg-amber-950/40 text-amber-400 border border-amber-500/40",
                   )}
                 >
                   {bm.priority}
@@ -210,7 +210,7 @@ export function BookmarkContextMenu() {
               )}
 
               {bm.category && (
-                <span className="font-mono text-[8px] text-ink-muted truncate">
+                <span className="font-mono text-[9.5px] text-ink-muted truncate">
                   {bm.category}
                 </span>
               )}
@@ -307,7 +307,7 @@ export function BookmarkContextMenu() {
 
         {/* Priority Quick Triage Section */}
         <div className="px-2 py-1">
-          <div className="mb-1 flex items-center justify-between font-mono text-[8px] uppercase tracking-wider text-ink-muted">
+          <div className="mb-1 flex items-center justify-between font-mono text-[9.5px] uppercase tracking-wider text-ink-muted">
             <span className="flex items-center gap-1">
               <Flag size={9} />
               <span>Priority Triage</span>
@@ -328,10 +328,10 @@ export function BookmarkContextMenu() {
                       ? p === "flash"
                         ? "border-red-500 bg-red-950/60 text-red-300 ring-1 ring-red-500"
                         : p === "immediate"
-                        ? "border-orange-500 bg-orange-950/60 text-orange-300 ring-1 ring-orange-500"
-                        : p === "priority"
-                        ? "border-amber-500 bg-amber-950/60 text-amber-300 ring-1 ring-amber-500"
-                        : "border-cyan-500 bg-cyan-950/60 text-cyan-300 ring-1 ring-cyan-500"
+                          ? "border-orange-500 bg-orange-950/60 text-orange-300 ring-1 ring-orange-500"
+                          : p === "priority"
+                            ? "border-amber-500 bg-amber-950/60 text-amber-300 ring-1 ring-amber-500"
+                            : "border-cyan-500 bg-cyan-950/60 text-cyan-300 ring-1 ring-cyan-500"
                       : "border-[#2b3142] bg-[#161a25] text-ink-muted hover:text-ink hover:bg-[#1e2330]",
                   )}
                 >
