@@ -166,17 +166,16 @@ export function CommandBar() {
             type="button"
             onClick={() => setMenuOpen((prev) => !prev)}
             className={cx(
-              "group flex h-[26px] items-center gap-1.5 rounded-[2px] px-2 font-sans text-[11px] font-bold tracking-[0.05em] transition-colors",
+              "group grid size-[26px] place-items-center rounded-[2px] transition-colors",
               menuOpen
                 ? "bg-tint text-ink border border-line-strong"
-                : "text-ink hover:bg-tint hover:text-ink border border-transparent"
+                : "text-ink-soft hover:bg-tint hover:text-ink border border-transparent"
             )}
             title="Operations & Workspace Menu"
             aria-expanded={menuOpen}
             aria-haspopup="true"
           >
-            <GridNineIcon className="size-3 text-ink-muted transition-colors group-hover:text-ink" />
-            <span>LIVE</span>
+            <GridNineIcon className="size-[15px] text-ink-muted transition-colors group-hover:text-ink" />
           </button>
 
           {menuOpen && (
