@@ -56,7 +56,7 @@ export function AlertQueue() {
     <section
       className={cx(
         "pointer-events-auto absolute top-[calc(var(--commandbar-h)+6px)] z-[30] flex max-h-[46vh] w-[min(344px,calc(100vw-16px))] flex-col overflow-hidden border border-line bg-solid shadow-panel transition-[right] duration-200 ease-out",
-        rightPanel ? "right-[calc(var(--ribbon-w)+300px+12px)]" : "right-[calc(var(--ribbon-w)+12px)]"
+        rightPanel ? "right-[calc(var(--ribbon-w)+312px+16px)]" : "right-[calc(var(--ribbon-w)+14px)]"
       )}
       style={{ bottom: "calc(var(--footer-h) + var(--timeline-h) + 8px)" }}
       aria-label="Alert queue"

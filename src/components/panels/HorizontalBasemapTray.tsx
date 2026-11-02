@@ -185,9 +185,9 @@ export function HorizontalBasemapTray() {
     <div
       ref={trayRef}
       className={cx(
-        "pointer-events-auto absolute bottom-[var(--footer-h)] z-30 flex h-[98px] items-center border-t border-line bg-solid/95 px-2 py-1.5 shadow-panel backdrop-blur-md animate-panel-bottom select-none transition-[left,right] duration-200 ease-out",
-        leftPanel && leftPanel !== "table" ? "left-[calc(var(--ribbon-w)+300px)]" : "left-[var(--ribbon-w)]",
-        rightPanel && rightPanel !== "table" ? "right-[calc(var(--ribbon-w)+300px)]" : "right-[var(--ribbon-w)]"
+        "pointer-events-auto absolute bottom-[calc(var(--footer-h)+6px)] z-30 flex h-[98px] items-center border border-line rounded-[2px] bg-solid/95 px-2 py-1.5 shadow-panel backdrop-blur-md animate-panel-bottom select-none transition-[left,right] duration-200 ease-out",
+        leftPanel && leftPanel !== "table" ? "left-[calc(var(--ribbon-w)+312px+12px)]" : "left-[calc(var(--ribbon-w)+6px)]",
+        rightPanel && rightPanel !== "table" ? "right-[calc(var(--ribbon-w)+312px+12px)]" : "right-[calc(var(--ribbon-w)+6px)]"
       )}
       role="region"
       aria-label="Basemaps and Cartography Tray"

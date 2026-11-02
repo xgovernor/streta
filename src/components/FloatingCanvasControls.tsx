@@ -87,8 +87,8 @@ export function FloatingCanvasControls() {
         "pointer-events-auto absolute z-40 flex flex-col items-center gap-1 select-none transition-[right,bottom] duration-200 ease-out",
         isTableOpen && tableMaximized && "pointer-events-none",
         rightPanel && rightPanel !== "table"
-          ? "right-[calc(var(--ribbon-w)+300px+12px)]"
-          : "right-[calc(var(--ribbon-w)+12px)]",
+          ? "right-[calc(var(--ribbon-w)+312px+16px)]"
+          : "right-[calc(var(--ribbon-w)+14px)]",
         isTableOpen
           ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+var(--table-h,340px)+12px)]"
           : basemapTrayOpen
