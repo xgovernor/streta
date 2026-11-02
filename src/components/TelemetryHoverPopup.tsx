@@ -35,7 +35,6 @@ export function TelemetryHoverPopup() {
   const hoverPosition = useTelemetryStore((state) => state.hoverPosition);
   const setSelectedTarget = useTelemetryStore((state) => state.setSelectedTarget);
   const openPanel = useUiStore((state) => state.openPanel);
-  const viewMode = useUiStore((state) => state.viewMode);
 
   const stylePosition = useMemo(() => {
     if (!hoverPosition) return null;
@@ -67,7 +66,7 @@ export function TelemetryHoverPopup() {
 
   // Hover anchors come from OpenLayers pointermove pixel space, which no
   // longer reflects the screen in 3D: hide rather than lie.
-  if (!hoveredTarget || !stylePosition || viewMode === "3d") {
+  if (!hoveredTarget || !stylePosition) {
     return null;
   }
 

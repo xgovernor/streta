@@ -3,13 +3,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SatelliteTarget {
+    pub id: String, // Populate as format!("sat-{}", sat.norad_id)
     pub norad_id: u32,
     pub name: String,
     pub category: String,
+    #[serde(rename = "longitude", alias = "lon")]
     pub lon: f64,
+    #[serde(rename = "latitude", alias = "lat")]
     pub lat: f64,
     pub altitude_km: f64,
-    pub velocity_kms: f64,
+    #[serde(rename = "velocityKmh")]
+    pub velocity_kmh: f64, // Multiply cur_vel (km/s) * 3600.0
     pub period_mins: f64,
     pub inclination_deg: f64,
     pub ground_track: Vec<(f64, f64)>,
@@ -90,18 +94,22 @@ pub fn compute_live_satellites() -> Vec<SatelliteTarget> {
             for m in (-45..=45).step_by(3) {
                 let t = now + chrono::Duration::minutes(m as i64);
                 if let Some((t_lon, t_lat, ..)) = propagate_sgp4(sat.line1, sat.line2, &t) {
-                    track.push(((t_lon * 1000.0).round() / 1000.0, (t_lat * 1000.0).round() / 1000.0));
+                    track.push((
+                        (t_lon * 1000.0).round() / 1000.0,
+                        (t_lat * 1000.0).round() / 1000.0,
+                    ));
                 }
             }
 
             Some(SatelliteTarget {
+                id: format!("sat-{}", sat.norad_id),
                 norad_id: sat.norad_id,
                 name: sat.name.to_string(),
                 category: sat.category.to_string(),
                 lon: (cur_lon * 10000.0).round() / 10000.0,
                 lat: (cur_lat * 10000.0).round() / 10000.0,
                 altitude_km: (cur_alt * 10.0).round() / 10.0,
-                velocity_kms: (cur_vel * 100.0).round() / 100.0,
+                velocity_kmh: (cur_vel * 100.0).round() / 100.0,
                 period_mins: (period * 10.0).round() / 10.0,
                 inclination_deg: (inc * 100.0).round() / 100.0,
                 ground_track: track,
@@ -117,11 +125,8 @@ fn propagate_sgp4(
     tle_line2: &str,
     target_time: &chrono::DateTime<chrono::Utc>,
 ) -> Option<(f64, f64, f64, f64, f64, f64)> {
-    let elements = sgp4::Elements::from_tle(
-        None,
-        tle_line1.as_bytes(),
-        tle_line2.as_bytes(),
-    ).ok()?;
+    let elements =
+        sgp4::Elements::from_tle(None, tle_line1.as_bytes(), tle_line2.as_bytes()).ok()?;
 
     let constants = sgp4::Constants::from_elements(&elements).ok()?;
 
@@ -189,7 +194,7 @@ mod tests {
             assert!(s.lon >= -180.0 && s.lon <= 180.0);
             assert!(s.lat >= -90.0 && s.lat <= 90.0);
             assert!(s.altitude_km > 300.0 && s.altitude_km < 1200.0);
-            assert!(s.velocity_kms > 6.0 && s.velocity_kms < 9.0);
+            assert!(s.velocity_kmh > 6.0 && s.velocity_kmh < 9.0);
             assert!(s.period_mins > 80.0 && s.period_mins < 120.0);
             assert_eq!(s.ground_track.len(), 31);
         }

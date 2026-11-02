@@ -252,6 +252,51 @@ function buildEarthquakeSvg(color: string, mag: number): string {
   );
 }
 
+export function getFlightSvg(category: number = 0, color: string = "#38bdf8", isEmergency: boolean = false): string {
+  if (category === 8) {
+    return buildHelicopterSvg(color, isEmergency);
+  } else if (category === 6) {
+    return buildHeavyJetSvg(color, isEmergency);
+  } else if (category === 14) {
+    return buildDroneSvg(color);
+  } else if (category === 2 || category === 3 || category === 9 || category === 12) {
+    return buildLightPropSvg(color, isEmergency);
+  } else {
+    return buildCommercialJetSvg(color, isEmergency);
+  }
+}
+
+export function getSatelliteSvg(): string {
+  return buildSatelliteSvg();
+}
+
+export function getVesselSvg(shipType: number = 0, speedKnots: number = 0, color: string = "#06b6d4"): string {
+  if (speedKnots < 0.5) {
+    return buildMooredVesselSvg(color);
+  }
+  if (shipType >= 70 && shipType <= 79) {
+    return buildCargoShipSvg(color);
+  }
+  if (shipType >= 80 && shipType <= 89) {
+    return buildTankerShipSvg(color);
+  }
+  if (shipType >= 60 && shipType <= 69) {
+    return buildCruiseShipSvg();
+  }
+  if (shipType === 30 || shipType === 31 || shipType === 32 || shipType === 52) {
+    return buildTugFishingSvg(color);
+  }
+  return buildCargoShipSvg(color);
+}
+
+export function getFireSvg(color: string = "#f97316"): string {
+  return buildFireSvg(color);
+}
+
+export function getEarthquakeSvg(mag: number, color: string = "#06b6d4"): string {
+  return buildEarthquakeSvg(color, mag);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Style Cache Maps (Zero Allocation at 60 FPS)
 // ─────────────────────────────────────────────────────────────────────────────

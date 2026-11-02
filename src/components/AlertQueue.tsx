@@ -92,7 +92,7 @@ export function AlertQueue() {
         </button>
       </header>
 
-      <div className="panel-scroll min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="panel-scroll min-h-0 flex-1 overflow-y-auto">
         {alerts.length === 0 ? (
           <div className="px-3 py-8 text-center text-[11px] text-ink-muted">
             No alerts.
@@ -101,12 +101,12 @@ export function AlertQueue() {
             </span>
           </div>
         ) : (
-          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+          <ul className="m-0 flex list-none flex-col p-0">
             {alerts.map((alert) => (
               <li
                 key={alert.id}
                 className={cx(
-                  "relative overflow-hidden border border-line p-2",
+                  "relative overflow-hidden border-b border-line p-2 transition-all duration-50 ease-out hover:border-l-4",
                   alert.acknowledged
                     ? "border-line bg-solid opacity-65"
                     : "border-line-strong bg-solid",

@@ -31,7 +31,11 @@ pub fn pack_flights_binary(flights: &[FlightTarget]) -> Vec<u8> {
     let vertices: Vec<TelemetryVertex> = flights
         .iter()
         .map(|f| {
-            let id_hash = (f.icao24.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)) % 1_000_000) as f32;
+            let id_hash = (f
+                .icao24
+                .bytes()
+                .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32))
+                % 1_000_000) as f32;
             TelemetryVertex {
                 id_hash,
                 lon: f.lon as f32,
@@ -52,7 +56,11 @@ pub fn pack_earthquakes_binary(quakes: &[EarthquakeTarget]) -> Vec<u8> {
     let vertices: Vec<TelemetryVertex> = quakes
         .iter()
         .map(|q| {
-            let id_hash = (q.id.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32)) % 1_000_000) as f32;
+            let id_hash = (q
+                .id
+                .bytes()
+                .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32))
+                % 1_000_000) as f32;
             TelemetryVertex {
                 id_hash,
                 lon: q.lon as f32,
@@ -78,7 +86,7 @@ pub fn pack_satellites_binary(sats: &[SatelliteTarget]) -> Vec<u8> {
             lat: s.lat as f32,
             heading_or_inc: s.inclination_deg as f32,
             altitude: s.altitude_km as f32,
-            velocity_or_mag: s.velocity_kms as f32,
+            velocity_or_mag: s.velocity_kmh as f32,
             aux_metric: s.period_mins as f32,
             category_code: 3.0,
         })

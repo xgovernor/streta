@@ -69,16 +69,6 @@ import {
 import { useMapStore } from "../state/mapStore";
 import { useProjectStore } from "../state/projectStore";
 import { useUiStore } from "../state/uiStore";
-import {
-  cesiumApplyCamera,
-  cesiumFitExtent,
-  cesiumFlyTo,
-  cesiumFlyToBookmark,
-  cesiumResetNorth,
-  cesiumZoomBy,
-  captureCesiumAsPng,
-  getCesiumViewer,
-} from "./cesiumView";
 import { createDatasetStyle, measureStyle } from "./vectorStyle";
 import {
   createTelemetryLayers,
@@ -97,6 +87,25 @@ import {
 } from "./webglTelemetry";
 import { useTelemetryStore } from "../state/telemetryStore";
 import { interpolateGreatCircleArc } from "../lib/gis/voyageRoute";
+// In ./src/map/mapController.ts — add cesiumScreenPositionFor to imports from "./cesiumView"
+import {
+  cesiumApplyCamera,
+  cesiumClearBufferOverlay,
+  cesiumClearKnnOverlay,
+  cesiumFitExtent,
+  cesiumFlyTo,
+  cesiumFlyToBookmark,
+  cesiumRenderBooleanOverlay,
+  cesiumRenderBufferOverlay,
+  cesiumRenderKnnOverlay,
+  cesiumResetNorth,
+  cesiumScreenPositionFor,
+  cesiumSetProfileHoverCoord,
+  cesiumZoomBy,
+  captureCesiumAsPng,
+  getCesiumViewer,
+} from "./cesiumView";
+
 
 type BasemapLayers = Record<BasemapId, BaseLayer>;
 
@@ -630,14 +639,14 @@ export function mountMap(target: HTMLElement): () => void {
     visible: ui.trafficFlow ?? false,
     source: tomtomApiKey
       ? new XYZ({
-          url: `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${tomtomApiKey}`,
-          maxZoom: 22,
-          attributions: ["© TomTom Real-Time Traffic"],
-        })
+        url: `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${tomtomApiKey}`,
+        maxZoom: 22,
+        attributions: ["© TomTom Real-Time Traffic"],
+      })
       : new XYZ({
-          url: "",
-          maxZoom: 22,
-        }),
+        url: "",
+        maxZoom: 22,
+      }),
     zIndex: 2,
     properties: { id: "traffic-flow", overlay: true },
   });
@@ -991,7 +1000,7 @@ export function mountMap(target: HTMLElement): () => void {
     const value = field ? feature.get(field) : null;
 
     return value === null || value === undefined ?
-        layer.name
+      layer.name
       : `${layer.name} · ${value}`;
   };
 
@@ -1184,10 +1193,10 @@ export function mountMap(target: HTMLElement): () => void {
 
       element.style.cursor =
         isMeasureHover ? "pointer"
-        : isMeasureActive ? "crosshair"
-        : hoverBookmarkFeature ? "grab"
-        : (hover || telem) ? "pointer"
-        : "";
+          : isMeasureActive ? "crosshair"
+            : hoverBookmarkFeature ? "grab"
+              : (hover || telem) ? "pointer"
+                : "";
     }
 
     if (!hover) {
@@ -2521,13 +2530,15 @@ export function fitToData(): void {
 export function screenPositionFor(
   lon: number,
   lat: number,
+  altitudeMeters = 0,
 ): { x: number; y: number } | null {
+  if (cesiumIsActive()) {
+    return cesiumScreenPositionFor(lon, lat, altitudeMeters);
+  }
   const map = activeMap;
-
   if (!map) {
     return null;
   }
-
   const pixel = map.getPixelFromCoordinate(fromLonLat([lon, lat]));
   return pixel ? { x: pixel[0], y: pixel[1] } : null;
 }
@@ -2566,8 +2577,33 @@ export function zoomToSelection(): void {
   if (gate3D("Zoom to selection")) {
     return;
   }
+
+
   const map = activeMap;
   const selection = useProjectStore.getState().selection;
+  if (!selection) return;
+
+  if (cesiumIsActive()) {
+    const feature = useProjectStore
+      .getState()
+      .selectionFeatureById(selection.layerId, selection.featureId);
+    if (!feature) return;
+    let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+    eachPosition(feature.geometry, ([lon, lat]) => {
+      if (lon < minLon) minLon = lon;
+      if (lat < minLat) minLat = lat;
+      if (lon > maxLon) maxLon = lon;
+      if (lat > maxLat) maxLat = lat;
+    });
+    if (Number.isFinite(minLon)) {
+      if (minLon === maxLon && minLat === maxLat) {
+        cesiumFlyTo(minLon, minLat, 16);
+      } else {
+        cesiumFitExtent([minLon, minLat, maxLon, maxLat], 17);
+      }
+    }
+    return;
+  }
 
   if (!map || !selection) {
     return;
@@ -2594,7 +2630,7 @@ export function zoomToSelection(): void {
       extents.push(
         degenerate ?
           [found[0] - pad, found[1] - pad, found[2] + pad, found[3] + pad]
-        : [found[0], found[1], found[2], found[3]],
+          : [found[0], found[1], found[2], found[3]],
       );
     }
   });
@@ -2940,12 +2976,12 @@ function analysisStyle(feature: FeatureLike): Style | Style[] {
         }),
         text: label
           ? new Text({
-              text: label,
-              font: '600 11px "IBM Plex Mono", monospace',
-              fill: new Fill({ color: "#06b6d4" }),
-              stroke: new Stroke({ color: "#0a0a0a", width: 3 }),
-              offsetY: -16,
-            })
+            text: label,
+            font: '600 11px "IBM Plex Mono", monospace',
+            fill: new Fill({ color: "#06b6d4" }),
+            stroke: new Stroke({ color: "#0a0a0a", width: 3 }),
+            offsetY: -16,
+          })
           : undefined,
       }),
     ];
@@ -2979,13 +3015,13 @@ function analysisStyle(feature: FeatureLike): Style | Style[] {
       }),
       text: label
         ? new Text({
-            text: label,
-            font: '600 11px "IBM Plex Mono", monospace',
-            fill: new Fill({ color: "#fdf4ff" }),
-            backgroundFill: new Fill({ color: "rgba(24, 24, 27, 0.85)" }),
-            padding: [2, 6, 2, 6],
-            placement: "line",
-          })
+          text: label,
+          font: '600 11px "IBM Plex Mono", monospace',
+          fill: new Fill({ color: "#fdf4ff" }),
+          backgroundFill: new Fill({ color: "rgba(24, 24, 27, 0.85)" }),
+          padding: [2, 6, 2, 6],
+          placement: "line",
+        })
         : undefined,
     });
   }
@@ -3044,6 +3080,7 @@ export function renderBufferOverlay(
   enableDragHandle?: boolean,
   handleAzimuthDeg: number = 90,
 ): void {
+  cesiumRenderBufferOverlay(bufferGeoJson, centerCoord, radiusMeters, additionalRings, spineCoords);
   if (!activeAnalysisSource) return;
   activeAnalysisSource.clear();
 
@@ -3163,6 +3200,7 @@ export function renderKnnOverlay(
     distanceUnit?: "km" | "m" | "NM" | "mi";
   },
 ): void {
+  cesiumRenderKnnOverlay(queryCoord, neighbors, options);
   if (!activeKnnSource) return;
   activeKnnSource.clear();
 
@@ -3223,6 +3261,7 @@ export function renderKnnOverlay(
 
 /** Clears all features from the k-NN overlay layer. */
 export function clearKnnOverlay(): void {
+  cesiumClearKnnOverlay();
   activeKnnSource?.clear();
 }
 
@@ -3230,6 +3269,7 @@ export function clearKnnOverlay(): void {
  * Renders a Boolean Constructive Area Geometry resultant polygon on the analysis overlay.
  */
 export function renderBooleanOverlay(geojson: any): void {
+  cesiumRenderBooleanOverlay(geojson);
   if (!activeAnalysisSource) return;
   activeAnalysisSource.clear();
 
@@ -3245,6 +3285,7 @@ export function renderBooleanOverlay(geojson: any): void {
 
 /** Clears all features from the buffer and analysis overlay layer. */
 export function clearBufferOverlay(): void {
+  cesiumClearBufferOverlay();
   activeAnalysisSource?.clear();
   activeBufferCenterCoord = null;
   isDraggingBufferHandle = false;
@@ -3269,6 +3310,7 @@ export function setProfileHoverCoord(
   elevationM?: number,
   slopePct?: number,
 ): void {
+  cesiumSetProfileHoverCoord(coord, elevationM, slopePct);
   if (!activeAnalysisSource) return;
 
   const existing = activeAnalysisSource

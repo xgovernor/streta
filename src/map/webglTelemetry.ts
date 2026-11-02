@@ -10,6 +10,7 @@ import { Stroke, Style } from "ol/style";
 import type { EarthquakeTarget, FireTarget, FlightTarget, SatelliteTarget, VesselTarget } from "../lib/gis/types";
 import { computeVoyageRoute, formatRouteStats } from "../lib/gis/voyageRoute";
 import { useTelemetryStore } from "../state/telemetryStore";
+import { useUiStore } from "../state/uiStore";
 import {
   getEarthquakeStyle,
   getFireStyle,
@@ -239,6 +240,13 @@ function ensureDeadReckoningLoop() {
   if (deadReckoningFrameId !== null || typeof requestAnimationFrame === "undefined") return;
 
   const loop = (timestamp: number) => {
+    // Suspend 2D OpenLayers geometry mutations while the 3D Cesium globe is active
+    if (useUiStore.getState().viewMode === "3d") {
+      lastFrameTime = timestamp;
+      deadReckoningFrameId = requestAnimationFrame(loop);
+      return;
+    }
+
     if (!lastFrameTime) lastFrameTime = timestamp;
     const frameDt = Math.min((timestamp - lastFrameTime) / 1000, 0.1);
     lastFrameTime = timestamp;

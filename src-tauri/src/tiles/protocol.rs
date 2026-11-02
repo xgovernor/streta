@@ -123,6 +123,19 @@ pub async fn handle_strata_protocol_async(
         return handle_telemetry_request(request);
     }
 
+    // 4. Check if this is a 3D Viewport BBox GeoJSON query: strata://bbox/{dataset_id}?bbox=w,s,e,n&limit=2500
+    let bbox_dataset = if host == "bbox" && !segments.is_empty() {
+        Some(segments[0])
+    } else if let Some(idx) = segments.iter().position(|&s| s == "bbox") {
+        segments.get(idx + 1).copied()
+    } else {
+        None
+    };
+
+    if let Some(dataset_id) = bbox_dataset {
+        return handle_bbox_geojson_request(store, dataset_id, uri.query().unwrap_or(""));
+    }
+
     not_found("Unrecognized strata URI path")
 }
 
@@ -203,6 +216,74 @@ fn handle_telemetry_request(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     } else {
         not_found("Unrecognized telemetry endpoint")
     }
+}
+
+fn handle_bbox_geojson_request(
+    store: &SharedDatasetStore,
+    dataset_id: &str,
+    query: &str,
+) -> Response<Vec<u8>> {
+    let mut bbox = (-180.0, -85.0, 180.0, 85.0);
+    let mut limit: usize = 2500;
+
+    for param in query.split('&') {
+        let mut parts = param.split('=');
+        if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+            if k == "bbox" {
+                let nums: Vec<f64> = v.split(',').filter_map(|s| s.parse::<f64>().ok()).collect();
+                if nums.len() == 4 {
+                    bbox = (nums[0], nums[1], nums[2], nums[3]);
+                }
+            } else if k == "limit" {
+                if let Ok(l) = v.parse::<usize>() {
+                    limit = l.clamp(100, 10_000);
+                }
+            }
+        }
+    }
+
+    let (min_x, min_y) = super::math::lon_lat_to_epsg3857(bbox.0, bbox.1);
+    let (max_x, max_y) = super::math::lon_lat_to_epsg3857(bbox.2, bbox.3);
+
+    let guard = match store.read() {
+        Ok(g) => g,
+        Err(_) => return internal_error("Failed to lock DatasetStore"),
+    };
+
+    let targets = vec![dataset_id.to_string()];
+    let hits = guard.query_bbox(
+        min_x.min(max_x),
+        min_y.min(max_y),
+        min_x.max(max_x),
+        min_y.max(max_y),
+        Some(&targets),
+    );
+
+    let features: Vec<serde_json::Value> = hits
+        .into_iter()
+        .take(limit)
+        .map(|(_, feat)| {
+            serde_json::json!({
+                "type": "Feature",
+                "id": feat.id,
+                "geometry": super::store::geometry3857_to_geojson_4326(&feat.geometry),
+                "properties": feat.properties,
+            })
+        })
+        .collect();
+
+    let body = serde_json::to_vec(&serde_json::json!({
+        "type": "FeatureCollection",
+        "features": features,
+    }))
+    .unwrap_or_default();
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .header("Access-Control-Allow-Origin", "*")
+        .body(body)
+        .unwrap_or_else(|_| empty_response(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 pub fn handle_strata_protocol(

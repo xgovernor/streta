@@ -37,11 +37,15 @@ pub struct FlightTarget {
     pub icao24: String,
     pub callsign: String,
     pub origin_country: String,
+    #[serde(rename = "longitude", alias = "lon")]
     pub lon: f64,
+    #[serde(rename = "latitude", alias = "lat")]
     pub lat: f64,
+    #[serde(rename = "altitudeMeters", alias = "altitudeM")]
     pub altitude_m: Option<f64>,
     /// Geometric (GNSS) altitude in meters — more accurate than barometric
     /// for weather-independent altitude display.
+    #[serde(rename = "geoAltitudeMeters", alias = "geoAltitudeM")]
     pub geo_altitude_m: Option<f64>,
     pub velocity_mps: Option<f64>,
     pub heading_deg: Option<f64>,
@@ -235,12 +239,12 @@ fn adaptive_ttl() -> &'static tokio::sync::RwLock<u64> {
 /// As credits drop, we slow down polling to stretch the budget across the day.
 fn compute_adaptive_ttl_ms(remaining: Option<u32>) -> u64 {
     match remaining {
-        Some(r) if r > 2000 => 9_000,      // >2000 credits: poll every 9s (base)
-        Some(r) if r > 1000 => 15_000,     // 1000-2000: every 15s
-        Some(r) if r > 500 => 30_000,      // 500-1000: every 30s
-        Some(r) if r > 100 => 60_000,      // 100-500: every 60s
-        Some(_) => 120_000,                 // <100: every 2 min (conservation mode)
-        None => 9_000,                      // Unknown (anonymous): base rate
+        Some(r) if r > 2000 => 9_000,  // >2000 credits: poll every 9s (base)
+        Some(r) if r > 1000 => 15_000, // 1000-2000: every 15s
+        Some(r) if r > 500 => 30_000,  // 500-1000: every 30s
+        Some(r) if r > 100 => 60_000,  // 100-500: every 60s
+        Some(_) => 120_000,            // <100: every 2 min (conservation mode)
+        None => 9_000,                 // Unknown (anonymous): base rate
     }
 }
 
@@ -375,7 +379,10 @@ pub async fn fetch_live_flights(
 
             // 5c. Handle 401/403 — auth failure
             if status.as_u16() == 401 || status.as_u16() == 403 {
-                warn_once(&format!("Auth failure (HTTP {}). Check OPENSKY_CLIENT_ID/SECRET.", status));
+                warn_once(&format!(
+                    "Auth failure (HTTP {}). Check OPENSKY_CLIENT_ID/SECRET.",
+                    status
+                ));
                 return Ok(Vec::new());
             }
 
@@ -434,7 +441,9 @@ pub async fn fetch_live_flights(
                         }
 
                         if let Some((min_lon, min_lat, max_lon, max_lat)) = bbox {
-                            if let Ok(filtered) = super::TelemetryDb::global().query_bbox(min_lon, min_lat, max_lon, max_lat) {
+                            if let Ok(filtered) = super::TelemetryDb::global()
+                                .query_bbox(min_lon, min_lat, max_lon, max_lat)
+                            {
                                 if !filtered.is_empty() {
                                     return Ok(filtered);
                                 }
@@ -453,13 +462,18 @@ pub async fn fetch_live_flights(
                 let mut cd = cooldown_until().write().await;
                 *cd = now_epoch_ms() + 60_000;
             }
-            warn_once(&format!("Network error: {}. Cooling down for 60s, serving cache/fallback", err));
+            warn_once(&format!(
+                "Network error: {}. Cooling down for 60s, serving cache/fallback",
+                err
+            ));
             // Serve stale cache on network timeout / connection failure
             let cache = response_cache().read().await;
             if let Some(ref snap) = *cache {
                 let _ = super::TelemetryDb::global().upsert_flights(&snap.flights);
                 if let Some((min_lon, min_lat, max_lon, max_lat)) = bbox {
-                    if let Ok(filtered) = super::TelemetryDb::global().query_bbox(min_lon, min_lat, max_lon, max_lat) {
+                    if let Ok(filtered) =
+                        super::TelemetryDb::global().query_bbox(min_lon, min_lat, max_lon, max_lat)
+                    {
                         if !filtered.is_empty() {
                             return Ok(filtered);
                         }
@@ -526,25 +540,14 @@ fn parse_opensky_states(states: &[Value]) -> Vec<FlightTarget> {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 
-        let spi = arr
-            .get(15)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let spi = arr.get(15).and_then(|v| v.as_bool()).unwrap_or(false);
 
-        let position_source = arr
-            .get(16)
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u8;
+        let position_source = arr.get(16).and_then(|v| v.as_u64()).unwrap_or(0) as u8;
 
-        let category = arr
-            .get(17)
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u8;
+        let category = arr.get(17).and_then(|v| v.as_u64()).unwrap_or(0) as u8;
 
         // Derive emergency status from squawk code
-        let emergency = squawk
-            .as_deref()
-            .and_then(decode_squawk_emergency);
+        let emergency = squawk.as_deref().and_then(decode_squawk_emergency);
 
         targets.push(FlightTarget {
             icao24: icao,
@@ -592,10 +595,19 @@ mod tests {
 
     #[test]
     fn test_squawk_emergency_decoding() {
-        assert_eq!(decode_squawk_emergency("7700"), Some("EMERGENCY".to_string()));
-        assert_eq!(decode_squawk_emergency("7600"), Some("RADIO FAILURE".to_string()));
+        assert_eq!(
+            decode_squawk_emergency("7700"),
+            Some("EMERGENCY".to_string())
+        );
+        assert_eq!(
+            decode_squawk_emergency("7600"),
+            Some("RADIO FAILURE".to_string())
+        );
         assert_eq!(decode_squawk_emergency("7500"), Some("HIJACK".to_string()));
-        assert_eq!(decode_squawk_emergency("7777"), Some("MILITARY INTERCEPT".to_string()));
+        assert_eq!(
+            decode_squawk_emergency("7777"),
+            Some("MILITARY INTERCEPT".to_string())
+        );
         assert_eq!(decode_squawk_emergency("1200"), None);
         assert_eq!(decode_squawk_emergency("7000"), None);
         assert_eq!(decode_squawk_emergency(""), None);
@@ -617,23 +629,45 @@ mod tests {
 
         let states = vec![
             json!([
-                "abc123", "UAL100  ", "United States",
-                1698765432, 1698765435,
-                -73.78, 40.64,
-                10668.0, false,
-                245.5, 285.0, 1.5,
-                null, 10700.0,
-                "7700", false, 0, 4
+                "abc123",
+                "UAL100  ",
+                "United States",
+                1698765432,
+                1698765435,
+                -73.78,
+                40.64,
+                10668.0,
+                false,
+                245.5,
+                285.0,
+                1.5,
+                null,
+                10700.0,
+                "7700",
+                false,
+                0,
+                4
             ]),
             // Unpositioned contact — should be skipped
             json!([
-                "def456", "BAW200  ", "United Kingdom",
-                null, 1698765435,
-                null, null,
-                null, false,
-                0.0, 0.0, 0.0,
-                null, null,
-                null, false, 0, 0
+                "def456",
+                "BAW200  ",
+                "United Kingdom",
+                null,
+                1698765435,
+                null,
+                null,
+                null,
+                false,
+                0.0,
+                0.0,
+                0.0,
+                null,
+                null,
+                null,
+                false,
+                0,
+                0
             ]),
         ];
 
@@ -666,11 +700,8 @@ mod tests {
 
         // State vector with only 12 fields (no extended fields)
         let states = vec![json!([
-            "abc123", "UAL100  ", "US",
-            null, 1698765435,
-            -73.78, 40.64,
-            10668.0, false,
-            245.5, 285.0, 0.0
+            "abc123", "UAL100  ", "US", null, 1698765435, -73.78, 40.64, 10668.0, false, 245.5,
+            285.0, 0.0
         ])];
 
         let targets = parse_opensky_states(&states);
