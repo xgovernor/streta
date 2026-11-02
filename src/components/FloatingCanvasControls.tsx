@@ -90,10 +90,10 @@ export function FloatingCanvasControls() {
           ? "right-[calc(var(--ribbon-w)+312px+16px)]"
           : "right-[calc(var(--ribbon-w)+14px)]",
         isTableOpen
-          ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+var(--table-h,340px)+12px)]"
+          ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+var(--table-h,340px)+20px)] max-h-[calc(100vh-var(--commandbar-h)-var(--footer-h)-var(--timeline-h)-var(--table-h,340px)-32px)] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           : basemapTrayOpen
-            ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+108px)]"
-            : "bottom-[calc(var(--footer-h)+var(--timeline-h)+12px)]"
+            ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+118px)]"
+            : "bottom-[calc(var(--footer-h)+var(--timeline-h)+14px)]"
       )}
     >
       {/* 2D / 3D renderer toggle */}

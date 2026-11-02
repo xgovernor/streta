@@ -55,11 +55,16 @@ export function MapAttribution() {
       }
       variants={attributionVariants}
       className={cx(
-        "pointer-events-auto absolute left-(--ribbon-w) z-[24] flex items-center gap-[3px] border-t border-r border-line bg-solid px-1.5 py-0.5 font-mono text-[9.5px] leading-[1.4] text-ink-muted shadow-float transition-[bottom] duration-200 ease-out",
+        "pointer-events-auto absolute z-[31] flex items-center gap-[3px] font-mono text-[9.5px] leading-[1.4] text-ink-muted transition-[left,bottom] duration-200 ease-out",
         isTableOpen && tableMaximized && "pointer-events-none",
         isTableOpen
-          ? "bottom-[calc(var(--footer-h)+var(--timeline-h)+var(--table-h,340px))]"
-          : "bottom-[calc(var(--footer-h)+var(--timeline-h))]"
+          ? cx(
+              "bottom-[calc(var(--footer-h)+var(--timeline-h)+var(--table-h,340px)+16px)] rounded-[2px] border border-line bg-solid/90 px-1.5 py-0.5 shadow-panel backdrop-blur-md",
+              leftPanel && leftPanel !== "table"
+                ? "left-[calc(var(--ribbon-w)+312px+6px)]"
+                : "left-[calc(var(--ribbon-w)+6px)]"
+            )
+          : "bottom-[calc(var(--footer-h)+var(--timeline-h))] left-(--ribbon-w) border-t border-r border-line bg-solid px-1.5 py-0.5 shadow-float"
       )}
       role="note"
       aria-label="Map data attribution"

@@ -84,35 +84,35 @@ export function PanelShell({
         "pointer-events-auto absolute z-30 flex flex-col overflow-hidden bg-solid",
         side === "bottom"
           ? cx(
-              "felt-frosted-glass text-white border border-line rounded-[2px] shadow-panel",
-              "bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] animate-panel-bottom transition-[left,right] duration-200 ease-out",
-              tableMaximized
-                ? "!top-[calc(var(--commandbar-h)+6px)] !h-auto"
-                : "h-[var(--table-h,340px)]",
-              leftPanel && leftPanel !== "table"
-                ? "left-[calc(var(--ribbon-w)+312px+12px)]"
-                : "left-[calc(var(--ribbon-w)+6px)]",
-              rightPanel && rightPanel !== "table"
-                ? "right-[calc(var(--ribbon-w)+312px+12px)]"
-                : "right-[calc(var(--ribbon-w)+6px)]",
-            )
+            "felt-frosted-glass text-white border border-line rounded-[2px] shadow-panel",
+            "bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] animate-panel-bottom transition-[left,right] duration-200 ease-out",
+            tableMaximized
+              ? "!top-[calc(var(--commandbar-h)+6px)] !h-auto"
+              : "h-[var(--table-h,340px)]",
+            leftPanel && leftPanel !== "table"
+              ? "left-[calc(var(--ribbon-w)+312px+6px)]"
+              : "left-[calc(var(--ribbon-w)+6px)]",
+            rightPanel && rightPanel !== "table"
+              ? "right-[calc(var(--ribbon-w)+312px+6px)]"
+              : "right-[calc(var(--ribbon-w)+6px)]",
+          )
           : cx(
-              autoHeight && side !== "left"
-                ? cx(
-                    "top-[calc(var(--commandbar-h)+6px)] max-h-[calc(100vh-var(--commandbar-h)-var(--footer-h)-16px)] h-fit border border-line rounded-[2px] shadow-panel",
-                    side === "right" ? "right-[calc(var(--ribbon-w)+6px)] animate-panel-right" : "",
-                  )
+            autoHeight && side !== "left"
+              ? cx(
+                "top-[calc(var(--commandbar-h)+6px)] max-h-[calc(100vh-var(--commandbar-h)-var(--footer-h)-16px)] h-fit border border-line rounded-[2px] shadow-panel",
+                side === "right" ? "right-[calc(var(--ribbon-w)+6px)] animate-panel-right" : "",
+              )
+              : side === "left"
+                ? "top-[calc(var(--commandbar-h)+6px)] bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] left-[calc(var(--ribbon-w)+6px)] border border-line rounded-[2px] shadow-panel animate-panel-left"
+                : "top-[calc(var(--commandbar-h)+6px)] bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] right-[calc(var(--ribbon-w)+6px)] border border-line rounded-[2px] shadow-panel animate-panel-right",
+            wide
+              ? "w-[min(640px,calc(100vw-var(--ribbon-w)-24px))]"
+              : expanded
+                ? "w-[min(440px,calc(100vw-var(--ribbon-w)-24px))] transition-[width] duration-200 ease-out"
                 : side === "left"
-                  ? "top-[calc(var(--commandbar-h)+6px)] bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] left-[calc(var(--ribbon-w)+6px)] border border-line rounded-[2px] shadow-panel animate-panel-left"
-                  : "top-[calc(var(--commandbar-h)+6px)] bottom-[calc(var(--footer-h)+var(--timeline-h)+6px)] right-[calc(var(--ribbon-w)+6px)] border border-line rounded-[2px] shadow-panel animate-panel-right",
-              wide
-                ? "w-[min(640px,calc(100vw-var(--ribbon-w)-24px))]"
-                : expanded
-                  ? "w-[min(440px,calc(100vw-var(--ribbon-w)-24px))] transition-[width] duration-200 ease-out"
-                  : side === "left"
-                    ? "w-[min(312px,calc(100vw-var(--ribbon-w)-24px))] transition-[width] duration-200 ease-out"
-                    : "w-[min(312px,calc(100vw-var(--ribbon-w)-24px))]",
-            ),
+                  ? "w-[min(312px,calc(100vw-var(--ribbon-w)-24px))] transition-[width] duration-200 ease-out"
+                  : "w-[min(312px,calc(100vw-var(--ribbon-w)-24px))]",
+          ),
         className,
       )}
       role="dialog"
